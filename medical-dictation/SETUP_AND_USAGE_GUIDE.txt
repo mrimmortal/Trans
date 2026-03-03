@@ -1,0 +1,506 @@
+================================================================================
+ MEDDICTATE — COMPLETE PROJECT SETUP, EXECUTION & FEATURE GUIDE
+================================================================================
+
+ Table of Contents
+ -----------------
+ 1. Prerequisites
+ 2. Backend Setup (Python FastAPI + Whisper AI)
+ 3. Frontend Setup (Next.js + React + TipTap)
+ 4. Running the Application
+ 5. Environment Configuration
+ 6. Project File Structure
+ 7. Feature Use Cases & How to Use
+ 8. Keyboard Shortcuts
+ 9. Voice Commands Reference
+10. Troubleshooting
+
+================================================================================
+ 1. PREREQUISITES
+================================================================================
+
+Before you begin, ensure you have the following installed:
+
+  • Python 3.11 or higher
+      Check: python3 --version
+
+  • Node.js 18 or higher
+      Check: node --version
+
+  • npm (comes with Node.js) or pnpm
+      Check: npm --version   OR   pnpm --version
+
+  • FFmpeg 7.0 or higher (required for audio processing)
+      Check: ffmpeg -version
+      Install: brew install ffmpeg@7
+
+  • A modern browser: Chrome, Firefox, or Edge
+    (Safari is not fully supported due to MediaRecorder API limitations)
+
+  • A working microphone connected to your machine
+
+================================================================================
+ 2. BACKEND SETUP (Python FastAPI + Whisper AI)
+================================================================================
+
+Step 1: Ensure FFmpeg 7 is installed and linked
+
+    brew install ffmpeg@7
+    brew link ffmpeg@7 --force
+
+Step 2: Open a terminal and navigate to the backend directory
+
+    cd /Users/immortalmac/Projects/Trans/medical-dictation/backend
+
+Step 3: Create a Python virtual environment
+
+    python3 -m venv venv
+
+Step 4: Activate the virtual environment
+
+    source venv/bin/activate
+    # On Windows: venv\Scripts\activate
+
+    You should see (venv) appear in your terminal prompt.
+
+Step 5: Install all Python dependencies
+
+    pip install -r requirements.txt
+
+    This installs:
+    - fastapi>=0.115.0       (Web framework)
+    - uvicorn[standard]>=0.30.0  (ASGI server with uvloop)
+    - websockets>=13.0       (Real-time communication)
+    - faster-whisper>=1.1.0  (Speech-to-text AI model)
+    - python-dotenv>=1.0.1   (Environment variables)
+    - numpy>=1.26.2          (Numerical computing)
+    - pydantic>=2.8.0        (Data validation)
+
+Step 6: Configure the environment (optional)
+
+    Edit the .env file in the backend/ directory:
+
+    MODEL_SIZE=base.en       # Options: tiny.en, base.en, small.en, medium.en
+    DEVICE=cpu               # Options: cpu, cuda (NVIDIA GPU), mps (Apple M-chip)
+    COMPUTE_TYPE=int8        # Options: float32, float16, int8
+    HOST=0.0.0.0
+    PORT=8000
+
+    NOTE:
+    - Use "tiny.en" for fastest performance (lower accuracy)
+    - Use "base.en" for balanced speed and accuracy (recommended)
+    - Use "small.en" or "medium.en" for higher accuracy (slower)
+    - Use "mps" as DEVICE on Apple Silicon Macs for GPU acceleration
+    - Use "cuda" as DEVICE if you have an NVIDIA GPU
+
+Step 7: Start the backend server
+
+    python run.py
+
+    You should see:
+    ================================================================
+    🚀 Starting server...
+    📍 API:       http://0.0.0.0:8000
+    📚 Docs:      http://0.0.0.0:8000/docs
+    🔌 WebSocket: ws://0.0.0.0:8000/ws/dictate
+    ================================================================
+
+    LEAVE THIS TERMINAL RUNNING. Open a new terminal for frontend.
+
+Step 8: Verify the backend is running
+
+    Open a new terminal and run:
+    curl http://localhost:8000/health
+
+    Expected response: a JSON object confirming the server is healthy.
+
+    You can also visit http://localhost:8000/docs in your browser
+    to see the interactive API documentation (Swagger UI).
+
+================================================================================
+ 3. FRONTEND SETUP (Next.js + React + TipTap)
+================================================================================
+
+Step 1: Open a NEW terminal and navigate to the frontend directory
+
+    cd /Users/immortalmac/Projects/Trans/medical-dictation/frontend
+
+Step 2: Install Node.js dependencies
+
+    npm install
+    # OR if you use pnpm:
+    pnpm install
+
+    This installs:
+    - next@14.1.0                        (React framework)
+    - react@18.2.0                       (UI library)
+    - @tiptap/react, @tiptap/starter-kit (Rich text editor)
+    - @tiptap/extension-placeholder      (Editor placeholder text)
+    - tailwindcss@3.4.0                  (CSS framework)
+    - typescript@5.3.0                   (Type safety)
+    - lucide-react@0.300.0               (Icon library)
+
+Step 3: Start the frontend development server
+
+    npm run dev
+    # OR: pnpm dev
+
+    You should see:
+    ▲ Next.js 14.1.0
+    - Local: http://localhost:3000
+
+Step 4: Open the application in your browser
+
+    Navigate to: http://localhost:3000
+
+    The app should load with a skeleton loading animation for ~1 second,
+    then show the full MedDictate interface.
+
+================================================================================
+ 4. RUNNING THE APPLICATION
+================================================================================
+
+You need TWO terminals running simultaneously:
+
+┌─────────────────────────────────────────────────────────────────┐
+│ TERMINAL 1 — Backend                                           │
+│                                                                 │
+│   cd /Users/immortalmac/Projects/Trans/medical-dictation/backend│
+│   source venv/bin/activate                                      │
+│   python run.py                                                 │
+│                                                                 │
+│   → Runs on http://localhost:8000                               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ TERMINAL 2 — Frontend                                          │
+│                                                                 │
+│   cd /Users/immortalmac/Projects/Trans/medical-dictation/frontend│
+│   npm run dev                                                   │
+│                                                                 │
+│   → Runs on http://localhost:3000                               │
+└─────────────────────────────────────────────────────────────────┘
+
+To stop either server: Press Ctrl+C in the respective terminal.
+
+To build the frontend for production:
+
+    cd frontend
+    npm run build    # Compiles and type-checks
+    npm start        # Starts the production server
+
+================================================================================
+ 5. ENVIRONMENT CONFIGURATION
+================================================================================
+
+BACKEND (.env file at backend/.env):
+─────────────────────────────────────
+  MODEL_SIZE=base.en       Whisper model to use
+  DEVICE=cpu               cpu | cuda | mps
+  COMPUTE_TYPE=int8        float32 | float16 | int8
+  HOST=0.0.0.0             Server bind address
+  PORT=8000                Server port
+
+FRONTEND (constants at frontend/src/lib/constants.ts):
+──────────────────────────────────────────────────────
+  WS_URL       = ws://localhost:8000/ws/dictate
+  API_URL      = http://localhost:8000
+
+  If your backend runs on a different port, update constants.ts.
+
+================================================================================
+ 6. PROJECT FILE STRUCTURE
+================================================================================
+
+medical-dictation/
+│
+├── backend/
+│   ├── .env                          # Environment configuration
+│   ├── requirements.txt              # Python dependencies
+│   ├── run.py                        # Server entry point
+│   └── app/
+│       ├── __init__.py
+│       ├── main.py                   # FastAPI app, routes, CORS, WebSocket
+│       ├── audio_config.py           # Audio & model configuration
+│       ├── services/
+│       │   ├── transcription_engine.py  # Whisper AI integration
+│       │   ├── medical_formatter.py     # Medical text formatting
+│       │   └── command_processor.py     # Voice command processing
+│       ├── websocket/
+│       │   └── audio_handler.py      # WebSocket streaming handler
+│       └── models/
+│           └── schemas.py            # Pydantic data models
+│
+├── frontend/
+│   ├── package.json                  # Node.js dependencies & scripts
+│   ├── tailwind.config.ts            # Tailwind CSS configuration
+│   ├── tsconfig.json                 # TypeScript configuration
+│   ├── next.config.js                # Next.js configuration
+│   └── src/
+│       ├── app/
+│       │   ├── layout.tsx            # Root layout (fonts, ToastProvider)
+│       │   ├── page.tsx              # Main page (all state, shortcuts, UI)
+│       │   └── globals.css           # Global styles, animations, print
+│       ├── components/
+│       │   ├── Header/Header.tsx     # Top bar (status, settings, help)
+│       │   ├── Editor/
+│       │   │   ├── DictationEditor.tsx   # TipTap rich text editor
+│       │   │   ├── Toolbar.tsx           # Formatting toolbar
+│       │   │   ├── ExportMenu.tsx        # Export dropdown (txt,pdf,print)
+│       │   │   └── TemplateDropdown.tsx  # Medical template insertion
+│       │   ├── Recorder/
+│       │   │   ├── RecordButton.tsx      # Record/Stop/Pause button
+│       │   │   └── AudioVisualizer.tsx   # Audio level bars
+│       │   ├── Sidebar/
+│       │   │   ├── Sidebar.tsx           # Sidebar with tabs
+│       │   │   ├── MacroManager.tsx      # Create & use macros
+│       │   │   └── SessionHistory.tsx    # Past dictation sessions
+│       │   ├── Settings/
+│       │   │   └── SettingsModal.tsx     # Audio/transcription/editor settings
+│       │   └── ui/
+│       │       └── Toast.tsx             # Toast notification system
+│       ├── hooks/
+│       │   ├── useAudioRecorder.ts   # Microphone capture & audio processing
+│       │   ├── useWebSocket.ts       # WebSocket connection management
+│       │   ├── useVoiceCommands.ts   # Voice command detection
+│       │   └── useSettings.ts        # Settings persistence
+│       ├── lib/
+│       │   ├── constants.ts          # URLs, intervals, limits
+│       │   ├── defaultMacros.ts      # Built-in medical macros
+│       │   └── audioUtils.ts         # Audio downsampling & conversion
+│       └── types/
+│           └── index.ts              # TypeScript type definitions
+│
+└── README.md                         # Project documentation
+
+================================================================================
+ 7. FEATURE USE CASES & HOW TO USE
+================================================================================
+
+─── 7.1  RECORDING A DICTATION ───
+
+  1. Make sure both backend and frontend are running
+  2. Open http://localhost:3000 in Chrome/Firefox/Edge
+  3. Click the large blue microphone button at the bottom-right
+  4. Allow microphone access when the browser prompts you
+  5. Speak clearly — your words appear in the editor in real-time
+  6. Click the red stop button (or press Escape) to stop recording
+  7. The session is automatically saved
+
+─── 7.2  USING THE RICH TEXT EDITOR ───
+
+  The editor (powered by TipTap) supports:
+  • Bold (B button or Ctrl+B)
+  • Italic (I button or Ctrl+I)
+  • Heading 2 (H2 button)
+  • Bullet list
+  • Ordered list
+  • Undo / Redo
+  • Copy all text
+  • Clear all text
+
+  You can also type directly in the editor alongside voice dictation.
+
+─── 7.3  USING MEDICAL MACROS ───
+
+  Built-in macros (say the trigger phrase while recording):
+
+  TRIGGER PHRASE                → EXPANDS TO
+  ─────────────────────────────────────────────────────────
+  "normal cardiac exam"        → Full cardiac exam findings
+  "normal respiratory exam"    → Full respiratory exam findings
+  "normal neuro exam"          → Full neurological exam findings
+  "normal abdominal exam"      → Full abdominal exam findings
+  "normal vitals"              → Standard vital signs template
+  "soap template"              → SOAP note structure
+  "review of systems negative" → Complete negative ROS
+
+  Adding custom macros:
+  1. Open the Sidebar (click hamburger icon on mobile)
+  2. Click the "Macros" tab
+  3. Click "Add Custom Macro"
+  4. Enter a trigger phrase (minimum 2 words)
+  5. Select a category
+  6. Enter the expansion text
+  7. Click "Save"
+
+  Inserting macros manually:
+  • Click the blue "+" icon next to any macro in the sidebar
+
+─── 7.4  USING TEMPLATES ───
+
+  1. In the toolbar, click the dropdown chevron (▼) button
+  2. Select a template from the list
+  3. The template text is inserted at the cursor position
+
+─── 7.5  EXPORTING YOUR DICTATION ───
+
+  Click the "Export" button in the toolbar. Options:
+  • Copy as Plain Text  — Copies to clipboard
+  • Copy as Rich HTML   — Copies formatted HTML to clipboard
+  • Download as .txt    — Downloads a text file
+  • Download as PDF     — Opens print dialog for PDF save
+  • Print               — Opens the system print dialog
+
+─── 7.6  SESSION HISTORY ───
+
+  1. Click the "History" tab in the sidebar
+  2. See all past dictation sessions (sorted by date)
+  3. Click a session title to load it into the editor
+  4. Hover over a session to see action buttons:
+     • Load — Restore into editor
+     • Rename — Change the session title
+     • Export — Download as .txt
+     • Delete — Remove permanently
+  5. Use the search bar to find sessions by title or content
+  6. Sessions are saved to localStorage (max 50 sessions)
+
+─── 7.7  AUTO-SAVE ───
+
+  • The editor auto-saves every 30 seconds to localStorage
+  • If you close the browser and reopen, you'll be prompted to
+    restore or discard the auto-saved content
+  • Auto-save is only restored if less than 24 hours old
+
+─── 7.8  SETTINGS ───
+
+  Click the gear icon in the header to open Settings:
+
+  Audio tab:
+  • Select microphone device
+  • Toggle noise suppression
+  • Toggle echo cancellation
+  • Toggle auto gain control
+
+  Transcription tab:
+  • Select language (English, Spanish, French, German, Hindi)
+  • Toggle auto-punctuation
+  • Toggle medical formatting
+
+  Editor tab:
+  • Adjust font size (12px–24px slider)
+  • Change font family
+  • Toggle voice command notifications
+
+─── 7.9  PAUSE / RESUME RECORDING ───
+
+  While recording:
+  • Click the small gray pause button (appears next to the record button)
+  • Click again (play icon) to resume
+  • Or use keyboard shortcut: Ctrl+Shift+P (or ⌘+Shift+P on Mac)
+
+================================================================================
+ 8. KEYBOARD SHORTCUTS
+================================================================================
+
+  SHORTCUT                     ACTION
+  ─────────────────────────────────────────────
+  Ctrl/⌘ + Shift + R          Toggle recording on/off
+  Ctrl/⌘ + Shift + P          Pause/Resume recording
+  Ctrl/⌘ + S                  Save session (prevents browser save)
+  Ctrl/⌘ + Shift + C          Copy all text to clipboard
+  Escape                       Stop recording (if active)
+  ?                            Show/hide keyboard shortcuts help modal
+
+  You can also press the "?" button in the header to see these shortcuts.
+
+================================================================================
+ 9. VOICE COMMANDS REFERENCE
+================================================================================
+
+  Say these phrases while recording to execute commands:
+
+  PUNCTUATION COMMANDS:
+  ─────────────────────
+  "period" / "full stop"       → .
+  "comma"                      → ,
+  "colon"                      → :
+  "semicolon"                  → ;
+  "question mark"              → ?
+  "exclamation mark"           → !
+  "open parenthesis"           → (
+  "close parenthesis"          → )
+  "hyphen"                     → -
+  "dash"                       → –
+
+  FORMAT COMMANDS:
+  ────────────────
+  "new line" / "next line"     → Inserts a line break
+  "new paragraph"              → Inserts a new paragraph
+
+  EDITING COMMANDS:
+  ─────────────────
+  "delete that"                → Deletes selection
+  "undo that"                  → Undoes last action
+  "clear all"                  → Clears the entire editor (with confirmation)
+  "select all"                 → Selects all text
+  "bold that"                  → Bolds the last selection
+
+  CONTROL COMMANDS:
+  ─────────────────
+  "stop recording"             → Stops the current recording session
+  "go to sleep"                → Same as stop recording
+  "pause recording"            → Pauses the current recording
+
+================================================================================
+10. TROUBLESHOOTING
+================================================================================
+
+PROBLEM: Backend fails to start
+─────────────────────────────────
+  • Check Python version: python3 --version (need 3.11+)
+  • Check port availability: lsof -i :8000
+  • Reinstall dependencies: pip install -r requirements.txt
+  • Check .env file exists in backend/ directory
+
+PROBLEM: Frontend won't start
+──────────────────────────────
+  • Check Node version: node --version (need 18+)
+  • Delete node_modules and reinstall: rm -rf node_modules && npm install
+  • Check port availability: lsof -i :3000
+
+PROBLEM: "Connecting..." keeps pulsing / WebSocket error
+─────────────────────────────────────────────────────────
+  • Make sure the backend is running (Terminal 1)
+  • Check http://localhost:8000/health in browser
+  • Click the "Retry" button on the red error banner (up to 3 times)
+  • Check browser console (F12) for detailed error messages
+
+PROBLEM: Microphone not working / "Access denied" banner
+─────────────────────────────────────────────────────────
+  • Click the lock/camera icon in your browser's address bar
+  • Set Microphone permission to "Allow"
+  • Reload the page
+  • Test your microphone in System Settings first
+
+PROBLEM: "Browser Not Supported" page appears
+──────────────────────────────────────────────
+  • Use Chrome, Firefox, or Edge (not Safari)
+  • Update your browser to the latest version
+
+PROBLEM: Transcription is slow or inaccurate
+─────────────────────────────────────────────
+  • In backend/.env, change MODEL_SIZE to "tiny.en" for faster processing
+  • On Mac with M-chip, set DEVICE=mps for GPU acceleration
+  • Speak clearly in a quiet environment
+  • Check backend terminal for processing time logs
+
+PROBLEM: Build fails with TypeScript errors
+────────────────────────────────────────────
+  • Run: cd frontend && npm run build
+  • Fix any reported errors
+  • Common fix: npm install (to ensure all deps are present)
+
+================================================================================
+ END OF GUIDE
+================================================================================
+
+  Quick Start Summary:
+  1. Terminal 1:  cd backend && source venv/bin/activate && python run.py
+  2. Terminal 2:  cd frontend && npm install && npm run dev
+  3. Browser:     http://localhost:3000
+  4. Click the microphone button and start dictating!
+
+  Happy Dictating! 🎙️
+
+================================================================================

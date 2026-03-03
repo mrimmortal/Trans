@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+.env
+*.sqlite3
+*.db
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.bak
+*.tmp
+*.coverage
+.coverage.*
+.cache
+*.egg-info/
+dist/
+build/
+venv/
+.env.local
+.env.*.local
+
+# Node.js / Next.js
+node_modules/
+.next/
+dist/
+build/
+yarn.lock
+package-lock.json
+npm-debug.log*
+.env
+.env.local
+.env.*.local
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Misc
+*.orig
+*.rej
+*.swo
+*.swp
+*.tmp
+*.bak
+
+# VS Code
+.vscode/
+
+# Tailwind
+*.css.map
+
+# Exported files
+*.exported.*
+
+# Coverage
+coverage/
+
+# Others
+*.idea/
+*.iml
+*.sublime-workspace
+*.sublime-project
+
+# Ignore frontend build outputs
+medical-dictation/frontend/.next/
+medical-dictation/frontend/node_modules/
+
+# Ignore backend Python cache and env
+medical-dictation/backend/__pycache__/
+medical-dictation/backend/.env
+medical-dictation/backend/venv/
+medical-dictation/backend/*.pyc
+medical-dictation/backend/*.pyo
+medical-dictation/backend/*.pyd
+medical-dictation/backend/*.db
+medical-dictation/backend/*.sqlite3
+medical-dictation/backend/*.log
+medical-dictation/backend/*.bak
+medical-dictation/backend/*.tmp
+medical-dictation/backend/*.egg-info/
+medical-dictation/backend/dist/
+medical-dictation/backend/build/
+medical-dictation/backend/.coverage
+medical-dictation/backend/.coverage.*
+medical-dictation/backend/.cache
