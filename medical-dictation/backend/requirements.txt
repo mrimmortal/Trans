@@ -5,3 +5,10 @@ faster-whisper>=1.1.0
 python-dotenv>=1.0.1
 numpy>=1.26.2
 pydantic>=2.8.0
+
+# NEW: Real-time VAD
+torch>=2.0.0
+
+# NEW: Audio preprocessing (optional but recommended)
+noisereduce>=3.0.0
+scipy>=1.11.0

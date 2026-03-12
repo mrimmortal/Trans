@@ -31,14 +31,19 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────
-# AUDIO STREAM HANDLER
+# AUDIO STREAM HANDLER (IMPROVED WITH VAD)
 # ─────────────────────────────────────────────────────────────────
 
 
 class AudioStreamHandler:
     """
-    Handles real-time audio streaming for a single WebSocket client.
-    Accumulates audio chunks and periodically transcribes them.
+    IMPROVED: Handles real-time audio streaming with VAD-based dynamic buffering.
+    
+    Key improvements:
+    - Uses Silero VAD for real-time speech detection
+    - Dynamic chunk sizes based on speech pauses (not fixed 2 seconds)
+    - Implements overlap buffer to prevent word cutoffs
+    - Tracks silence to trigger transcription at natural pauses
     """
 
     def __init__(self, transcription_engine: TranscriptionEngine, config: AudioConfig):
@@ -46,16 +51,26 @@ class AudioStreamHandler:
         Initialize stream handler for a client.
 
         Args:
-            transcription_engine: Shared transcription engine
+            transcription_engine: Shared transcription engine (with VAD)
             config: Audio configuration
         """
         self.engine = transcription_engine
         self.config = config
         self.formatter = MedicalFormatter()
 
-        # Audio buffer
+        # Dynamic audio buffers
         self.audio_buffer = bytearray()
-        self.buffer_threshold = config.CHUNK_SIZE_BYTES
+        self.overlap_buffer = bytearray()  # NEW: Overlap implementation
+        
+        # VAD state tracking
+        self.consecutive_silence_chunks = 0
+        self.last_speech_time = time.time()
+        self.has_speech_in_buffer = False
+        
+        # Buffer size limits (dynamic, not fixed)
+        self.min_buffer_size = config.MIN_CHUNK_SIZE_BYTES
+        self.max_buffer_size = config.MAX_CHUNK_SIZE_BYTES
+        self.overlap_size = config.OVERLAP_SIZE_BYTES
 
         # Session stats
         self.session_start_time = time.time()
@@ -63,71 +78,146 @@ class AudioStreamHandler:
         self.chunks_received = 0
         self.transcriptions_count = 0
         self.total_words = 0
+        self.silence_chunks_skipped = 0  # NEW: Track efficiency
 
     def add_audio_chunk(self, audio_bytes: bytes) -> Optional[str]:
         """
-        Add audio chunk to buffer and transcribe if threshold is reached.
+        IMPROVED: Add audio chunk with VAD-based processing.
+        
+        Uses Silero VAD to:
+        - Skip pure silence chunks (reduce CPU)
+        - Detect natural pauses to trigger transcription
+        - Accumulate speech dynamically (not fixed 2 seconds)
 
         Args:
             audio_bytes: Audio data (int16 PCM, 16kHz, mono)
 
         Returns:
-            Transcribed text if buffer threshold reached, None otherwise
+            Transcribed text if natural pause detected, None otherwise
         """
-        self.audio_buffer.extend(audio_bytes)
         self.audio_received_bytes += len(audio_bytes)
         self.chunks_received += 1
-
-        # Check if buffer is full
-        if len(self.audio_buffer) >= self.buffer_threshold:
-            # Force transcription
-            result = self._transcribe_buffer()
-            return result
-
+        
+        # ── STEP 1: DETECT SPEECH IN THIS CHUNK ──
+        vad_result = self.engine.detect_speech(audio_bytes)
+        
+        if vad_result['has_speech']:
+            # ── SPEECH DETECTED ──
+            logger.debug(f"Speech detected (prob={vad_result['speech_prob']:.2f})")
+            
+            # Add to buffer and reset silence counter
+            self.audio_buffer.extend(audio_bytes)
+            self.consecutive_silence_chunks = 0
+            self.last_speech_time = time.time()
+            self.has_speech_in_buffer = True
+            
+            # Check if buffer is too large (safety: force transcription)
+            if len(self.audio_buffer) >= self.max_buffer_size:
+                logger.info(f"Max buffer size reached ({len(self.audio_buffer)} bytes), forcing transcription")
+                return self._transcribe_buffer()
+        
+        else:
+            # ── SILENCE DETECTED ──
+            self.consecutive_silence_chunks += 1
+            
+            # If we have speech in buffer, add a bit of silence for context
+            if self.has_speech_in_buffer and self.consecutive_silence_chunks <= 2:
+                self.audio_buffer.extend(audio_bytes)
+            else:
+                self.silence_chunks_skipped += 1
+                logger.debug(f"Skipping silence chunk (saved CPU)")
+            
+            # Check if we should transcribe (natural pause detected)
+            time_since_speech = time.time() - self.last_speech_time
+            
+            if (self.has_speech_in_buffer and 
+                len(self.audio_buffer) >= self.min_buffer_size and
+                time_since_speech >= self.config.SILENCE_TIMEOUT_SECONDS):
+                
+                logger.info(f"Natural pause detected ({time_since_speech:.1f}s silence), transcribing")
+                return self._transcribe_buffer()
+        
         return None
 
     def _transcribe_buffer(self) -> Optional[str]:
         """
-        Transcribe the current audio buffer and clear it.
+        IMPROVED: Transcribe the current audio buffer with overlap.
+        
+        Overlap implementation:
+        - Prepends last 0.5s from previous chunk
+        - Prevents word cutoffs at boundaries
+        - Stores last 0.5s for next transcription
 
         Returns:
             Transcribed and formatted text, None if no text
         """
         if len(self.audio_buffer) < self.config.MIN_AUDIO_SAMPLES * 2:
+            logger.debug("Buffer too small to transcribe, clearing")
+            self.audio_buffer.clear()
+            self.has_speech_in_buffer = False
             return None
 
         try:
-            # Transcribe
-            result = self.engine.transcribe_audio_bytes(bytes(self.audio_buffer))
+            # ── PREPEND OVERLAP FROM PREVIOUS CHUNK ──
+            if len(self.overlap_buffer) > 0:
+                audio_with_overlap = bytes(self.overlap_buffer) + bytes(self.audio_buffer)
+                logger.debug(f"Added {len(self.overlap_buffer)} bytes of overlap")
+            else:
+                audio_with_overlap = bytes(self.audio_buffer)
+            
+            # ── TRANSCRIBE ──
+            result = self.engine.transcribe_audio_bytes(audio_with_overlap)
 
             if result.get("error"):
                 logger.warning(f"Transcription error: {result['error']}")
+                # Clear buffers and reset
+                self.audio_buffer.clear()
+                self.overlap_buffer.clear()
+                self.has_speech_in_buffer = False
                 return None
 
             text = result.get("text", "").strip()
             if not text:
+                # No text, but clear buffers
+                self.audio_buffer.clear()
+                self.overlap_buffer.clear()
+                self.has_speech_in_buffer = False
                 return None
 
-            # Format text
+            # ── FORMAT TEXT ──
             text = self.formatter.format(text)
 
-            # Update stats
+            # ── SAVE OVERLAP FOR NEXT CHUNK ──
+            # Store last 0.5 seconds of current buffer
+            if len(self.audio_buffer) > self.overlap_size:
+                self.overlap_buffer = self.audio_buffer[-self.overlap_size:]
+            else:
+                # Buffer is small, use all of it as overlap
+                self.overlap_buffer = bytearray(self.audio_buffer)
+            
+            logger.debug(f"Saved {len(self.overlap_buffer)} bytes for overlap")
+
+            # ── UPDATE STATS ──
             self.transcriptions_count += 1
             self.total_words += len(text.split())
 
-            # Clear buffer
+            # ── CLEAR BUFFER ──
             self.audio_buffer.clear()
+            self.has_speech_in_buffer = False
 
             return text
 
         except Exception as e:
             logger.error(f"Error during transcription: {e}", exc_info=True)
             self.audio_buffer.clear()
+            self.overlap_buffer.clear()
+            self.has_speech_in_buffer = False
             return None
 
     def flush(self) -> Optional[str]:
         """
         Force transcribe any remaining audio in buffer.
+        Called when connection closes or user manually flushes.
 
         Returns:
             Transcribed text
@@ -139,7 +229,7 @@ class AudioStreamHandler:
         return self._transcribe_buffer()
 
     def get_stats(self) -> dict:
-        """Get session statistics"""
+        """Get session statistics with efficiency metrics."""
         elapsed = time.time() - self.session_start_time
         audio_duration = (self.audio_received_bytes / (self.config.SAMPLE_RATE * self.config.SAMPLE_WIDTH))
 
@@ -151,6 +241,8 @@ class AudioStreamHandler:
             "transcriptions_count": self.transcriptions_count,
             "total_words": self.total_words,
             "buffer_size_bytes": len(self.audio_buffer),
+            "silence_chunks_skipped": self.silence_chunks_skipped,  # NEW
+            "efficiency_percent": (self.silence_chunks_skipped / max(self.chunks_received, 1)) * 100,  # NEW
         }
 
 
@@ -175,8 +267,8 @@ async def lifespan(app: FastAPI):
         config = AudioConfig()
         logger.info(f"Audio Config: {config.MODEL_SIZE} on {config.DEVICE}")
 
-        # Load transcription engine (loads Whisper model)
-        logger.info("Loading Whisper model (this may take 30-60 seconds)...")
+        # Load transcription engine (loads Whisper model + Silero VAD)
+        logger.info("Loading Whisper model and VAD (this may take 30-60 seconds)...")
         engine = TranscriptionEngine(config)
         logger.info("✓ Whisper model loaded successfully")
 
@@ -239,77 +331,67 @@ app.add_middleware(
 # ─────────────────────────────────────────────────────────────────
 
 
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "status": "online",
+        "service": "Medical Dictation API",
+        "version": "1.0.0",
+        "active_connections": app.state.active_connections,
+    }
+
+
 @app.get("/health")
-async def health_check():
-    """
-    Health check endpoint.
-
-    Returns:
-        status: "healthy" or "degraded"
-        model_loaded: Whether Whisper model is loaded
-        active_connections: Number of active WebSocket connections
-        timestamp: ISO 8601 timestamp
-    """
+async def health():
+    """Detailed health check with model status"""
     try:
-        config = app.state.config
         engine = app.state.transcription_engine
-        active = app.state.active_connections
-
-        model_loaded = engine.model is not None
+        config = app.state.config
+        
+        # Check if VAD is available
+        vad_status = "enabled" if engine.vad_model is not None else "disabled (fallback to RMS)"
 
         return JSONResponse(
-            status_code=200,
             content={
-                "status": "healthy" if model_loaded else "degraded",
-                "model_loaded": model_loaded,
-                "active_connections": active,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "status": "healthy",
+                "model_loaded": engine.model is not None,
+                "model_size": config.MODEL_SIZE,
+                "device": config.DEVICE,
+                "vad_status": vad_status,
+                "active_connections": app.state.active_connections,
             },
+            status_code=200,
         )
     except Exception as e:
-        logger.error(f"Health check error: {e}")
+        logger.error(f"Health check failed: {e}")
         return JSONResponse(
+            content={"status": "unhealthy", "error": str(e)},
             status_code=503,
-            content={
-                "status": "unhealthy",
-                "error": str(e),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
         )
 
 
 @app.get("/config")
 async def get_config():
-    """
-    Get server audio configuration.
-
-    Returns:
-        Audio format, Whisper model, and processing parameters
-    """
+    """Get current audio configuration"""
     try:
         config = app.state.config
-
-        return JSONResponse(
-            status_code=200,
-            content={
-                "sample_rate": config.SAMPLE_RATE,
-                "channels": config.CHANNELS,
-                "sample_width": config.SAMPLE_WIDTH,
-                "dtype": config.DTYPE,
-                "chunk_duration_seconds": config.CHUNK_DURATION_SECONDS,
-                "chunk_size_bytes": config.CHUNK_SIZE_BYTES,
-                "overlap_duration_seconds": config.OVERLAP_DURATION_SECONDS,
-                "model_size": config.MODEL_SIZE,
-                "device": config.DEVICE,
-                "compute_type": config.COMPUTE_TYPE,
-                "vad_filter": config.VAD_FILTER,
-            },
-        )
+        return {
+            "sample_rate": config.SAMPLE_RATE,
+            "channels": config.CHANNELS,
+            "sample_width": config.SAMPLE_WIDTH,
+            "min_chunk_bytes": config.MIN_CHUNK_SIZE_BYTES,
+            "max_chunk_bytes": config.MAX_CHUNK_SIZE_BYTES,
+            "overlap_bytes": config.OVERLAP_SIZE_BYTES,
+            "model": config.MODEL_SIZE,
+            "device": config.DEVICE,
+            "vad_enabled": app.state.transcription_engine.vad_model is not None,
+        }
     except Exception as e:
-        logger.error(f"Config endpoint error: {e}")
+        logger.error(f"Get config failed: {e}")
         return JSONResponse(
-            status_code=500,
             content={"error": str(e)},
+            status_code=500,
         )
 
 
@@ -318,10 +400,10 @@ async def get_config():
 # ─────────────────────────────────────────────────────────────────
 
 
-@app.websocket("/ws/dictate")
-async def websocket_dictate(websocket: WebSocket):
+@app.websocket("/ws/audio")
+async def websocket_audio_stream(websocket: WebSocket):
     """
-    WebSocket endpoint for real-time audio streaming and transcription.
+    WebSocket endpoint for real-time audio streaming with VAD.
 
     PROTOCOL:
     - Client → Server: Binary audio data (16-bit PCM, 16kHz, mono)
@@ -330,7 +412,7 @@ async def websocket_dictate(websocket: WebSocket):
     LIFECYCLE:
     1. Accept connection
     2. Send welcome message with audio config
-    3. Process audio chunks and control messages
+    3. Process audio chunks with VAD-based dynamic buffering
     4. On disconnect: flush buffer, send final stats, cleanup
     """
     try:
@@ -341,21 +423,23 @@ async def websocket_dictate(websocket: WebSocket):
 
         logger.info(f"[{session_id}] Client connected (total: {app.state.active_connections})")
 
-        # ── STEP 2: Create handler ──
+        # ── STEP 2: Create handler with VAD ──
         handler = AudioStreamHandler(app.state.transcription_engine, app.state.config)
 
         # ── STEP 3: Send welcome message ──
         welcome = ConnectionResponse(
             type="connected",
-            message="Connected to Medical Dictation API",
+            message="Connected to Medical Dictation API with VAD",
             config={
                 "sample_rate": app.state.config.SAMPLE_RATE,
                 "channels": app.state.config.CHANNELS,
                 "sample_width": app.state.config.SAMPLE_WIDTH,
-                "chunk_duration_seconds": app.state.config.CHUNK_DURATION_SECONDS,
-                "chunk_size_bytes": app.state.config.CHUNK_SIZE_BYTES,
+                "min_chunk_bytes": app.state.config.MIN_CHUNK_SIZE_BYTES,
+                "max_chunk_bytes": app.state.config.MAX_CHUNK_SIZE_BYTES,
+                "overlap_bytes": app.state.config.OVERLAP_SIZE_BYTES,
                 "model": app.state.config.MODEL_SIZE,
                 "device": app.state.config.DEVICE,
+                "vad_enabled": app.state.transcription_engine.vad_model is not None,
             },
         )
         await websocket.send_json(welcome.model_dump())
@@ -370,9 +454,9 @@ async def websocket_dictate(websocket: WebSocket):
                 # Binary audio data
                 if "bytes" in data:
                     audio_bytes = data["bytes"]
-                    logger.info(f"[{session_id}] Received {len(audio_bytes)} bytes of audio")
+                    logger.debug(f"[{session_id}] Received {len(audio_bytes)} bytes of audio")
 
-                    # Add to handler buffer and transcribe if ready
+                    # Add to handler buffer (VAD-based processing)
                     text = handler.add_audio_chunk(audio_bytes)
 
                     if text:
@@ -386,7 +470,7 @@ async def websocket_dictate(websocket: WebSocket):
                             timestamp=datetime.now(timezone.utc).timestamp(),
                         )
                         await websocket.send_json(response.model_dump())
-                        logger.debug(f"[{session_id}] Sent transcription: {text[:50]}...")
+                        logger.info(f"[{session_id}] Sent transcription: {text[:50]}...")
 
                 # Text control message
                 elif "text" in data:
@@ -445,7 +529,7 @@ async def websocket_dictate(websocket: WebSocket):
                 except Exception as e:
                     logger.warning(f"[{session_id}] Could not send final transcription: {e}")
 
-            # Send final stats
+            # Send final stats (with efficiency metrics)
             final_stats = handler.get_stats()
             stats_response = StatsResponse(
                 type="stats",
@@ -458,7 +542,8 @@ async def websocket_dictate(websocket: WebSocket):
 
             logger.info(
                 f"[{session_id}] Session ended: {final_stats['transcriptions_count']} transcriptions, "
-                f"{final_stats['total_words']} words"
+                f"{final_stats['total_words']} words, "
+                f"{final_stats['efficiency_percent']:.1f}% silence skipped"
             )
 
         except Exception as e:
@@ -486,6 +571,8 @@ async def _handle_control_message(websocket: WebSocket, handler: AudioStreamHand
         if msg_type == "reset":
             # Reset handler
             handler.audio_buffer.clear()
+            handler.overlap_buffer.clear()
+            handler.has_speech_in_buffer = False
             logger.info(f"[{session_id}] Handler reset")
             await websocket.send_json(
                 {
@@ -558,4 +645,3 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
     )
-

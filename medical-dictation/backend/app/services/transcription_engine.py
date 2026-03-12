@@ -8,6 +8,30 @@ from typing import Optional, List, Dict, Tuple
 from collections import Counter
 from faster_whisper import WhisperModel
 
+# Audio preprocessing
+try:
+    import noisereduce as nr
+    NOISEREDUCE_AVAILABLE = True
+except ImportError:
+    NOISEREDUCE_AVAILABLE = False
+    logging.warning("noisereduce not installed - noise reduction disabled")
+
+try:
+    from scipy import signal
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+    logging.warning("scipy not installed - high-pass filtering disabled")
+
+# Silero VAD
+try:
+    import torch
+    torch.set_num_threads(1)  # Reduce CPU usage
+    TORCH_AVAILABLE = True
+except ImportError:
+    TORCH_AVAILABLE = False
+    logging.warning("torch not installed - Silero VAD disabled")
+
 from app.audio_config import AudioConfig, config
 
 logger = logging.getLogger(__name__)
@@ -15,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 class TranscriptionEngine:
     """
-    Production-grade transcription engine using Faster-Whisper.
-    Handles audio validation, preprocessing, Whisper inference, and post-processing.
+    Production-grade transcription engine using Faster-Whisper with Silero VAD.
+    Handles audio validation, preprocessing, VAD, Whisper inference, and post-processing.
     All errors are caught and returned as dict with error key (never raises).
     """
 
@@ -29,7 +53,41 @@ class TranscriptionEngine:
         """
         self.config = config_instance or config
         self.model: Optional[WhisperModel] = None
+        
+        # Silero VAD components
+        self.vad_model = None
+        self.get_speech_timestamps = None
+        
+        # Load models
+        self._load_silero_vad()
         self._load_model()
+
+    def _load_silero_vad(self):
+        """Load Silero VAD model for real-time speech detection."""
+        if not TORCH_AVAILABLE:
+            logger.warning("Torch not available - Silero VAD disabled")
+            return
+        
+        try:
+            logger.info("Loading Silero VAD model...")
+            
+            # Load Silero VAD from torch hub
+            model, utils = torch.hub.load(
+                repo_or_dir='snakers4/silero-vad',
+                model='silero_vad',
+                force_reload=False,
+                onnx=False
+            )
+            
+            self.vad_model = model
+            self.get_speech_timestamps = utils[0]
+            
+            logger.info("✓ Silero VAD loaded successfully")
+            
+        except Exception as e:
+            logger.warning(f"Failed to load Silero VAD (continuing without it): {e}")
+            self.vad_model = None
+            self.get_speech_timestamps = None
 
     def _load_model(self):
         """
@@ -91,6 +149,88 @@ class TranscriptionEngine:
             # Non-critical, just log warning
             logger.warning(f"Model warmup encountered issue (non-critical): {e}")
 
+    def detect_speech(self, audio_bytes: bytes) -> dict:
+        """
+        Detect speech in audio chunk using Silero VAD.
+        
+        Args:
+            audio_bytes: Raw audio data (int16 PCM, 16kHz, mono)
+        
+        Returns:
+            {
+                'has_speech': bool,
+                'speech_prob': float,  # 0.0 - 1.0
+                'speech_segments': list  # [{start, end}]
+            }
+        """
+        if self.vad_model is None:
+            # Fallback to RMS-based detection if Silero not available
+            return self._detect_speech_rms(audio_bytes)
+        
+        try:
+            # Convert bytes to float32
+            audio = self._bytes_to_float32(audio_bytes)
+            if audio is None:
+                return {'has_speech': False, 'speech_prob': 0.0, 'speech_segments': []}
+            
+            # Convert to torch tensor
+            audio_tensor = torch.from_numpy(audio)
+            
+            # Get speech probability for the whole chunk
+            speech_prob = self.vad_model(audio_tensor, self.config.SAMPLE_RATE).item()
+            
+            # Get detailed speech segments
+            speech_timestamps = self.get_speech_timestamps(
+                audio_tensor,
+                self.vad_model,
+                sampling_rate=self.config.SAMPLE_RATE,
+                threshold=self.config.SILERO_VAD_THRESHOLD,
+                min_speech_duration_ms=self.config.SILERO_MIN_SPEECH_MS,
+                min_silence_duration_ms=self.config.SILERO_MIN_SILENCE_MS,
+                speech_pad_ms=self.config.SILERO_SPEECH_PAD_MS,
+            )
+            
+            # Convert timestamps to dict format
+            segments = []
+            for seg in speech_timestamps:
+                segments.append({
+                    'start': seg['start'],
+                    'end': seg['end']
+                })
+            
+            return {
+                'has_speech': speech_prob > self.config.SILERO_VAD_THRESHOLD,
+                'speech_prob': speech_prob,
+                'speech_segments': segments
+            }
+            
+        except Exception as e:
+            logger.warning(f"Silero VAD error (falling back to RMS): {e}")
+            return self._detect_speech_rms(audio_bytes)
+    
+    def _detect_speech_rms(self, audio_bytes: bytes) -> dict:
+        """
+        Fallback speech detection using RMS energy.
+        
+        Args:
+            audio_bytes: Raw audio data
+            
+        Returns:
+            Simple speech detection result
+        """
+        audio = self._bytes_to_float32(audio_bytes)
+        if audio is None:
+            return {'has_speech': False, 'speech_prob': 0.0, 'speech_segments': []}
+        
+        rms = np.sqrt(np.mean(audio**2))
+        has_speech = rms >= self.config.SILENCE_RMS_THRESHOLD
+        
+        return {
+            'has_speech': has_speech,
+            'speech_prob': min(rms / 0.1, 1.0),  # Normalize to 0-1
+            'speech_segments': []  # RMS doesn't provide segments
+        }
+
     def transcribe_audio_bytes(self, audio_bytes: bytes) -> dict:
         """
         Transcribe audio bytes to text with full processing pipeline.
@@ -99,7 +239,7 @@ class TranscriptionEngine:
         1. Validate input (not empty)
         2. Convert bytes to float32 numpy array
         3. Validate audio quality (length, energy, clipping)
-        4. Preprocess (DC offset removal, normalization)
+        4. Preprocess (DC offset removal, noise reduction, normalization)
         5. Run Whisper inference
         6. Filter hallucinations
         7. Clean text
@@ -271,11 +411,12 @@ class TranscriptionEngine:
 
     def _preprocess_audio(self, audio: np.ndarray) -> np.ndarray:
         """
-        Preprocess audio with:
-        1. DC offset removal (subtract mean)
-        2. Peak normalization (scale so max amplitude = 0.8)
-
-        Do NOT apply noise reduction (Whisper handles it internally).
+        Enhanced preprocessing pipeline:
+        1. DC offset removal
+        2. High-pass filter (remove low-frequency noise)
+        3. Noise reduction (if available)
+        4. Dynamic range compression
+        5. Peak normalization
 
         Args:
             audio: Float32 numpy array
@@ -283,16 +424,50 @@ class TranscriptionEngine:
         Returns:
             Preprocessed float32 numpy array
         """
-        # ── DC OFFSET REMOVAL ──
+        # ── 1. DC OFFSET REMOVAL ──
         audio = audio - np.mean(audio)
 
-        # ── PEAK NORMALIZATION ──
-        # FIXED: Less aggressive normalization to prevent over-amplification
-        peak = np.max(np.abs(audio))
-        if peak > 0.1:  # Only normalize if peak is above 0.1 (was 0.01)
-            audio = audio * (0.8 / peak)  # Target 0.8 instead of 0.95 to prevent clipping
+        # ── 2. HIGH-PASS FILTER (remove rumble < 80 Hz) ──
+        if SCIPY_AVAILABLE:
+            try:
+                sos = signal.butter(4, 80, 'hp', fs=self.config.SAMPLE_RATE, output='sos')
+                audio = signal.sosfilt(sos, audio)
+            except Exception as e:
+                logger.warning(f"High-pass filter failed: {e}")
 
-        return audio
+        # ── 3. NOISE REDUCTION ──
+        if NOISEREDUCE_AVAILABLE:
+            try:
+                audio = nr.reduce_noise(
+                    y=audio,
+                    sr=self.config.SAMPLE_RATE,
+                    stationary=True,
+                    prop_decrease=0.8  # Reduce noise by 80%
+                )
+            except Exception as e:
+                logger.warning(f"Noise reduction failed: {e}")
+
+        # ── 4. DYNAMIC RANGE COMPRESSION ──
+        # Boost quiet parts, compress loud parts
+        try:
+            threshold = 0.3
+            ratio = 2.0
+            audio_abs = np.abs(audio)
+            compressed = np.where(
+                audio_abs > threshold,
+                np.sign(audio) * (threshold + (audio_abs - threshold) / ratio),
+                audio
+            )
+            audio = compressed
+        except Exception as e:
+            logger.warning(f"Compression failed: {e}")
+
+        # ── 5. PEAK NORMALIZATION ──
+        peak = np.max(np.abs(audio))
+        if peak > 0.1:
+            audio = audio * (0.8 / peak)  # Target 0.8, leave headroom
+
+        return audio.astype(np.float32)
 
     def _run_whisper(self, audio: np.ndarray) -> dict:
         """
@@ -330,8 +505,6 @@ class TranscriptionEngine:
                     vad_parameters=self.config.VAD_PARAMETERS,
                     condition_on_previous_text=False,  # Each chunk is independent in streaming
                     word_timestamps=False,
-                    # REMOVED: repetition_penalty (not supported by faster-whisper)
-                    # REMOVED: no_repeat_ngram_size (not supported by faster-whisper)
                 )
             except Exception as e:
                 logger.error(f"Whisper transcribe call failed: {e}", exc_info=True)
@@ -403,13 +576,14 @@ class TranscriptionEngine:
 
     def _filter_hallucinations(self, text: str) -> str:
         """
-        Filter common Whisper hallucinations with enhanced checks:
+        IMPROVED: Filter common Whisper hallucinations.
+        
+        Checks:
         1. Exact match with known hallucination phrases
-        2. Contains hallucination phrase and text is very short
+        2. Short text (< 15 chars) containing specific hallucination phrases
         3. Single word repeated >50% of all words
         4. Only punctuation or very short text
         5. Single character repetition pattern (a a a)
-        6. Too few words (< 2 words is suspicious)
 
         Args:
             text: Transcribed text
@@ -423,31 +597,31 @@ class TranscriptionEngine:
         text_lower = text.lower().strip()
 
         # ── CHECK 1: EXACT MATCH WITH HALLUCINATION PHRASES ──
-        for phrase in self.config.HALLUCINATION_PHRASES:
-            if text_lower == phrase.lower():
-                logger.debug(f"Filtered hallucination (exact match): '{text}'")
-                return ""
+        if text_lower in [p.lower() for p in self.config.HALLUCINATION_PHRASES]:
+            logger.debug(f"Filtered hallucination (exact match): '{text}'")
+            return ""
 
-        # ── CHECK 2: CONTAINS HALLUCINATION + SHORT TEXT ──
-        for phrase in self.config.HALLUCINATION_PHRASES:
-            if phrase.lower() in text_lower and len(text) < 30:  # More generous threshold
-                logger.debug(f"Filtered hallucination (short + phrase): '{text}'")
-                return ""
+        # ── CHECK 2: SHORT TEXT + SPECIFIC PHRASES ──
+        # Only filter very short text with clear hallucinations
+        if len(text) < 15:
+            for phrase in ["thank you", "subscribe", "www.", ".com", "copyright"]:
+                if phrase in text_lower:
+                    logger.debug(f"Filtered hallucination (short + phrase): '{text}'")
+                    return ""
 
         # ── CHECK 3: SINGLE WORD REPETITION ──
         words = text.split()
-        if len(words) >= 3:  # Only check if we have at least 3 words
-            # Count only words longer than 2 chars to avoid false positives
+        if len(words) >= 3:
             word_counts = Counter(w.lower() for w in words if len(w) > 2)
             if word_counts:
                 most_common_word, count = word_counts.most_common(1)[0]
-                if count / len(words) > 0.5:  # Stricter threshold (was 0.6)
+                if count / len(words) > 0.5:
                     logger.debug(f"Filtered hallucination (repetition): '{text}'")
                     return ""
 
         # ── CHECK 4: ONLY PUNCTUATION OR TOO SHORT ──
         text_stripped = text.strip().rstrip(".,;:!?")
-        if len(text_stripped) < 3:  # Minimum 3 characters
+        if len(text_stripped) < 2:
             logger.debug(f"Filtered hallucination (too short): '{text}'")
             return ""
         
@@ -456,14 +630,8 @@ class TranscriptionEngine:
             return ""
 
         # ── CHECK 5: SINGLE CHARACTER REPETITION PATTERN ──
-        # Matches patterns like "a a a" or "i i i"
         if re.search(r'\b(\w)\s+\1\s+\1\b', text_lower):
             logger.debug(f"Filtered hallucination (single char repetition): '{text}'")
-            return ""
-
-        # ── CHECK 6: TOO FEW WORDS ──
-        if len(words) < 2:  # Less than 2 words is suspicious
-            logger.debug(f"Filtered hallucination (too few words): '{text}'")
             return ""
 
         return text
@@ -472,7 +640,7 @@ class TranscriptionEngine:
         """
         Clean transcribed text:
         1. Collapse multiple spaces
-        2. Remove leading punctuation (comma, semicolon, colon)
+        2. Remove leading punctuation
         3. Strip whitespace
 
         Args:
@@ -545,8 +713,6 @@ class TranscriptionEngine:
                 vad_parameters=self.config.VAD_PARAMETERS,
                 condition_on_previous_text=True,  # Full context for file transcription
                 word_timestamps=False,
-                # REMOVED: repetition_penalty (not supported by faster-whisper)
-                # REMOVED: no_repeat_ngram_size (not supported by faster-whisper)
             )
 
             # Iterate segments
@@ -627,20 +793,17 @@ if __name__ == "__main__":
     result = engine.transcribe_audio_bytes(silence_bytes)
     logger.info(f"Result: text='{result['text']}', error={result['error']}\n")
 
-    # ── TEST 2: TOO SHORT ──
-    logger.info("Test 2: Too short audio (should return empty)")
-    short_audio = np.zeros(100, dtype=np.int16)  # Very short
+    # ── TEST 2: VAD ──
+    logger.info("Test 2: VAD detection on silence")
+    vad_result = engine.detect_speech(silence_bytes)
+    logger.info(f"VAD: has_speech={vad_result['has_speech']}, prob={vad_result['speech_prob']:.3f}\n")
+
+    # ── TEST 3: TOO SHORT ──
+    logger.info("Test 3: Too short audio (should return empty)")
+    short_audio = np.zeros(100, dtype=np.int16)
     short_bytes = short_audio.tobytes()
     result = engine.transcribe_audio_bytes(short_bytes)
     logger.info(f"Result: text='{result['text']}', error={result['error']}\n")
 
-    # ── TEST 3: FILE TRANSCRIPTION ──
-    test_file = "test.wav"
-    if os.path.exists(test_file):
-        logger.info(f"Test 3: File transcription of {test_file}")
-        result = engine.transcribe_file(test_file)
-        logger.info(f"Result: text='{result['text'][:100]}...', confidence={result['confidence']:.2f}\n")
-    else:
-        logger.info(f"Test 3: Skipped (no {test_file} found)\n")
-
     logger.info("=== Tests Complete ===")
+    
