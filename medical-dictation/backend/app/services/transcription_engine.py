@@ -1,5 +1,60 @@
 """Production-grade Whisper transcription engine with audio processing and validation"""
 
+# ============================================
+# CUDA PATH FIX FOR VIRTUAL ENVIRONMENT
+# MUST BE AT THE VERY TOP
+# ============================================
+import os
+import sys
+import glob
+
+if sys.platform == "win32":
+    try:
+        # Get site-packages from virtual environment
+        site_packages_dirs = [p for p in sys.path if 'site-packages' in p.lower()]
+        
+        if not site_packages_dirs:
+            raise ImportError("site-packages not found in sys.path")
+        
+        site_packages = site_packages_dirs[0]
+        nvidia_base = os.path.join(site_packages, 'nvidia')
+        
+        if not os.path.exists(nvidia_base):
+            raise ImportError(f"nvidia directory not found at {nvidia_base}")
+        
+        # Find all directories containing CUDA DLLs
+        cuda_paths = []
+        
+        for subdir in ['cublas', 'cudnn']:
+            base_dir = os.path.join(nvidia_base, subdir)
+            if os.path.exists(base_dir):
+                # Recursively search for directories with DLLs
+                for root, dirs, files in os.walk(base_dir):
+                    dll_files = [f for f in files if f.endswith('.dll')]
+                    if dll_files and root not in cuda_paths:
+                        cuda_paths.append(root)
+        
+        if not cuda_paths:
+            raise ImportError("No CUDA DLL directories found")
+        
+        # Add all found paths to system PATH
+        path_addition = os.pathsep.join(cuda_paths)
+        os.environ['PATH'] = path_addition + os.pathsep + os.environ.get('PATH', '')
+        
+        print(f"✓ Added {len(cuda_paths)} CUDA path(s) to system PATH")
+        for p in cuda_paths:
+            dll_count = len(glob.glob(os.path.join(p, '*.dll')))
+            print(f"  - {os.path.basename(os.path.dirname(p))}/bin ({dll_count} DLLs)")
+            
+    except Exception as e:
+        print(f"⚠ CUDA setup failed: {e}")
+        print("  Falling back to CPU mode...")
+        os.environ['DEVICE'] = 'cpu'
+        os.environ['COMPUTE_TYPE'] = 'int8'
+
+# ============================================
+# NOW import everything else
+# ============================================
 import logging
 import time
 import numpy as np
@@ -28,8 +83,14 @@ try:
     import torch
     torch.set_num_threads(1)  # Reduce CPU usage
     TORCH_AVAILABLE = True
+    CUDA_AVAILABLE = torch.cuda.is_available()
+    if CUDA_AVAILABLE:
+        print(f"✓ PyTorch CUDA available: {torch.cuda.get_device_name(0)}")
+    else:
+        print("ℹ PyTorch CUDA not available (CTranslate2 CUDA still works)")
 except ImportError:
     TORCH_AVAILABLE = False
+    CUDA_AVAILABLE = False
     logging.warning("torch not installed - Silero VAD disabled")
 
 from app.audio_config import AudioConfig, config
@@ -97,22 +158,52 @@ class TranscriptionEngine:
         start_time = time.time()
         try:
             logger.info(f"Loading Whisper model: {self.config.MODEL_SIZE}")
+            logger.info(f"  Device: {self.config.DEVICE}")
+            logger.info(f"  Compute Type: {self.config.COMPUTE_TYPE}")
 
             self.model = WhisperModel(
                 self.config.MODEL_SIZE,
                 device=self.config.DEVICE,
                 compute_type=self.config.COMPUTE_TYPE,
-                cpu_threads=4,
+                cpu_threads=4 if self.config.DEVICE == "cpu" else 1,
                 num_workers=1,
             )
 
             elapsed = time.time() - start_time
-            logger.info(f"Model loaded successfully in {elapsed:.2f}s")
+            logger.info(f"✓ Model loaded successfully in {elapsed:.2f}s on {self.config.DEVICE.upper()}")
 
             # Warm up the model to avoid slow first transcription
             self._warmup()
 
         except RuntimeError as e:
+            error_msg = str(e)
+            
+            # Check for CUDA-specific errors and fallback to CPU
+            if "cublas" in error_msg.lower() or "cuda" in error_msg.lower():
+                logger.warning(f"CUDA error: {e}")
+                logger.warning("Attempting fallback to CPU...")
+                
+                try:
+                    self.config.DEVICE = "cpu"
+                    self.config.COMPUTE_TYPE = "int8"
+                    
+                    self.model = WhisperModel(
+                        self.config.MODEL_SIZE,
+                        device="cpu",
+                        compute_type="int8",
+                        cpu_threads=4,
+                        num_workers=1,
+                    )
+                    
+                    elapsed = time.time() - start_time
+                    logger.info(f"✓ Model loaded on CPU (fallback) in {elapsed:.2f}s")
+                    self._warmup()
+                    return
+                    
+                except Exception as cpu_error:
+                    logger.error(f"CPU fallback also failed: {cpu_error}")
+                    raise
+            
             error_msg = (
                 f"Failed to load Whisper model '{self.config.MODEL_SIZE}' "
                 f"on device '{self.config.DEVICE}': {e}. "
@@ -121,6 +212,7 @@ class TranscriptionEngine:
             )
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+            
         except Exception as e:
             logger.error(f"Unexpected error loading model: {e}")
             raise
@@ -143,7 +235,7 @@ class TranscriptionEngine:
             # Consume the generator
             _ = list(segments)
 
-            logger.info("Model warm-up complete")
+            logger.info("✓ Model warm-up complete")
 
         except Exception as e:
             # Non-critical, just log warning
@@ -685,7 +777,6 @@ class TranscriptionEngine:
                     "error": "Model not loaded",
                 }
 
-            import os
             if not os.path.exists(file_path):
                 return {
                     "text": "",
@@ -745,7 +836,6 @@ class TranscriptionEngine:
             text = self._filter_hallucinations(text)
             text = self._clean_text(text)
 
-            import os
             logger.info(f"Transcribed {len(text)} characters from {os.path.basename(file_path)}")
 
             return {
@@ -766,6 +856,30 @@ class TranscriptionEngine:
                 "processing_time_ms": (time.time() - start_time) * 1000,
                 "error": f"File transcription failed: {str(e)}",
             }
+    
+    def get_device_info(self) -> dict:
+        """
+        Get information about the current device configuration.
+        
+        Returns:
+            Dict with device info
+        """
+        info = {
+            "device": self.config.DEVICE,
+            "compute_type": self.config.COMPUTE_TYPE,
+            "model_size": self.config.MODEL_SIZE,
+            "cuda_available": CUDA_AVAILABLE,
+            "torch_available": TORCH_AVAILABLE,
+        }
+        
+        if CUDA_AVAILABLE and TORCH_AVAILABLE:
+            try:
+                info["gpu_name"] = torch.cuda.get_device_name(0)
+                info["gpu_memory_total"] = f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB"
+            except:
+                pass
+        
+        return info
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -773,8 +887,6 @@ class TranscriptionEngine:
 # ─────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import os
-
     # Setup logging for tests
     logging.basicConfig(
         level=logging.INFO,
@@ -785,6 +897,10 @@ if __name__ == "__main__":
 
     # Initialize engine
     engine = TranscriptionEngine()
+    
+    # Print device info
+    device_info = engine.get_device_info()
+    logger.info(f"Device Info: {device_info}\n")
 
     # ── TEST 1: SILENCE ──
     logger.info("Test 1: Silence (should return empty)")
@@ -806,4 +922,3 @@ if __name__ == "__main__":
     logger.info(f"Result: text='{result['text']}', error={result['error']}\n")
 
     logger.info("=== Tests Complete ===")
-    

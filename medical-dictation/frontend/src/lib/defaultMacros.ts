@@ -1,51 +1,86 @@
 import { Macro } from '@/types';
 
+/**
+ * Default macros shipped with the app.
+ *
+ * ✅ FIX: field is `text` (was `expansion` which doesn't exist on Macro type).
+ */
 export const DEFAULT_MACROS: Macro[] = [
+  // ── Cardiovascular ──
   {
-    id: 'macro-1',
-    trigger: 'normal cardiac exam',
+    id: 'cv-normal-heart',
+    trigger: 'normal heart exam',
+    text: 'Heart: Regular rate and rhythm. Normal S1, S2. No murmurs, rubs, or gallops. No jugular venous distension.',
     category: 'Cardiovascular',
-    expansion:
-      'Heart: Regular rate and rhythm. Normal S1 and S2. No murmurs, rubs, or gallops. No jugular venous distension. Peripheral pulses intact bilaterally.',
   },
   {
-    id: 'macro-2',
-    trigger: 'normal respiratory exam',
+    id: 'cv-chest-pain',
+    trigger: 'chest pain workup',
+    text: 'Patient presents with chest pain. ECG obtained showing normal sinus rhythm. Troponin levels pending. Chest X-ray ordered.',
+    category: 'Cardiovascular',
+  },
+
+  // ── Respiratory ──
+  {
+    id: 'resp-normal-lungs',
+    trigger: 'normal lung exam',
+    text: 'Lungs: Clear to auscultation bilaterally. No wheezes, rales, or rhonchi. Good air movement throughout. No respiratory distress.',
     category: 'Respiratory',
-    expansion:
-      'Lungs: Clear to auscultation bilaterally. No wheezes, rales, or rhonchi. Respiratory effort is normal. No accessory muscle use.',
   },
   {
-    id: 'macro-3',
+    id: 'resp-sob',
+    trigger: 'shortness of breath',
+    text: 'Patient reports shortness of breath. Oxygen saturation measured. Lung auscultation performed. Chest X-ray ordered.',
+    category: 'Respiratory',
+  },
+
+  // ── Neurological ──
+  {
+    id: 'neuro-normal',
     trigger: 'normal neuro exam',
+    text: 'Neurological: Alert and oriented x3. Cranial nerves II-XII intact. Motor strength 5/5 in all extremities. Sensation intact. Reflexes 2+ and symmetric.',
     category: 'Neurological',
-    expansion:
-      'Neurological: Alert and oriented x3. Cranial nerves II-XII intact. Motor strength 5/5 in all extremities. Sensation intact. Deep tendon reflexes 2+ bilaterally. Gait is normal.',
   },
   {
-    id: 'macro-4',
+    id: 'neuro-headache',
+    trigger: 'headache assessment',
+    text: 'Patient presents with headache. Onset, location, duration, character, and associated symptoms assessed. Neurological examination performed.',
+    category: 'Neurological',
+  },
+
+  // ── Gastrointestinal ──
+  {
+    id: 'gi-normal-abdomen',
     trigger: 'normal abdominal exam',
+    text: 'Abdomen: Soft, non-tender, non-distended. Bowel sounds present in all four quadrants. No hepatosplenomegaly. No masses palpated.',
     category: 'Gastrointestinal',
-    expansion:
-      'Abdomen: Soft, non-tender, non-distended. Bowel sounds present in all four quadrants. No hepatosplenomegaly. No masses palpated.',
   },
+
+  // ── Vitals ──
   {
-    id: 'macro-5',
-    trigger: 'soap template',
-    category: 'Templates',
-    expansion: `SUBJECTIVE:\n[Patient complaints and history]\n\nOBJECTIVE:\n[Physical examination findings]\n\nASSESSMENT:\n[Diagnosis and clinical impression]\n\nPLAN:\n[Treatment plan and follow-up]`,
-  },
-  {
-    id: 'macro-6',
-    trigger: 'normal vitals',
+    id: 'vitals-template',
+    trigger: 'vitals template',
+    text: 'Vital Signs:\nBlood Pressure: /\nHeart Rate: \nRespiratory Rate: \nTemperature: \nOxygen Saturation: %\nWeight: \nHeight: ',
     category: 'Vitals',
-    expansion:
-      'Vital Signs: BP 120/80 mmHg, HR 72 bpm, RR 16 breaths/min, Temp 98.6°F (37°C), SpO2 98% on room air.',
+  },
+
+  // ── Templates ──
+  {
+    id: 'tmpl-soap-note',
+    trigger: 'soap note template',
+    text: 'SUBJECTIVE:\nChief Complaint: \nHistory of Present Illness: \nReview of Systems: \n\nOBJECTIVE:\nVital Signs: \nPhysical Examination: \n\nASSESSMENT:\n\nPLAN:\n',
+    category: 'Templates',
   },
   {
-    id: 'macro-7',
-    trigger: 'review of systems negative',
+    id: 'tmpl-progress-note',
+    trigger: 'progress note template',
+    text: 'PROGRESS NOTE\nDate: \nPatient: \n\nSubjective: Patient reports \n\nObjective:\nVitals: \nExam: \nLabs: \n\nAssessment: \n\nPlan: \n',
     category: 'Templates',
-    expansion: `Constitutional: No fever, chills, weight changes, or fatigue.\nHEENT: No headaches, vision changes, hearing loss, or sore throat.\nCardiovascular: No chest pain, palpitations, dyspnea on exertion, or leg swelling.\nRespiratory: No shortness of breath, cough, or wheezing.\nGastrointestinal: No nausea, vomiting, diarrhea, constipation, or abdominal pain.\nGenitourinary: No dysuria, frequency, urgency, or hematuria.\nMusculoskeletal: No joint pain, swelling, stiffness, or muscle weakness.\nNeurological: No dizziness, numbness, tingling, or changes in coordination.\nPsychiatric: No depression, anxiety, hallucinations, or suicidal ideation.\nSkin: No rashes, lesions, or color changes.`,
+  },
+  {
+    id: 'tmpl-discharge-summary',
+    trigger: 'discharge summary template',
+    text: 'DISCHARGE SUMMARY\n\nAdmission Date: \nDischarge Date: \nAttending Physician: \n\nAdmitting Diagnosis: \nDischarge Diagnosis: \n\nHospital Course: \n\nDischarge Medications: \n\nFollow-up Instructions: \n\nDischarge Condition: \n',
+    category: 'Templates',
   },
 ];

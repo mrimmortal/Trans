@@ -53,7 +53,6 @@ const CONTROL_COMMANDS = {
 
 /**
  * Complete map of all voice commands organized by category.
- * Used to check if a phrase is a recognized voice command.
  */
 export const VOICE_COMMANDS = {
   ...PUNCTUATION_COMMANDS,
@@ -71,17 +70,12 @@ interface UseVoiceCommandsReturn {
 
 /**
  * Hook for processing transcribed text and detecting voice commands.
- * Extracts commands, applies macros, and returns cleaned text with
- * metadata about any commands or macros found.
  *
- * Command detection priority (critical order):
+ * Command detection priority:
  * 1. Macros (exact match or "insert <macro>")
  * 2. Entire text is a command
  * 3. Command at end of text
- * 4. Commands in middle of text
- *
- * This ordering ensures that commands are detected correctly even if
- * their names appear as substrings elsewhere.
+ * 4. Punctuation commands in middle of text
  */
 export function useVoiceCommands(): UseVoiceCommandsReturn {
   const processText = useCallback(
@@ -99,7 +93,8 @@ export function useVoiceCommands(): UseVoiceCommandsReturn {
           // Exact match: "my macro"
           if (lowercase === macroTrigger) {
             return {
-              text: macro.expansion,
+              // ✅ FIX: was macro.expansion — Macro type field is `text`
+              text: macro.text,
               commands: [],
               wasCommand: false,
               isMacro: true,
@@ -109,7 +104,8 @@ export function useVoiceCommands(): UseVoiceCommandsReturn {
           // Insert variant: "insert my macro"
           if (lowercase.startsWith('insert ' + macroTrigger)) {
             return {
-              text: macro.expansion,
+              // ✅ FIX: was macro.expansion — Macro type field is `text`
+              text: macro.text,
               commands: [],
               wasCommand: false,
               isMacro: true,
@@ -150,11 +146,7 @@ export function useVoiceCommands(): UseVoiceCommandsReturn {
       }
 
       let resultText = trimmed;
-      const foundCommands: Array<{
-        type: 'punctuation' | 'format' | 'action' | 'control';
-        value?: string;
-        action?: string;
-      }> = [];
+      const foundCommands: ProcessedResult['commands'] = [];
 
       // ============================================================
       // STEP 3: Check for commands at end of text
@@ -166,16 +158,13 @@ export function useVoiceCommands(): UseVoiceCommandsReturn {
           const keyLower = commandKey.toLowerCase();
           const resultLower = resultText.toLowerCase();
 
-          // Check if text ends with " <command>"
           if (resultLower.endsWith(' ' + keyLower)) {
             const value = VOICE_COMMANDS[commandKey as CommandKey];
-            // Remove the command from the end
             resultText = resultText.slice(0, -(keyLower.length + 1));
 
             let commandType: 'punctuation' | 'format' | 'action' | 'control';
             if (commandKey in PUNCTUATION_COMMANDS) {
               commandType = 'punctuation';
-              // Append punctuation directly to result
               resultText = resultText + value;
             } else if (commandKey in FORMAT_COMMANDS) {
               commandType = 'format';
@@ -192,22 +181,23 @@ export function useVoiceCommands(): UseVoiceCommandsReturn {
             });
 
             commandFound = true;
-            break; // restart loop to catch multiple end commands
+            break;
           }
         }
       }
 
       // ============================================================
-      // STEP 4: Check for commands in middle of text
-      // (Only punctuation commands to avoid ambiguity)
+      // STEP 4: Punctuation commands in middle of text
       // ============================================================
       for (const commandKey of Object.keys(PUNCTUATION_COMMANDS)) {
         const keyLower = commandKey.toLowerCase();
         const value =
           PUNCTUATION_COMMANDS[commandKey as keyof typeof PUNCTUATION_COMMANDS];
 
-        // Replace " <command> " with the punctuation
-        const pattern = new RegExp(' ' + keyLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' ', 'gi');
+        const pattern = new RegExp(
+          ' ' + keyLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ' ',
+          'gi'
+        );
         if (pattern.test(resultText)) {
           resultText = resultText.replace(pattern, value);
           foundCommands.push({

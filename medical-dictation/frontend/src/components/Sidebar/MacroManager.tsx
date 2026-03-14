@@ -6,10 +6,34 @@ import { DEFAULT_MACROS } from '@/lib/defaultMacros';
 import { PlusCircle, X, ChevronDown } from 'lucide-react';
 
 const STORAGE_KEY = 'medDictateMacros';
-const CATEGORIES = ['Cardiovascular', 'Respiratory', 'Neurological', 'Gastrointestinal', 'Templates', 'Vitals', 'Custom'];
+const CATEGORIES = [
+  'Cardiovascular',
+  'Respiratory',
+  'Neurological',
+  'Gastrointestinal',
+  'Templates',
+  'Vitals',
+  'Custom',
+];
 
 interface MacroManagerProps {
-  onInsertMacro: (expansion: string) => void;
+  onInsertMacro: (text: string) => void;
+}
+
+/**
+ * ✅ FIX: Migrate old localStorage macros that used `expansion` → `text`.
+ * Without this, any macros saved before the rename crash with
+ * "Cannot read properties of undefined (reading 'substring')".
+ */
+function migrateMacros(raw: any[]): Macro[] {
+  return raw.map((m) => ({
+    id: m.id || `migrated-${Date.now()}-${Math.random()}`,
+    name: m.name,
+    trigger: m.trigger || '',
+    // ✅ KEY FIX: accept either `text` or old `expansion` field
+    text: m.text || m.expansion || '',
+    category: m.category,
+  }));
 }
 
 export function MacroManager({ onInsertMacro }: MacroManagerProps) {
@@ -20,14 +44,20 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
   const [newExpansion, setNewExpansion] = useState('');
   const [newCategory, setNewCategory] = useState('Custom');
 
-  // Load macros from localStorage on mount
+  // Load macros from localStorage on mount — with migration
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       try {
-        setMacros(JSON.parse(stored));
+        const parsed = JSON.parse(stored);
+        // ✅ FIX: migrate old `expansion` → `text` and re-save
+        const migrated = migrateMacros(parsed);
+        setMacros(migrated);
+        // Re-save migrated data so this only happens once
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
       } catch {
         setMacros(DEFAULT_MACROS);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_MACROS));
       }
     } else {
       setMacros(DEFAULT_MACROS);
@@ -36,16 +66,18 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
   }, []);
 
   // Filter macros by search query
-  const filteredMacros = macros.filter((m) =>
-    m.trigger.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    m.category.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredMacros = macros.filter(
+    (m) =>
+      m.trigger.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (m.category || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   // Group macros by category
   const grouped = filteredMacros.reduce(
     (acc, macro) => {
-      if (!acc[macro.category]) acc[macro.category] = [];
-      acc[macro.category].push(macro);
+      const cat = macro.category || 'Uncategorized';
+      if (!acc[cat]) acc[cat] = [];
+      acc[cat].push(macro);
       return acc;
     },
     {} as Record<string, Macro[]>
@@ -66,7 +98,7 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
     const macro: Macro = {
       id: `custom-${Date.now()}`,
       trigger: newTrigger.trim(),
-      expansion: newExpansion.trim(),
+      text: newExpansion.trim(),
       category: newCategory,
     };
 
@@ -109,43 +141,48 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
               {category}
             </h3>
             <div className="space-y-2">
-              {categoryMacros.map((macro) => (
-                <div
-                  key={macro.id}
-                  className="p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
-                  role="listitem"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-sm text-gray-900">
-                        {macro.trigger}
+              {categoryMacros.map((macro) => {
+                // ✅ FIX: guard against undefined text (old localStorage data)
+                const displayText = macro.text || '';
+
+                return (
+                  <div
+                    key={macro.id}
+                    className="p-3 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                    role="listitem"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-semibold text-sm text-gray-900">
+                          {macro.trigger}
+                        </div>
+                        <div className="text-xs text-gray-600 mt-1 line-clamp-1">
+                          {displayText.substring(0, 50)}
+                          {displayText.length > 50 ? '...' : ''}
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-600 mt-1 line-clamp-1">
-                        {macro.expansion.substring(0, 50)}
-                        {macro.expansion.length > 50 ? '...' : ''}
+                      <div className="flex gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => onInsertMacro(displayText)}
+                          className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
+                          aria-label={`Insert macro: ${macro.trigger}`}
+                          tabIndex={0}
+                        >
+                          <PlusCircle className="w-4 h-4" aria-hidden="true" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteMacro(macro.id)}
+                          className="p-1 text-gray-400 hover:bg-red-100 hover:text-red-600 rounded transition-colors"
+                          aria-label={`Delete macro: ${macro.trigger}`}
+                          tabIndex={0}
+                        >
+                          <X className="w-4 h-4" aria-hidden="true" />
+                        </button>
                       </div>
-                    </div>
-                    <div className="flex gap-1 flex-shrink-0">
-                      <button
-                        onClick={() => onInsertMacro(macro.expansion)}
-                        className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
-                        aria-label={`Insert macro: ${macro.trigger}`}
-                        tabIndex={0}
-                      >
-                        <PlusCircle className="w-4 h-4" aria-hidden="true" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteMacro(macro.id)}
-                        className="p-1 text-gray-400 hover:bg-red-100 hover:text-red-600 rounded transition-colors"
-                        aria-label={`Delete macro: ${macro.trigger}`}
-                        tabIndex={0}
-                      >
-                        <X className="w-4 h-4" aria-hidden="true" />
-                      </button>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}
@@ -162,8 +199,7 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
         >
           Add Custom Macro
           <ChevronDown
-            className={`w-4 h-4 transition-transform ${isFormOpen ? 'rotate-180' : ''
-              }`}
+            className={`w-4 h-4 transition-transform ${isFormOpen ? 'rotate-180' : ''}`}
             aria-hidden="true"
           />
         </button>

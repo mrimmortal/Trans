@@ -40,9 +40,10 @@ def main():
         logger.info("=" * 80)
         logger.info("")
         logger.info("🚀 Starting server...")
-        logger.info(f"📍 API:      http://{host}:{port}")
-        logger.info(f"📚 Docs:     http://{host}:{port}/docs")
-        logger.info(f"🔌 WebSocket: ws://{host}:{port}/ws/dictate")
+        logger.info(f"📍 API:       http://{host}:{port}")
+        logger.info(f"📚 Docs:      http://{host}:{port}/docs")
+        # ✅ FIX: was /ws/dictate — actual endpoint is /ws/audio
+        logger.info(f"🔌 WebSocket: ws://{host}:{port}/ws/audio")
         logger.info("")
         logger.info("Press Ctrl+C to stop the server")
         logger.info("=" * 80)
@@ -75,4 +76,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

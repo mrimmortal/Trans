@@ -1,73 +1,73 @@
-/**
- * TypeScript type definitions for the application
- */
+// types/index.ts
+
+export interface VoiceCommand {
+  type: string;
+  action: string;
+  original_text: string;
+  replacement: string;
+}
 
 export interface TranscriptionMessage {
-  type: "connected" | "transcription" | "error" | "stats" | "pong" | "control_ack";
+  type: 'connected' | 'transcription' | 'error' | 'pong' | 'stats' | 'control_ack' | 'available_commands' | 'command_history';
+  message?: string;
+  config?: ServerConfig;
   text?: string;
   is_final?: boolean;
   confidence?: number;
   processing_time_ms?: number;
-  raw_text?: string;
-  timestamp?: string;
-  message?: string;
+  timestamp?: number | string;
+  commands?: VoiceCommand[];
   code?: string;
-  config?: {
-    expected_sample_rate: number;
-    expected_format: string;
-    chunk_duration: number;
-  };
-  data?: Record<string, any>;
-}
-
-export interface Macro {
-  id: string;
-  trigger: string;
-  expansion: string;
-  category: string;
-}
-
-export interface Session {
-  id: string;
-  title: string;
-  content: string;
-  plainText: string;
-  wordCount: number;
-  duration?: number;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-export interface AppSettings {
-  audio: {
-    deviceId: string;
-    noiseSuppression: boolean;
-    echoCancellation: boolean;
-    autoGainControl: boolean;
-    silenceSensitivity: number;
-  };
-  transcription: {
-    language: string;
-    autoPunctuation: boolean;
-    medicalFormatting: boolean;
-  };
-  editor: {
-    fontSize: number;
-    fontFamily: string;
-    darkMode: boolean;
-    showCommandNotifications: boolean;
-  };
-}
-
-export interface VoiceCommand {
-  type: 'punctuation' | 'format' | 'action' | 'control';
-  value?: string;
+  data?: SessionStats;
   action?: string;
+  commands_list?: AvailableCommands;
+  history?: CommandHistoryItem[];
 }
 
-export interface ProcessedResult {
-  text: string;
-  commands: VoiceCommand[];
-  wasCommand: boolean;
-  isMacro?: boolean;
+export interface ServerConfig {
+  sample_rate: number;
+  channels: number;
+  sample_width: number;
+  min_chunk_bytes: number;
+  max_chunk_bytes: number;
+  overlap_bytes: number;
+  model: string;
+  device: string;
+  vad_enabled: boolean;
+  commands_enabled?: boolean;
+  available_commands?: AvailableCommands;
+}
+
+export interface SessionStats {
+  session_duration_seconds: number;
+  audio_duration_seconds: number;
+  audio_received_bytes: number;
+  chunks_received: number;
+  transcriptions_count: number;
+  total_words: number;
+  buffer_size_bytes: number;
+  silence_chunks_skipped: number;
+  efficiency_percent: number;
+  commands_executed?: number;
+}
+
+export interface AvailableCommands {
+  punctuation: string[];
+  formatting: string[];
+  editing: string[];
+  navigation: string[];
+  control: string[];
+  templates: string[];
+}
+
+export interface CommandHistoryItem {
+  type: string;
+  action: string;
+  original_text: string;
+}
+
+export interface CustomCommandRegistration {
+  pattern: string;
+  replacement: string;
+  action?: string;
 }

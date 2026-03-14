@@ -58,27 +58,23 @@ export function TemplateDropdown({ macros, onInsert }: TemplateDropdownProps) {
           role="listbox"
           aria-label="Templates"
         >
-          {templates.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-gray-500 text-center">
-              No templates available
-            </div>
-          ) : (
-            templates.map((template) => (
-              <button
-                key={template.id}
-                onClick={() => handleInsert(template.expansion)}
-                className="w-full text-left px-4 py-3 hover:bg-blue-50 text-sm text-gray-700 border-b last:border-b-0 transition-colors"
-                role="option"
-                aria-label={`Insert template: ${template.trigger}`}
-                tabIndex={0}
-              >
-                <div className="font-semibold text-gray-900">{template.trigger}</div>
-                <div className="text-xs text-gray-500 mt-1 line-clamp-1">
-                  {template.expansion.substring(0, 60)}...
-                </div>
-              </button>
-            ))
-          )}
+          {templates.map((template) => (
+            <button
+              key={template.id}
+              // ✅ FIX: was template.expansion — Macro type has "text" not "expansion"
+              onClick={() => handleInsert(template.text)}
+              className="w-full text-left px-4 py-3 hover:bg-blue-50 text-sm text-gray-700 border-b last:border-b-0 transition-colors"
+              role="option"
+              aria-label={`Insert template: ${template.trigger}`}
+              tabIndex={0}
+            >
+              <div className="font-semibold text-gray-900">{template.trigger}</div>
+              <div className="text-xs text-gray-500 mt-1 line-clamp-1">
+                {/* ✅ FIX: was template.expansion — Macro type has "text" not "expansion" */}
+                {template.text.substring(0, 60)}...
+              </div>
+            </button>
+          ))}
         </div>
       )}
     </div>

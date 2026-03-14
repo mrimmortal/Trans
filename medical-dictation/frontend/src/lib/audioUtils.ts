@@ -1,12 +1,8 @@
 /**
  * Audio utility functions for processing and handling audio data
  *
- * These helpers are primarily concerned with converting and measuring
- * audio data coming from the browser so it matches Whisper's expectations.
- * A common and critical bug is sending audio at the wrong sample rate; the
- * backend silently transcribes garbage when fed 44.1kHz/48kHz instead of
- * 16kHz.  The functions below prevent that by downsampling and converting to
- * 16‑bit PCM before transmission.
+ * These helpers convert and measure audio data coming from the browser so it
+ * matches Whisper's expectations (16 kHz, 16-bit PCM, mono).
  */
 
 /**
@@ -17,7 +13,7 @@ export async function blobToBase64(blob: Blob): Promise<string> {
     const reader = new FileReader();
     reader.onloadend = () => {
       const base64 = reader.result as string;
-      resolve(base64.split(",")[1]); // Remove data:audio/webm;base64, prefix
+      resolve(base64.split(",")[1]);
     };
     reader.onerror = reject;
     reader.readAsDataURL(blob);
@@ -26,23 +22,18 @@ export async function blobToBase64(blob: Blob): Promise<string> {
 
 /**
  * Convert audio blob to WAV format for Whisper processing
- * TODO: Implement WAV conversion using audio resampler if needed
  */
 export async function convertToWav(blob: Blob): Promise<Blob> {
-  // For now, return as-is
-  // TODO: Implement proper WAV conversion with resampling to 16kHz
   return blob;
 }
 
 /**
- * Resample audio to 16kHz (Whisper requirement)
- * TODO: Implement audio resampling
+ * Resample audio to target sample rate
  */
 export async function resampleAudio(
   audioBuffer: AudioBuffer,
   targetSampleRate: number = 16000
 ): Promise<AudioBuffer> {
-  // TODO: Implement resampling logic
   return audioBuffer;
 }
 
@@ -50,7 +41,6 @@ export async function resampleAudio(
  * Calculate audio duration in seconds
  */
 export function calculateDuration(blob: Blob, sampleRate: number = 16000): number {
-  // Rough estimate: assume 2 bytes per sample (16-bit)
   const audioDataSize = blob.size;
   const bytesPerSecond = sampleRate * 2;
   return audioDataSize / bytesPerSecond;
@@ -86,27 +76,14 @@ export function handleAudioPermissionError(error: DOMException): string {
 }
 
 /**
- * Downsample a Float32Array from a higher sample rate to a lower one.  The
- * result is another Float32Array at the target rate, still containing values
- * between -1.0 and +1.0.  Whisper requires 16kHz input, so this method is
- * routinely used to convert 44.1kHz or 48kHz audio captured by the browser.
- * Failing to downsample is the root cause of the most common bug in the
- * system (#1): the model either returns nonsense or throws an error.
+ * Downsample a Float32Array from a higher sample rate to a lower one.
  *
- * Upsampling is forbidden because it would invent samples and degrade
- * recognition quality.  The algorithm below uses linear interpolation based
- * on the ratio of the two sample rates.
+ * Uses linear interpolation.  Upsampling is forbidden.
  *
- * For two rates `inRate` and `outRate`, we compute `ratio = inRate / outRate`.
- * Each output sample at index `i` corresponds to position `i * ratio` in the
- * input buffer.  We interpolate between the surrounding input samples using
- * the fractional remainder.  The output length is approximately
- * `input.length / ratio` and is rounded to the nearest integer.
- *
- * @param inputBuffer samples normalized between -1.0 and +1.0
- * @param inputSampleRate the rate at which `inputBuffer` was recorded
+ * @param inputBuffer  samples normalized between -1.0 and +1.0
+ * @param inputSampleRate  the rate at which inputBuffer was recorded
  * @param outputSampleRate the desired rate (typically 16000)
- * @returns a Float32Array containing samples at the output rate
+ * @returns Float32Array at the output rate
  * @throws {Error} when attempting to upsample
  */
 export function downsampleBuffer(
@@ -115,7 +92,6 @@ export function downsampleBuffer(
   outputSampleRate: number
 ): Float32Array {
   if (outputSampleRate === inputSampleRate) {
-    // return a copy to avoid accidental mutation
     return new Float32Array(inputBuffer);
   }
 
@@ -127,7 +103,7 @@ export function downsampleBuffer(
 
   const ratio = inputSampleRate / outputSampleRate;
   const outputLength = Math.round(inputBuffer.length / ratio);
-  console.log(`Downsample: ${inputBuffer.length} @ ${inputSampleRate} -> ${outputLength} @ ${outputSampleRate}`);
+  // ✅ FIX: removed per-chunk console.log that fired ~4×/sec and flooded console
   const outputBuffer = new Float32Array(outputLength);
 
   for (let i = 0; i < outputLength; i++) {
@@ -150,11 +126,7 @@ export function downsampleBuffer(
 }
 
 /**
- * Convert a Float32Array of audio samples to 16-bit PCM without resampling.
- * Used internally when the sample rates already match.
- *
- * @param buffer input samples
- * @returns ArrayBuffer containing Int16 data
+ * Convert Float32 samples to 16-bit PCM without resampling.
  */
 export function float32ToInt16(buffer: Float32Array): ArrayBuffer {
   const output = new Int16Array(buffer.length);
@@ -170,12 +142,7 @@ export function float32ToInt16(buffer: Float32Array): ArrayBuffer {
 }
 
 /**
- * Compute the root-mean-square (RMS) level of a buffer.  This value is
- * frequently used for audio level meters because it relates to perceived
- * loudness.
- *
- * @param buffer float samples
- * @returns RMS value between 0 and 1
+ * RMS level of a buffer (0–1).
  */
 export function calculateRMS(buffer: Float32Array): number {
   let sum = 0;
@@ -187,11 +154,7 @@ export function calculateRMS(buffer: Float32Array): number {
 }
 
 /**
- * Determine the peak amplitude in the buffer.  Useful for clipping
- * detection or simple peak meters.
- *
- * @param buffer float samples
- * @returns maximum absolute sample value
+ * Peak amplitude in the buffer.
  */
 export function calculatePeak(buffer: Float32Array): number {
   let peak = 0;

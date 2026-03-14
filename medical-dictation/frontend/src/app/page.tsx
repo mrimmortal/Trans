@@ -1,3 +1,4 @@
+// app/page.tsx
 'use client';
 
 import { useRef, useEffect, useState, useCallback } from 'react';
@@ -14,12 +15,23 @@ import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useVoiceCommands } from '@/hooks/useVoiceCommands';
 import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/components/ui/Toast';
-import { WS_URL } from '@/lib/constants';
+import { 
+  WS_URL, 
+  API_URL, 
+  AUDIO_SAMPLE_RATE, 
+  AUDIO_CHUNK_INTERVAL,
+  AUTO_SAVE_INTERVAL,
+  MAX_SESSIONS,
+  TOAST_DURATION 
+} from '@/lib/constants';
 import { DEFAULT_MACROS } from '@/lib/defaultMacros';
-import { Macro } from '@/types';
-import { X, AlertTriangle, RefreshCw, Keyboard } from 'lucide-react';
+import { Macro, VoiceCommand } from '@/types';
+import { X, AlertTriangle, RefreshCw, Keyboard, Wifi, WifiOff, Mic, MicOff } from 'lucide-react';
 
-// Keyboard shortcut definitions for help modal
+// ══════════════════════════════════════════════════════════════════
+// KEYBOARD SHORTCUTS HELP
+// ══════════════════════════════════════════════════════════════════
+
 const KEYBOARD_SHORTCUTS = [
   { keys: ['Ctrl/⌘', 'Shift', 'R'], description: 'Toggle recording on/off' },
   { keys: ['Ctrl/⌘', 'Shift', 'P'], description: 'Pause/Resume recording' },
@@ -29,15 +41,77 @@ const KEYBOARD_SHORTCUTS = [
   { keys: ['?'], description: 'Show/hide this help' },
 ];
 
+// ══════════════════════════════════════════════════════════════════
+// HELPER: Migrate old localStorage macros (expansion → text)
+// ══════════════════════════════════════════════════════════════════
+
+function migrateMacros(raw: any[]): Macro[] {
+  return raw.map((m) => ({
+    id: m.id || `migrated-${Date.now()}-${Math.random()}`,
+    name: m.name,
+    trigger: m.trigger || '',
+    text: m.text || m.expansion || '',
+    category: m.category,
+  }));
+}
+
+// ══════════════════════════════════════════════════════════════════
+// MAIN PAGE COMPONENT
+// ══════════════════════════════════════════════════════════════════
+
 export default function Page() {
-  // Hooks
-  const { isConnected, isConnecting, lastMessage, error: wsError, connect, disconnect, sendBinary } = useWebSocket(WS_URL);
-  const { isRecording, isPaused, duration, audioLevel, error: recorderError, startRecording, stopRecording, pauseRecording, resumeRecording } = useAudioRecorder();
+  // ─────────────────────────────────────────────────────────────────
+  // HOOKS
+  // ─────────────────────────────────────────────────────────────────
+  
+  const {
+    isConnected,
+    isConnecting,
+    lastMessage,
+    lastTranscription,
+    lastCommands,
+    availableCommands,
+    commandsEnabled,
+    error: wsError,
+    connect,
+    disconnect,
+    sendBinary,
+    sendControl,
+    flush,
+    reset,
+    enableCommands,
+    disableCommands,
+    registerCustomCommand,
+  } = useWebSocket(WS_URL);
+
+  const {
+    isRecording,
+    isPaused,
+    duration,
+    audioLevel,
+    error: recorderError,
+    startRecording,
+    stopRecording,
+    pauseRecording,
+    resumeRecording,
+  } = useAudioRecorder({
+    sampleRate: AUDIO_SAMPLE_RATE,
+    chunkIntervalMs: AUDIO_CHUNK_INTERVAL,
+    onAudioData: (data) => {
+      if (isConnected) {
+        sendBinary(data);
+      }
+    },
+  });
+
   const { processText } = useVoiceCommands();
   const { settings, updateSettings } = useSettings();
   const { showToast } = useToast();
 
-  // State
+  // ─────────────────────────────────────────────────────────────────
+  // STATE
+  // ─────────────────────────────────────────────────────────────────
+  
   const [processedText, setProcessedText] = useState<string | null>(null);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
@@ -51,121 +125,207 @@ export default function Page() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isAppLoading, setIsAppLoading] = useState(true);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showCommandsPanel, setShowCommandsPanel] = useState(false);
   const [microphoneError, setMicrophoneError] = useState<string | null>(null);
   const [browserSupported, setBrowserSupported] = useState(true);
   const [retryCount, setRetryCount] = useState(0);
   const [isInitializingMicrophone, setIsInitializingMicrophone] = useState(false);
   const [recordingStatusAnnouncement, setRecordingStatusAnnouncement] = useState('');
+  const [pendingRecordStart, setPendingRecordStart] = useState(false);
+  const [commandNotification, setCommandNotification] = useState<string | null>(null);
 
   const editorRef = useRef<DictationEditorHandle>(null);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load macros, sessions, and auto-save from localStorage on mount
+  // ─────────────────────────────────────────────────────────────────
+  // LOAD DATA FROM LOCALSTORAGE
+  // ─────────────────────────────────────────────────────────────────
+  
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const savedMacros = localStorage.getItem('medDictateMacros');
-      if (savedMacros) {
-        try {
-          setMacros(JSON.parse(savedMacros));
-        } catch (e) {
-          console.warn('Failed to load macros from localStorage:', e);
-          setMacros(DEFAULT_MACROS);
-        }
+    if (typeof window === 'undefined') return;
+
+    // Load and migrate macros
+    const savedMacros = localStorage.getItem('medDictateMacros');
+    if (savedMacros) {
+      try {
+        const parsed = JSON.parse(savedMacros);
+        const migrated = migrateMacros(parsed);
+        setMacros(migrated);
+        localStorage.setItem('medDictateMacros', JSON.stringify(migrated));
+      } catch {
+        setMacros(DEFAULT_MACROS);
+        localStorage.setItem('medDictateMacros', JSON.stringify(DEFAULT_MACROS));
       }
+    } else {
+      setMacros(DEFAULT_MACROS);
+      localStorage.setItem('medDictateMacros', JSON.stringify(DEFAULT_MACROS));
+    }
 
-      const savedSessions = localStorage.getItem('medDictateSessions');
-      if (savedSessions) {
-        try {
-          setSessions(JSON.parse(savedSessions));
-        } catch (e) {
-          console.warn('Failed to load sessions from localStorage:', e);
-          setSessions([]);
-        }
+    // Load sessions
+    const savedSessions = localStorage.getItem('medDictateSessions');
+    if (savedSessions) {
+      try {
+        setSessions(JSON.parse(savedSessions));
+      } catch {
+        setSessions([]);
       }
+    }
 
-      // Check for auto-save and restore if < 24 hours old
-      const autoSaveData = localStorage.getItem('medDictateAutoSave');
-      if (autoSaveData && !restoredAutoSave) {
-        try {
-          const { content: _content, timestamp } = JSON.parse(autoSaveData);
-          const savedTime = new Date(timestamp).getTime();
-          const now = new Date().getTime();
-          const hoursOld = (now - savedTime) / (1000 * 60 * 60);
-
-          if (hoursOld < 24) {
-            setShowAutoSaveRestore(true);
-          } else {
-            localStorage.removeItem('medDictateAutoSave');
-          }
-        } catch (e) {
-          console.warn('Failed to parse auto-save:', e);
+    // Check for auto-save < 24h old
+    const autoSaveData = localStorage.getItem('medDictateAutoSave');
+    if (autoSaveData && !restoredAutoSave) {
+      try {
+        const { timestamp } = JSON.parse(autoSaveData);
+        const hoursOld = (Date.now() - new Date(timestamp).getTime()) / 3_600_000;
+        if (hoursOld < 24) {
+          setShowAutoSaveRestore(true);
+        } else {
           localStorage.removeItem('medDictateAutoSave');
         }
+      } catch {
+        localStorage.removeItem('medDictateAutoSave');
       }
     }
   }, [restoredAutoSave]);
 
-  // Browser support check and app loading state
+  // ─────────────────────────────────────────────────────────────────
+  // BROWSER SUPPORT CHECK
+  // ─────────────────────────────────────────────────────────────────
+  
   useEffect(() => {
-    const hasMediaRecorder = typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
-    const hasAudioContext = typeof window !== 'undefined' && (window.AudioContext || (window as any).webkitAudioContext);
+    const hasMediaRecorder =
+      typeof window !== 'undefined' && typeof window.MediaRecorder !== 'undefined';
+    const hasAudioContext =
+      typeof window !== 'undefined' &&
+      (window.AudioContext || (window as any).webkitAudioContext);
 
     if (!hasMediaRecorder || !hasAudioContext) {
       setBrowserSupported(false);
     }
 
-    const timer = setTimeout(() => {
-      setIsAppLoading(false);
-    }, 1000);
-
+    const timer = setTimeout(() => setIsAppLoading(false), 1000);
     return () => clearTimeout(timer);
   }, []);
 
-  // Get current date
+  // ─────────────────────────────────────────────────────────────────
+  // RECORDING STATE EFFECTS
+  // ─────────────────────────────────────────────────────────────────
+  
+  useEffect(() => {
+    if (isRecording || recorderError) {
+      setIsInitializingMicrophone(false);
+    }
+  }, [isRecording, recorderError]);
+
+  useEffect(() => {
+    if (isRecording && !isPaused) {
+      setRecordingStatusAnnouncement('Recording started');
+    } else if (isRecording && isPaused) {
+      setRecordingStatusAnnouncement('Recording paused');
+    } else {
+      setRecordingStatusAnnouncement('');
+    }
+  }, [isRecording, isPaused]);
+
+  useEffect(() => {
+    if (recorderError) {
+      setMicrophoneError(recorderError);
+      setPendingRecordStart(false);
+    }
+  }, [recorderError]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // REGISTER CUSTOM COMMANDS ON CONNECT
+  // ─────────────────────────────────────────────────────────────────
+  
+  useEffect(() => {
+    if (isConnected) {
+      // Register macros as custom commands
+      macros.forEach((macro) => {
+        if (macro.trigger) {
+          registerCustomCommand({
+            pattern: macro.trigger,
+            replacement: macro.text,
+            action: `macro_${macro.name}`,
+          });
+        }
+      });
+
+      // Register signature command
+      registerCustomCommand({
+        pattern: 'my signature',
+        replacement: '\n\n— Dictated using MedDictate AI\n',
+      });
+    }
+  }, [isConnected, macros, registerCustomCommand]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // CURRENT DATE
+  // ─────────────────────────────────────────────────────────────────
+  
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
   });
 
-  // Handler: Start recording
-  const handleStartRecording = useCallback(async () => {
+  // ─────────────────────────────────────────────────────────────────
+  // START RECORDING
+  // ─────────────────────────────────────────────────────────────────
+  
+  const handleStartRecording = useCallback(() => {
     setProcessedText(null);
     setIsInitializingMicrophone(true);
     setMicrophoneError(null);
+    setDismissedErrors(new Set());
+    setRetryCount(0);
 
-    try {
-      connect();
+    // Connect WebSocket
+    connect();
+    setPendingRecordStart(true);
 
-      if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
-      connectTimeoutRef.current = setTimeout(() => {
-        startRecording((chunk) => {
-          sendBinary(chunk);
-        });
-        setIsInitializingMicrophone(false);
-        setRecordingStatusAnnouncement('Recording started');
-      }, 500);
-    } catch (err: any) {
-      setIsInitializingMicrophone(false);
-      if (err.name === 'NotAllowedError') {
-        setMicrophoneError('Microphone access denied. Please allow microphone access in your browser settings.');
-        showToast('Microphone access denied', 'error');
-      } else if (err.name === 'NotFoundError') {
-        setMicrophoneError('No microphone found. Please connect a microphone and try again.');
-        showToast('No microphone found', 'error');
-      } else {
-        setMicrophoneError(`Error accessing microphone: ${err.message}`);
-        showToast(`Microphone error: ${err.message}`, 'error');
-      }
-    }
-  }, [connect, startRecording, sendBinary, showToast]);
-
-  // Handler: Stop recording and auto-save session if content > 10 chars
-  const handleStopRecording = useCallback(() => {
-    stopRecording();
-    disconnect();
-    setProcessedText(null);
+    // Fallback: start recording anyway after 3s if WS not connected
     if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+    connectTimeoutRef.current = setTimeout(() => {
+      setPendingRecordStart((prev) => {
+        if (prev) {
+          console.warn('[Page] WS not connected after 3s — starting recording anyway');
+          startRecording();
+        }
+        return false;
+      });
+    }, 3000);
+  }, [connect, startRecording]);
+
+  // Effect: start recording once WS is connected
+  useEffect(() => {
+    if (pendingRecordStart && isConnected && !isRecording) {
+      setPendingRecordStart(false);
+      if (connectTimeoutRef.current) {
+        clearTimeout(connectTimeoutRef.current);
+        connectTimeoutRef.current = null;
+      }
+      startRecording();
+    }
+  }, [pendingRecordStart, isConnected, isRecording, startRecording]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // STOP RECORDING
+  // ─────────────────────────────────────────────────────────────────
+  
+  const handleStopRecording = useCallback(() => {
+    setPendingRecordStart(false);
+    if (connectTimeoutRef.current) {
+      clearTimeout(connectTimeoutRef.current);
+      connectTimeoutRef.current = null;
+    }
+
+    stopRecording();
+    flush();
+    
+    setTimeout(() => disconnect(), 600);
+
+    setProcessedText(null);
     setRecordingStatusAnnouncement('Recording stopped');
 
     // Auto-save session if content is substantial
@@ -186,81 +346,159 @@ export default function Page() {
       };
 
       setSessions((prev: Session[]) => {
-        const updated = [newSession, ...prev];
-        const truncated = updated.slice(0, 50);
-        localStorage.setItem('medDictateSessions', JSON.stringify(truncated));
-        return truncated;
+        const updated = [newSession, ...prev].slice(0, MAX_SESSIONS);
+        localStorage.setItem('medDictateSessions', JSON.stringify(updated));
+        return updated;
       });
 
       showToast('Session saved', 'success');
     }
 
-    // Focus management: return focus to editor after stopping
-    setTimeout(() => {
-      editorRef.current?.editor?.commands.focus();
-    }, 100);
-  }, [stopRecording, disconnect, wordCount, duration, showToast]);
+    setTimeout(() => editorRef.current?.editor?.commands.focus(), 100);
+  }, [stopRecording, flush, disconnect, wordCount, duration, showToast]);
 
-  // Keyboard shortcuts listener (must be after handler functions are defined)
+  // ─────────────────────────────────────────────────────────────────
+  // PROCESS INCOMING TRANSCRIPTIONS
+  // ─────────────────────────────────────────────────────────────────
+  
+  useEffect(() => {
+    if (!lastTranscription) return;
+
+    // Process with voice commands (local processing for non-server commands)
+    const result = processText(lastTranscription, macros);
+
+    if (result.wasCommand) {
+      const action = result.commands[0]?.action;
+      
+      switch (action) {
+        case 'stopRecording':
+          handleStopRecording();
+          break;
+        case 'pauseRecording':
+          pauseRecording();
+          break;
+        case 'undo':
+          editorRef.current?.editor?.chain().focus().undo().run();
+          break;
+        case 'clearAll':
+          if (window.confirm('Clear all content?')) {
+            editorRef.current?.editor?.chain().focus().clearContent().run();
+          }
+          break;
+        case 'deleteLast':
+          editorRef.current?.editor?.chain().focus().deleteSelection().run();
+          break;
+        case 'newline':
+          editorRef.current?.editor?.chain().focus().insertContent('\n').run();
+          break;
+        case 'newParagraph':
+          editorRef.current?.editor?.chain().focus().insertContent('<p></p>').run();
+          break;
+      }
+      
+      showToast(`Command: ${action}`, 'command');
+    } else if (result.isMacro) {
+      setProcessedText(result.text);
+      showToast('Macro inserted', 'command');
+    } else if (result.text) {
+      setProcessedText(result.text);
+    }
+  }, [lastTranscription, processText, macros, pauseRecording, handleStopRecording, showToast]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // HANDLE SERVER-SIDE COMMANDS
+  // ─────────────────────────────────────────────────────────────────
+  
+  useEffect(() => {
+    if (!lastCommands || lastCommands.length === 0) return;
+
+    lastCommands.forEach((cmd: VoiceCommand) => {
+      // Show notification for non-punctuation commands
+      if (cmd.type !== 'punctuation') {
+        setCommandNotification(`Command: ${cmd.action.replace(/_/g, ' ')}`);
+        setTimeout(() => setCommandNotification(null), TOAST_DURATION / 2);
+      }
+
+      // Handle specific commands that need frontend action
+      switch (cmd.action) {
+        case 'undo':
+          editorRef.current?.editor?.chain().focus().undo().run();
+          break;
+        case 'redo':
+          editorRef.current?.editor?.chain().focus().redo().run();
+          break;
+        case 'delete_last_word':
+          // Delete last word
+          const text = editorRef.current?.editor?.getText() || '';
+          const newText = text.replace(/\s*\S+\s*$/, '');
+          editorRef.current?.editor?.chain().focus().setContent(newText).run();
+          break;
+        case 'clear_all':
+          if (window.confirm('Clear all content?')) {
+            editorRef.current?.editor?.chain().focus().clearContent().run();
+          }
+          break;
+        case 'select_all':
+          editorRef.current?.editor?.chain().focus().selectAll().run();
+          break;
+        case 'save':
+          handleSaveSession();
+          break;
+        case 'pause':
+          pauseRecording();
+          break;
+        case 'resume':
+          resumeRecording();
+          break;
+        case 'go_to_start':
+          editorRef.current?.editor?.chain().focus().setTextSelection(0).run();
+          break;
+        case 'go_to_end':
+          const endPos = editorRef.current?.editor?.state.doc.content.size || 0;
+          editorRef.current?.editor?.chain().focus().setTextSelection(endPos).run();
+          break;
+      }
+    });
+  }, [lastCommands, pauseRecording, resumeRecording]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // KEYBOARD SHORTCUTS
+  // ─────────────────────────────────────────────────────────────────
+  
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMac = /Mac|iPhone|iPad|iPod/.test(navigator.platform);
       const modifier = isMac ? e.metaKey : e.ctrlKey;
-
-      // Don't fire shortcuts when typing in an input/textarea (unless it's the editor)
       const target = e.target as HTMLElement;
-      const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
+      const isInputField =
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT';
 
-      // Ctrl/Cmd + Shift + R: Toggle recording
+      // Ctrl/Cmd + Shift + R → toggle recording
       if (modifier && e.shiftKey && e.key === 'R') {
         e.preventDefault();
-        if (isRecording) {
-          handleStopRecording();
-        } else {
-          handleStartRecording();
-        }
+        isRecording ? handleStopRecording() : handleStartRecording();
         return;
       }
 
-      // Ctrl/Cmd + Shift + P: Pause/Resume
+      // Ctrl/Cmd + Shift + P → pause/resume
       if (modifier && e.shiftKey && e.key === 'P') {
         e.preventDefault();
         if (isRecording) {
-          if (isPaused) {
-            resumeRecording();
-          } else {
-            pauseRecording();
-          }
+          isPaused ? resumeRecording() : pauseRecording();
         }
         return;
       }
 
-      // Ctrl/Cmd + S: Save session (prevent browser save)
+      // Ctrl/Cmd + S → save session
       if (modifier && e.key === 's') {
         e.preventDefault();
-        if (editorRef.current?.editor) {
-          const content = editorRef.current.editor.getHTML();
-          const plainText = editorRef.current.editor.getText();
-          const session: Session = {
-            id: `session-${Date.now()}`,
-            title: `Session - ${new Date().toLocaleString()}`,
-            content,
-            plainText,
-            wordCount: plainText.split(/\s+/).filter(Boolean).length,
-            createdAt: new Date().toISOString(),
-          };
-          setSessions((prev: Session[]) => {
-            const updated = [session, ...prev];
-            const truncated = updated.slice(0, 50);
-            localStorage.setItem('medDictateSessions', JSON.stringify(truncated));
-            return truncated;
-          });
-          showToast('Session saved', 'success');
-        }
+        handleSaveSession();
         return;
       }
 
-      // Ctrl/Cmd + Shift + C: Copy all text
+      // Ctrl/Cmd + Shift + C → copy all text
       if (modifier && e.shiftKey && e.key === 'C') {
         e.preventDefault();
         if (editorRef.current?.editor) {
@@ -271,13 +509,13 @@ export default function Page() {
         return;
       }
 
-      // Escape: Stop recording
+      // Escape → stop recording
       if (e.key === 'Escape' && isRecording) {
         handleStopRecording();
         return;
       }
 
-      // ?: Show help (only when not in an input field)
+      // ? → help modal (outside input fields)
       if (e.key === '?' && !e.ctrlKey && !e.metaKey && !isInputField) {
         e.preventDefault();
         setShowHelpModal((prev) => !prev);
@@ -286,42 +524,86 @@ export default function Page() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isRecording, isPaused, pauseRecording, resumeRecording, showToast, handleStartRecording, handleStopRecording]);
+  }, [
+    isRecording,
+    isPaused,
+    pauseRecording,
+    resumeRecording,
+    showToast,
+    handleStartRecording,
+    handleStopRecording,
+  ]);
 
-  // Handler: Insert macro
-  const handleInsertMacro = (macroText: string) => {
+  // ─────────────────────────────────────────────────────────────────
+  // SAVE SESSION
+  // ─────────────────────────────────────────────────────────────────
+  
+  const handleSaveSession = useCallback(() => {
+    if (!editorRef.current?.editor) return;
+
+    const content = editorRef.current.editor.getHTML();
+    const plainText = editorRef.current.editor.getText();
+
+    if (plainText.trim().length === 0) {
+      showToast('Nothing to save', 'info');
+      return;
+    }
+
+    const session: Session = {
+      id: `session-${Date.now()}`,
+      title: `Session - ${new Date().toLocaleString()}`,
+      content,
+      plainText,
+      wordCount: plainText.split(/\s+/).filter(Boolean).length,
+      createdAt: new Date().toISOString(),
+    };
+
+    setSessions((prev: Session[]) => {
+      const updated = [session, ...prev].slice(0, MAX_SESSIONS);
+      localStorage.setItem('medDictateSessions', JSON.stringify(updated));
+      return updated;
+    });
+
+    showToast('Session saved', 'success');
+  }, [showToast]);
+
+  // ─────────────────────────────────────────────────────────────────
+  // MACRO HANDLERS
+  // ─────────────────────────────────────────────────────────────────
+  
+  const handleInsertMacro = useCallback((macroText: string) => {
     editorRef.current?.editor?.chain().focus().insertContent(macroText + ' ').run();
     showToast('Macro inserted', 'command');
-  };
+  }, [showToast]);
 
-  // Handler: Load session
-  const handleLoadSession = (session: Session) => {
+  // ─────────────────────────────────────────────────────────────────
+  // SESSION HANDLERS
+  // ─────────────────────────────────────────────────────────────────
+  
+  const handleLoadSession = useCallback((session: Session) => {
     editorRef.current?.editor?.chain().focus().clearContent().insertContent(session.content).run();
     setWordCount(session.wordCount);
     setCharCount(session.plainText.length);
-  };
+  }, []);
 
-  // Handler: Delete session
-  const handleDeleteSession = (id: string) => {
+  const handleDeleteSession = useCallback((id: string) => {
     setSessions((prev: Session[]) => {
       const updated = prev.filter((s: Session) => s.id !== id);
       localStorage.setItem('medDictateSessions', JSON.stringify(updated));
       return updated;
     });
     showToast('Session deleted', 'success');
-  };
+  }, [showToast]);
 
-  // Handler: Update session
-  const handleUpdateSession = (session: Session) => {
+  const handleUpdateSession = useCallback((session: Session) => {
     setSessions((prev: Session[]) => {
       const updated = prev.map((s: Session) => (s.id === session.id ? session : s));
       localStorage.setItem('medDictateSessions', JSON.stringify(updated));
       return updated;
     });
-  };
+  }, []);
 
-  // Handler: Export session as .txt
-  const handleExportSession = (session: Session) => {
+  const handleExportSession = useCallback((session: Session) => {
     const element = document.createElement('a');
     const file = new Blob([session.plainText], { type: 'text/plain' });
     element.href = URL.createObjectURL(file);
@@ -330,91 +612,44 @@ export default function Page() {
     element.click();
     document.body.removeChild(element);
     showToast('Session exported', 'success');
-  };
+  }, [showToast]);
 
-  // Handler: Content change
-  const handleContentChange = (_html: string, text: string) => {
+  // ─────────────────────────────────────────────────────────────────
+  // EDITOR CONTENT CHANGE
+  // ─────────────────────────────────────────────────────────────────
+  
+  const handleContentChange = useCallback((_html: string, text: string) => {
     const words = text.split(/\s+/).filter(Boolean).length;
-    const chars = text.length;
     setWordCount(words);
-    setCharCount(chars);
-  };
+    setCharCount(text.length);
+  }, []);
 
-  // Watch lastMessage and process it
-  useEffect(() => {
-    if (lastMessage && lastMessage.type === 'transcription' && lastMessage.text) {
-      const result = processText(lastMessage.text);
-
-      if (result.wasCommand) {
-        const action = result.commands[0]?.action;
-        if (action === 'stopRecording') {
-          handleStopRecording();
-        } else if (action === 'pauseRecording') {
-          pauseRecording();
-        } else if (action === 'undo') {
-          editorRef.current?.editor?.chain().focus().undo().run();
-        } else if (action === 'clearAll') {
-          if (window.confirm('Clear all content?')) {
-            editorRef.current?.editor?.chain().focus().clearContent().run();
-          }
-        } else if (action === 'deleteLast') {
-          editorRef.current?.editor?.chain().focus().deleteSelection().run();
-        } else if (action === 'newline') {
-          editorRef.current?.editor?.chain().focus().insertContent('\n').run();
-        } else if (action === 'newParagraph') {
-          editorRef.current?.editor?.chain().focus().insertContent('<p></p>').run();
-        }
-
-        showToast(`Command: ${action}`, 'command');
-      } else if (result.isMacro) {
-        setProcessedText(result.text);
-        showToast('Macro inserted', 'command');
-      } else if (result.text) {
-        setProcessedText(result.text);
-      }
-    }
-  }, [lastMessage, processText, pauseRecording, handleStopRecording]);
-
-  // Error state
-  const errorKey = (recorderError || wsError) ? `${recorderError || wsError}` : null;
-
-  const handleDismissError = () => {
-    if (errorKey) {
-      setDismissedErrors((prev: Set<string>) => new Set([...prev, errorKey]));
-    }
-  };
-
-  // Handler: Show toast message
-  const handleToast = (message: string) => {
-    showToast(message, 'info');
-  };
-
-  // Handler: Retry WebSocket connection
-  const handleRetryConnection = () => {
-    if (retryCount < 3) {
-      setRetryCount((prev) => prev + 1);
-      setDismissedErrors(new Set());
-      connect();
-      showToast(`Retrying connection (${retryCount + 1}/3)...`, 'info');
-    }
-  };
-
-  // Auto-save to localStorage every 30 seconds
+  // ─────────────────────────────────────────────────────────────────
+  // AUTO-SAVE INTERVAL
+  // ─────────────────────────────────────────────────────────────────
+  
   useEffect(() => {
     const interval = setInterval(() => {
       if (editorRef.current?.editor) {
         const content = editorRef.current.editor.getHTML();
-        const timestamp = new Date().toISOString();
-        localStorage.setItem('medDictateAutoSave', JSON.stringify({ content, timestamp }));
-        setAutoSaveTimestamp(timestamp);
+        const plainText = editorRef.current.editor.getText();
+        
+        if (plainText.trim().length > 0) {
+          const timestamp = new Date().toISOString();
+          localStorage.setItem('medDictateAutoSave', JSON.stringify({ content, timestamp }));
+          setAutoSaveTimestamp(timestamp);
+        }
       }
-    }, 30000);
+    }, AUTO_SAVE_INTERVAL);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Handler: Restore auto-save
-  const handleRestoreAutoSave = () => {
+  // ─────────────────────────────────────────────────────────────────
+  // AUTO-SAVE RESTORE/DISCARD
+  // ─────────────────────────────────────────────────────────────────
+  
+  const handleRestoreAutoSave = useCallback(() => {
     const autoSaveData = localStorage.getItem('medDictateAutoSave');
     if (autoSaveData) {
       try {
@@ -422,73 +657,91 @@ export default function Page() {
         editorRef.current?.editor?.chain().focus().clearContent().insertContent(content).run();
         setRestoredAutoSave(true);
         setShowAutoSaveRestore(false);
-        handleToast('Auto-save restored ✓');
+        showToast('Auto-save restored ✓', 'info');
       } catch (e) {
         console.error('Failed to restore auto-save:', e);
       }
     }
-  };
+  }, [showToast]);
 
-  // Handler: Discard auto-save
-  const handleDiscardAutoSave = () => {
+  const handleDiscardAutoSave = useCallback(() => {
     localStorage.removeItem('medDictateAutoSave');
     setRestoredAutoSave(true);
     setShowAutoSaveRestore(false);
-  };
+  }, []);
 
-  // ================================================
-  // SKELETON LOADING SCREEN
-  // ================================================
+  // ─────────────────────────────────────────────────────────────────
+  // ERROR HANDLERS
+  // ─────────────────────────────────────────────────────────────────
+  
+  const errorKey = recorderError || wsError || null;
+
+  const handleDismissError = useCallback(() => {
+    if (errorKey) {
+      setDismissedErrors((prev) => new Set([...prev, errorKey]));
+    }
+  }, [errorKey]);
+
+  const handleRetryConnection = useCallback(() => {
+    if (retryCount < 3) {
+      setRetryCount((prev) => prev + 1);
+      setDismissedErrors(new Set());
+      connect();
+      showToast(`Retrying connection (${retryCount + 1}/3)...`, 'info');
+    }
+  }, [retryCount, connect, showToast]);
+
+  const handleToast = useCallback((message: string) => {
+    showToast(message, 'info');
+  }, [showToast]);
+
+  // ════════════════════════════════════════════════════════════════
+  // LOADING STATE
+  // ════════════════════════════════════════════════════════════════
+  
   if (isAppLoading) {
     return (
       <div className="h-screen flex flex-col bg-white" aria-busy="true" aria-label="Loading application">
-        {/* Skeleton Header */}
         <div className="sticky top-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="skeleton w-6 h-6 rounded-full" />
-            <div className="skeleton w-32 h-6 rounded" />
+            <div className="skeleton w-6 h-6 rounded-full animate-pulse bg-gray-200" />
+            <div className="skeleton w-32 h-6 rounded animate-pulse bg-gray-200" />
           </div>
           <div className="flex items-center gap-4">
-            <div className="skeleton w-16 h-5 rounded" />
-            <div className="skeleton w-8 h-8 rounded-lg" />
+            <div className="skeleton w-16 h-5 rounded animate-pulse bg-gray-200" />
+            <div className="skeleton w-8 h-8 rounded-lg animate-pulse bg-gray-200" />
           </div>
         </div>
-
         <div className="flex flex-1 overflow-hidden">
-          {/* Skeleton Sidebar */}
           <div className="hidden lg:block w-72 border-r border-gray-200 p-4 space-y-4">
-            <div className="skeleton w-full h-10 rounded-lg" />
+            <div className="skeleton w-full h-10 rounded-lg animate-pulse bg-gray-200" />
             <div className="space-y-3">
               {[1, 2, 3, 4, 5].map((i) => (
                 <div key={i} className="space-y-2">
-                  <div className="skeleton w-24 h-4 rounded" />
-                  <div className="skeleton w-full h-16 rounded-lg" />
+                  <div className="skeleton w-24 h-4 rounded animate-pulse bg-gray-200" />
+                  <div className="skeleton w-full h-16 rounded-lg animate-pulse bg-gray-200" />
                 </div>
               ))}
             </div>
           </div>
-
-          {/* Skeleton Editor */}
           <div className="flex-1 flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200">
-              <div className="skeleton w-64 h-7 rounded" />
+              <div className="skeleton w-64 h-7 rounded animate-pulse bg-gray-200" />
             </div>
             <div className="p-2 bg-gray-50 border-b flex gap-2">
               {[1, 2, 3, 4, 5, 6, 7].map((i) => (
-                <div key={i} className="skeleton w-8 h-8 rounded" />
+                <div key={i} className="skeleton w-8 h-8 rounded animate-pulse bg-gray-200" />
               ))}
             </div>
             <div className="flex-1 p-6 space-y-3">
-              <div className="skeleton w-full h-4 rounded" />
-              <div className="skeleton w-3/4 h-4 rounded" />
-              <div className="skeleton w-5/6 h-4 rounded" />
-              <div className="skeleton w-2/3 h-4 rounded" />
-              <div className="skeleton w-full h-4 rounded" />
-              <div className="skeleton w-4/5 h-4 rounded" />
+              <div className="skeleton w-full h-4 rounded animate-pulse bg-gray-200" />
+              <div className="skeleton w-3/4 h-4 rounded animate-pulse bg-gray-200" />
+              <div className="skeleton w-5/6 h-4 rounded animate-pulse bg-gray-200" />
+              <div className="skeleton w-2/3 h-4 rounded animate-pulse bg-gray-200" />
             </div>
             <div className="border-t border-gray-200 px-6 py-4 flex items-center justify-between">
-              <div className="skeleton w-32 h-5 rounded" />
-              <div className="skeleton w-20 h-20 rounded-full" />
+              <div className="skeleton w-32 h-5 rounded animate-pulse bg-gray-200" />
+              <div className="skeleton w-20 h-20 rounded-full animate-pulse bg-gray-200" />
             </div>
           </div>
         </div>
@@ -496,9 +749,10 @@ export default function Page() {
     );
   }
 
-  // ================================================
+  // ════════════════════════════════════════════════════════════════
   // BROWSER NOT SUPPORTED
-  // ================================================
+  // ════════════════════════════════════════════════════════════════
+  
   if (!browserSupported) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50 p-4">
@@ -506,20 +760,25 @@ export default function Page() {
           <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" aria-hidden="true" />
           <h1 className="text-xl font-bold text-gray-900 mb-2">Browser Not Supported</h1>
           <p className="text-gray-600 mb-6">
-            MedDictate requires <strong>MediaRecorder</strong> and <strong>AudioContext</strong> APIs
-            which are not available in your current browser.
+            MedDictate requires <strong>MediaRecorder</strong> and{' '}
+            <strong>AudioContext</strong> APIs which are not available in your current browser.
           </p>
           <p className="text-sm text-gray-500">
-            Please use <strong>Chrome</strong>, <strong>Firefox</strong>, or <strong>Edge</strong> for the best experience.
+            Please use <strong>Chrome</strong>, <strong>Firefox</strong>, or{' '}
+            <strong>Edge</strong> for the best experience.
           </p>
         </div>
       </div>
     );
   }
 
+  // ════════════════════════════════════════════════════════════════
+  // MAIN RENDER
+  // ════════════════════════════════════════════════════════════════
+  
   return (
     <div className="h-screen flex flex-col bg-white">
-      {/* Screen reader live region for recording status */}
+      {/* Screen reader live region */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {recordingStatusAnnouncement}
       </div>
@@ -532,14 +791,30 @@ export default function Page() {
         onHelpClick={() => setShowHelpModal(true)}
       />
 
-      {/* Microphone denied banner */}
+      {/* ════════════════════════════════════════════════════════ */}
+      {/* STATUS BANNERS */}
+      {/* ════════════════════════════════════════════════════════ */}
+
+      {/* Command notification */}
+      {commandNotification && (
+        <div className="mx-4 mt-3 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg flex items-center gap-2">
+          <Keyboard className="w-4 h-4" aria-hidden="true" />
+          <span className="text-sm font-medium">{commandNotification}</span>
+        </div>
+      )}
+
+      {/* Microphone error banner */}
       {microphoneError && (
-        <div className="mx-4 mt-3 px-4 py-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg flex items-start gap-3" role="alert">
-          <AlertTriangle className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
+        <div
+          className="mx-4 mt-3 px-4 py-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded-lg flex items-start gap-3"
+          role="alert"
+        >
+          <MicOff className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
           <div className="flex-1">
             <p className="font-semibold text-sm">{microphoneError}</p>
             <p className="text-xs text-yellow-700 mt-1">
-              <strong>How to fix:</strong> Click the lock/camera icon in your browser&apos;s address bar → Allow microphone access → Reload the page.
+              <strong>How to fix:</strong> Click the lock/camera icon in your browser&apos;s
+              address bar → Allow microphone access → Reload the page.
             </p>
           </div>
           <button
@@ -552,10 +827,13 @@ export default function Page() {
         </div>
       )}
 
-      {/* WebSocket error banner with retry */}
+      {/* WebSocket error banner */}
       {wsError && !dismissedErrors.has(wsError) && (
-        <div className="mx-4 mt-3 px-4 py-3 bg-red-50 border border-red-300 text-red-800 rounded-lg flex items-center gap-3" role="alert">
-          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" aria-hidden="true" />
+        <div
+          className="mx-4 mt-3 px-4 py-3 bg-red-50 border border-red-300 text-red-800 rounded-lg flex items-center gap-3"
+          role="alert"
+        >
+          <WifiOff className="w-5 h-5 text-red-600 flex-shrink-0" aria-hidden="true" />
           <div className="flex-1">
             <p className="font-semibold text-sm">Connection Failed</p>
             <p className="text-xs text-red-700 mt-0.5">{wsError}</p>
@@ -564,7 +842,6 @@ export default function Page() {
             <button
               onClick={handleRetryConnection}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-800 text-xs font-medium rounded-lg transition-colors"
-              aria-label={`Retry connection (${retryCount}/3 attempts)`}
             >
               <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
               Retry ({retryCount}/3)
@@ -580,15 +857,14 @@ export default function Page() {
         </div>
       )}
 
-      {/* Recorder error banner (non-WS) */}
+      {/* Recorder error banner */}
       {recorderError && !wsError && !dismissedErrors.has(recorderError) && (
-        <div className="mx-4 mt-3 px-4 py-3 bg-red-500 text-white rounded-lg flex items-center justify-between" role="alert">
+        <div
+          className="mx-4 mt-3 px-4 py-3 bg-red-500 text-white rounded-lg flex items-center justify-between"
+          role="alert"
+        >
           <span>{recorderError}</span>
-          <button
-            onClick={handleDismissError}
-            className="text-white hover:text-gray-100 font-semibold"
-            aria-label="Dismiss error"
-          >
+          <button onClick={handleDismissError} className="text-white hover:text-gray-100 font-semibold">
             ✕
           </button>
         </div>
@@ -596,19 +872,21 @@ export default function Page() {
 
       {/* Initializing microphone indicator */}
       {isInitializingMicrophone && (
-        <div className="mx-4 mt-3 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg flex items-center gap-2" role="status">
-          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" aria-hidden="true" />
+        <div className="mx-4 mt-3 px-4 py-2 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg flex items-center gap-2">
+          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-sm font-medium">Initializing microphone...</span>
         </div>
       )}
 
-      {/* Auto-save Restore Modal */}
+      {/* ════════════════════════════════════════════════════════ */}
+      {/* MODALS */}
+      {/* ════════════════════════════════════════════════════════ */}
+
+      {/* Auto-save restore modal */}
       {showAutoSaveRestore && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="dialog" aria-modal="true" aria-label="Restore auto-save">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full mx-4 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">
-              Restore Previous Dictation?
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">Restore Previous Dictation?</h2>
             <p className="text-sm text-gray-600 mb-6">
               You have an auto-saved dictation from earlier. Would you like to restore it?
             </p>
@@ -616,14 +894,12 @@ export default function Page() {
               <button
                 onClick={handleRestoreAutoSave}
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
-                aria-label="Restore auto-saved content"
               >
                 Restore
               </button>
               <button
                 onClick={handleDiscardAutoSave}
                 className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
-                aria-label="Discard auto-saved content"
               >
                 Discard
               </button>
@@ -632,33 +908,25 @@ export default function Page() {
         </div>
       )}
 
-      {/* Help Modal */}
+      {/* Help modal */}
       {showHelpModal && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
           onClick={() => setShowHelpModal(false)}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Keyboard shortcuts"
         >
-          <div
-            className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-2">
-                <Keyboard className="w-5 h-5 text-blue-600" aria-hidden="true" />
+                <Keyboard className="w-5 h-5 text-blue-600" />
                 <h2 className="text-lg font-bold text-gray-900">Keyboard Shortcuts</h2>
               </div>
               <button
                 onClick={() => setShowHelpModal(false)}
                 className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-                aria-label="Close help modal"
               >
-                <X className="w-5 h-5 text-gray-500" aria-hidden="true" />
+                <X className="w-5 h-5 text-gray-500" />
               </button>
             </div>
-
             <div className="space-y-3">
               {KEYBOARD_SHORTCUTS.map((shortcut, idx) => (
                 <div key={idx} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
@@ -669,16 +937,13 @@ export default function Page() {
                         <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 text-xs font-mono font-semibold text-gray-700 rounded shadow-sm">
                           {key}
                         </kbd>
-                        {kidx < shortcut.keys.length - 1 && (
-                          <span className="text-gray-400 mx-0.5">+</span>
-                        )}
+                        {kidx < shortcut.keys.length - 1 && <span className="text-gray-400 mx-0.5">+</span>}
                       </span>
                     ))}
                   </div>
                 </div>
               ))}
             </div>
-
             <p className="text-xs text-gray-500 mt-4 text-center">
               Press <kbd className="px-1.5 py-0.5 bg-gray-100 border border-gray-300 text-xs font-mono rounded">?</kbd> to toggle this panel
             </p>
@@ -686,7 +951,43 @@ export default function Page() {
         </div>
       )}
 
-      {/* Main content */}
+      {/* Commands panel modal */}
+      {showCommandsPanel && availableCommands && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowCommandsPanel(false)}
+        >
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <Mic className="w-5 h-5 text-blue-600" />
+                <h2 className="text-lg font-bold text-gray-900">Available Voice Commands</h2>
+              </div>
+              <button onClick={() => setShowCommandsPanel(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+              {Object.entries(availableCommands).map(([category, commands]) => (
+                <div key={category}>
+                  <h4 className="font-semibold text-gray-700 capitalize mb-2">{category}</h4>
+                  <ul className="space-y-1 text-gray-600">
+                    {commands.slice(0, 8).map((cmd, i) => (
+                      <li key={i} className="truncate">"{cmd}"</li>
+                    ))}
+                    {commands.length > 8 && <li className="text-gray-400">+{commands.length - 8} more</li>}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════ */}
+      {/* MAIN CONTENT */}
+      {/* ════════════════════════════════════════════════════════ */}
+      
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <Sidebar
@@ -703,18 +1004,36 @@ export default function Page() {
 
         {/* Center content */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Title */}
-          <div className="px-6 py-4 border-b border-gray-200 bg-white hidden sm:block">
-            <h1 className="text-2xl font-bold text-gray-900">
-              New Dictation — {currentDate}
-            </h1>
+          {/* Desktop title */}
+          <div className="px-6 py-4 border-b border-gray-200 bg-white hidden sm:flex sm:items-center sm:justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">New Dictation — {currentDate}</h1>
+            <div className="flex items-center gap-2">
+              {/* Commands toggle */}
+              <button
+                onClick={() => commandsEnabled ? disableCommands() : enableCommands()}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  commandsEnabled
+                    ? 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+                title={commandsEnabled ? 'Voice commands enabled' : 'Voice commands disabled'}
+              >
+                <Mic className="w-4 h-4" />
+                Commands {commandsEnabled ? 'ON' : 'OFF'}
+              </button>
+              {/* Show commands help */}
+              <button
+                onClick={() => setShowCommandsPanel(true)}
+                className="px-3 py-1.5 text-sm text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+              >
+                View Commands
+              </button>
+            </div>
           </div>
 
           {/* Mobile title */}
           <div className="px-4 py-3 border-b border-gray-200 bg-white sm:hidden">
-            <h1 className="text-lg font-bold text-gray-900">
-              New Dictation
-            </h1>
+            <h1 className="text-lg font-bold text-gray-900">New Dictation</h1>
             <p className="text-xs text-gray-500">{currentDate}</p>
           </div>
 
@@ -736,25 +1055,28 @@ export default function Page() {
             />
           </div>
 
-          {/* Bottom bar — Desktop */}
-          <div className="sticky bottom-0 border-t border-gray-200 bg-white px-4 sm:px-6 py-4 record-button">
+          {/* Bottom bar */}
+          <div className="sticky bottom-0 border-t border-gray-200 bg-white px-4 sm:px-6 py-4">
             <div className="flex items-center justify-between gap-4">
-              {/* Word/char count and auto-save status */}
+              {/* Word/char count + auto-save */}
               <div className="flex items-center gap-4">
-                <div className="text-sm text-gray-700" aria-label={`${wordCount} words, ${charCount} characters`}>
+                <div className="text-sm text-gray-700">
                   {wordCount} words · {charCount} characters
                 </div>
                 {autoSaveTimestamp && (
                   <div className="text-xs text-gray-500 hidden sm:block">
-                    Auto-saved {new Date(autoSaveTimestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                    Auto-saved{' '}
+                    {new Date(autoSaveTimestamp).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
                   </div>
                 )}
               </div>
 
-              {/* Visualizer and record button */}
+              {/* Visualizer + record button */}
               <div className="flex items-center gap-4 sm:gap-6">
                 <AudioVisualizer isActive={isRecording} audioLevel={audioLevel} />
-
                 <RecordButton
                   isRecording={isRecording}
                   isPaused={isPaused}
