@@ -319,3 +319,64 @@ For issues and questions, please refer to the component TODO comments and implem
 ---
 
 **Happy Dictating! 🎙️**
+
+
+┌──────────────────────────────────────────────────────────────────┐
+│                     APPLICATION FLOW                              │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                   │
+│  ┌────────────────┐                                              │
+│  │  Application   │                                              │
+│  │    Startup     │                                              │
+│  └───────┬────────┘                                              │
+│          │                                                        │
+│          ▼                                                        │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ 1. init_database()                                          │  │
+│  │    • Create templates table if not exists                   │  │
+│  │    • Create indexes                                         │  │
+│  │    • Seed default templates (SOAP, HPI, Vitals, etc.)       │  │
+│  └───────────────────────────┬────────────────────────────────┘  │
+│                              │                                    │
+│                              ▼                                    │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ 2. TemplateManager.__init__()                               │  │
+│  │    • Load templates from SQLite                             │  │
+│  │    • Build regex patterns for each template                 │  │
+│  │    • Register with CommandProcessor                         │  │
+│  └───────────────────────────┬────────────────────────────────┘  │
+│                              │                                    │
+│                              ▼                                    │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ 3. API Ready                                                │  │
+│  │    • POST /api/templates/ - Create template                 │  │
+│  │    • GET  /api/templates/ - List templates                  │  │
+│  │    • PUT  /api/templates/{name} - Update                    │  │
+│  │    • DELETE /api/templates/{name} - Delete                  │  │
+│  │    • POST /api/templates/test - Test processing             │  │
+│  └───────────────────────────┬────────────────────────────────┘  │
+│                              │                                    │
+│                              ▼                                    │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │ 4. Voice Dictation Flow                                     │  │
+│  │                                                             │  │
+│  │    🎤 "Patient reports pain period insert vitals"           │  │
+│  │                         │                                   │  │
+│  │                         ▼                                   │  │
+│  │    ┌──────────────────────────────────────────────┐        │  │
+│  │    │        CommandProcessor.process()             │        │  │
+│  │    │  • Match "period" → "."                       │        │  │
+│  │    │  • Match "insert vitals" → Vitals template    │        │  │
+│  │    └──────────────────────────────────────────────┘        │  │
+│  │                         │                                   │  │
+│  │                         ▼                                   │  │
+│  │    📝 Output:                                               │  │
+│  │    "Patient reports pain.                                   │  │
+│  │                                                             │  │
+│  │    Vital Signs:                                             │  │
+│  │    • BP: ___/___ mmHg                                       │  │
+│  │    • HR: ___ bpm                                            │  │
+│  │    ..."                                                     │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                   │
+└──────────────────────────────────────────────────────────────────┘

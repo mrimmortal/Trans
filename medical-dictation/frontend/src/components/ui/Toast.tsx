@@ -1,9 +1,13 @@
+// components/ui/Toast.tsx
 'use client';
 
-import React, { createContext, useContext, useState, useCallback } from 'react';
-import { ChevronRight, CheckCircle, XCircle, Info, Command } from 'lucide-react';
+import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { CheckCircle, XCircle, Info, Command, X } from 'lucide-react';
 
-// Types
+// ═══════════════════════════════════════════════════════════════
+// TYPES
+// ═══════════════════════════════════════════════════════════════
+
 export type ToastType = 'success' | 'error' | 'info' | 'command';
 
 export interface Toast {
@@ -17,39 +21,55 @@ interface ToastContextValue {
   showToast: (message: string, type: ToastType) => void;
 }
 
-// Context
+// ═══════════════════════════════════════════════════════════════
+// CONTEXT
+// ═══════════════════════════════════════════════════════════════
+
 const ToastContext = createContext<ToastContextValue | null>(null);
 
-// Provider Component
+// ═══════════════════════════════════════════════════════════════
+// PROVIDER
+// ═══════════════════════════════════════════════════════════════
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-
-  const showToast = useCallback((message: string, type: ToastType) => {
-    const id = `toast-${Date.now()}-${Math.random()}`;
-    const newToast: Toast = {
-      id,
-      message,
-      type,
-      createdAt: Date.now(),
-    };
-
-    setToasts((prev) => {
-      const updated = [newToast, ...prev];
-      // Keep only last 3 toasts
-      return updated.slice(0, 3);
-    });
-
-    // Auto-remove after 3 seconds
-    const timer = setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3000);
-
-    return () => clearTimeout(timer);
-  }, []);
+  const timersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+    // Clear any existing timer
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
   }, []);
+
+  const showToast = useCallback(
+    (message: string, type: ToastType) => {
+      const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+      const newToast: Toast = {
+        id,
+        message,
+        type,
+        createdAt: Date.now(),
+      };
+
+      setToasts((prev) => {
+        const updated = [newToast, ...prev];
+        return updated.slice(0, 3); // Keep only last 3
+      });
+
+      // Auto-remove after 3 seconds
+      const timer = setTimeout(() => {
+        removeToast(id);
+      }, 3000);
+
+      timersRef.current.set(id, timer);
+    },
+    [removeToast]
+  );
 
   // Get icon and colors by type
   const getToastStyles = (type: ToastType) => {
@@ -82,24 +102,18 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
 
       {/* Toast Container */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none">
+      <div
+        className="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none"
+        aria-live="polite"
+      >
         {toasts.map((toast) => {
           const styles = getToastStyles(toast.type);
           return (
             <div
               key={toast.id}
-              className={`
-                ${styles.bg} text-white
-                rounded-lg shadow-lg p-4
-                flex items-center gap-3
-                min-w-max max-w-md
-                pointer-events-auto
-                animate-slide-in-right
-                cursor-pointer
-              `}
+              className={`${styles.bg} text-white rounded-lg shadow-lg p-4 flex items-center gap-3 min-w-[200px] max-w-md pointer-events-auto cursor-pointer animate-slide-in-right`}
               onClick={() => removeToast(toast.id)}
               role="alert"
-              aria-live="polite"
             >
               <div className="flex-shrink-0">{styles.icon}</div>
               <div className="flex-1 text-sm font-medium">{toast.message}</div>
@@ -111,15 +125,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 className="flex-shrink-0 ml-2 hover:opacity-80 transition-opacity"
                 aria-label="Close notification"
               >
-                <ChevronRight className="w-4 h-4" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           );
         })}
       </div>
 
-      {/* Animation styles */}
-      <style>{`
+      <style jsx global>{`
         @keyframes slideInRight {
           from {
             transform: translateX(100%);
@@ -131,13 +144,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        @keyframes fadeOut {
-          to {
-            opacity: 0;
-            transform: translateX(100%);
-          }
-        }
-
         .animate-slide-in-right {
           animation: slideInRight 0.3s ease-out;
         }
@@ -145,8 +151,6 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         @media (prefers-reduced-motion: reduce) {
           .animate-slide-in-right {
             animation: none;
-            transform: translateX(0);
-            opacity: 1;
           }
         }
       `}</style>
@@ -154,8 +158,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-// Hook
-export function useToast() {
+// ═══════════════════════════════════════════════════════════════
+// HOOK
+// ═══════════════════════════════════════════════════════════════
+
+export function useToast(): ToastContextValue {
   const context = useContext(ToastContext);
   if (!context) {
     throw new Error('useToast must be used within ToastProvider');

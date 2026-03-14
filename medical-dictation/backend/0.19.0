@@ -1,0 +1,11 @@
+Requirement already satisfied: pydantic in c:\users\reddu\desktop\trans\trans\medical-dictation\backend\akshay\lib\site-packages (2.12.5)
+Requirement already satisfied: python-dotenv in c:\users\reddu\desktop\trans\trans\medical-dictation\backend\akshay\lib\site-packages (1.2.2)
+Collecting aiosqlite
+  Downloading aiosqlite-0.22.1-py3-none-any.whl.metadata (4.3 kB)
+Requirement already satisfied: annotated-types>=0.6.0 in c:\users\reddu\desktop\trans\trans\medical-dictation\backend\akshay\lib\site-packages (from pydantic) (0.7.0)
+Requirement already satisfied: pydantic-core==2.41.5 in c:\users\reddu\desktop\trans\trans\medical-dictation\backend\akshay\lib\site-packages (from pydantic) (2.41.5)
+Requirement already satisfied: typing-extensions>=4.14.1 in c:\users\reddu\desktop\trans\trans\medical-dictation\backend\akshay\lib\site-packages (from pydantic) (4.15.0)
+Requirement already satisfied: typing-inspection>=0.4.2 in c:\users\reddu\desktop\trans\trans\medical-dictation\backend\akshay\lib\site-packages (from pydantic) (0.4.2)
+Downloading aiosqlite-0.22.1-py3-none-any.whl (17 kB)
+Installing collected packages: aiosqlite
+Successfully installed aiosqlite-0.22.1
