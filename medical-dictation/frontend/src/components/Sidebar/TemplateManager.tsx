@@ -13,10 +13,14 @@ import {
   RefreshCw,
   Edit2,
   Trash2,
-  Eye,
-  EyeOff,
   AlertCircle,
   FileText,
+  Mic,
+  Info,
+  Copy,
+  Check,
+  HelpCircle,
+  Volume2,
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════
@@ -77,6 +81,9 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null);
   const [expandedTemplate, setExpandedTemplate] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showHowToUse, setShowHowToUse] = useState(false);
+  const [showAllTriggers, setShowAllTriggers] = useState(false);
+  const [copiedTrigger, setCopiedTrigger] = useState<string | null>(null);
 
   // Form fields
   const [formName, setFormName] = useState('');
@@ -88,7 +95,24 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // ─────────────────────────────────────────────────────────
-  // FORM RESET
+  // COPY TRIGGER TO CLIPBOARD
+  // ─────────────────────────────────────────────────────────
+
+  const copyTrigger = async (phrase: string) => {
+    try {
+      await navigator.clipboard.writeText(`insert ${phrase}`);
+      setCopiedTrigger(phrase);
+      onToast?.(`Copied: "insert ${phrase}"`, 'info');
+      setTimeout(() => setCopiedTrigger(null), 2000);
+    } catch {
+      // Fallback
+      setCopiedTrigger(phrase);
+      setTimeout(() => setCopiedTrigger(null), 2000);
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────
+  // FORM HANDLERS
   // ─────────────────────────────────────────────────────────
 
   const resetForm = () => {
@@ -150,7 +174,7 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
   };
 
   // ─────────────────────────────────────────────────────────
-  // SUBMIT HANDLER
+  // SUBMIT
   // ─────────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
@@ -165,7 +189,6 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
         .filter(Boolean);
 
       if (editingTemplate) {
-        // Update existing template
         await updateTemplate(editingTemplate.name, {
           trigger_phrases: triggerPhrases,
           content: formContent,
@@ -175,7 +198,6 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
         });
         onToast?.('Template updated successfully', 'success');
       } else {
-        // Create new template
         const data: TemplateCreate = {
           name: formName.trim().toLowerCase(),
           trigger_phrases: triggerPhrases,
@@ -198,33 +220,31 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
   };
 
   // ─────────────────────────────────────────────────────────
-  // DELETE HANDLER
+  // DELETE
   // ─────────────────────────────────────────────────────────
 
   const handleDelete = async (name: string) => {
-    if (!window.confirm(`Delete template "${name}"? This can be undone later.`)) {
-      return;
-    }
+    if (!window.confirm(`Delete template "${name}"?`)) return;
 
     try {
       await deleteTemplate(name);
       onToast?.('Template deleted', 'success');
     } catch (err: any) {
-      onToast?.(err.message || 'Failed to delete template', 'error');
+      onToast?.(err.message || 'Failed to delete', 'error');
     }
   };
 
   // ─────────────────────────────────────────────────────────
-  // INSERT HANDLER
+  // INSERT
   // ─────────────────────────────────────────────────────────
 
   const handleInsert = (template: Template) => {
     onInsertTemplate(template.content);
-    onToast?.(`Inserted "${template.name.replace(/_/g, ' ')}" template`, 'command');
+    onToast?.(`Inserted "${template.name.replace(/_/g, ' ')}"`, 'command');
   };
 
   // ─────────────────────────────────────────────────────────
-  // GROUP TEMPLATES BY CATEGORY
+  // GROUP BY CATEGORY
   // ─────────────────────────────────────────────────────────
 
   const grouped = templates.reduce(
@@ -242,14 +262,183 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
   // ═══════════════════════════════════════════════════════════════
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* ─── SEARCH & ACTIONS ─── */}
+    <div className="flex flex-col gap-3">
+
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* HOW TO USE BANNER                                       */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <button
+          onClick={() => setShowHowToUse(!showHowToUse)}
+          className="w-full flex items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-2">
+            <Mic className="w-4 h-4 text-blue-600" />
+            <span className="text-xs font-semibold text-blue-800">
+              How to use templates
+            </span>
+          </div>
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-blue-600 transition-transform ${
+              showHowToUse ? 'rotate-180' : ''
+            }`}
+          />
+        </button>
+
+        {showHowToUse && (
+          <div className="mt-3 space-y-2 text-xs text-blue-700">
+            <div className="flex items-start gap-2">
+              <span className="bg-blue-200 text-blue-800 rounded-full w-4 h-4 flex items-center justify-center flex-shrink-0 text-[10px] font-bold mt-0.5">
+                1
+              </span>
+              <span>
+                <strong>Click [+]</strong> button on any template to insert it directly
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="bg-blue-200 text-blue-800 rounded-full w-4 h-4 flex items-center justify-center flex-shrink-0 text-[10px] font-bold mt-0.5">
+                2
+              </span>
+              <span>
+                <strong>Say voice trigger</strong> while recording, e.g:
+              </span>
+            </div>
+            <div className="ml-6 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <Volume2 className="w-3 h-3 text-blue-500" />
+                <code className="bg-blue-100 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                  &quot;insert vitals&quot;
+                </code>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Volume2 className="w-3 h-3 text-blue-500" />
+                <code className="bg-blue-100 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                  &quot;insert soap note&quot;
+                </code>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Volume2 className="w-3 h-3 text-blue-500" />
+                <code className="bg-blue-100 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                  &quot;add physical exam&quot;
+                </code>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="bg-blue-200 text-blue-800 rounded-full w-4 h-4 flex items-center justify-center flex-shrink-0 text-[10px] font-bold mt-0.5">
+                3
+              </span>
+              <span>
+                <strong>Prefix options:</strong> &quot;insert [name]&quot;, &quot;add [name]&quot;, or just &quot;[name]&quot;
+              </span>
+            </div>
+            <div className="flex items-start gap-2 pt-1 border-t border-blue-200">
+              <Info className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
+              <span>
+                Click on any{' '}
+                <span className="bg-green-100 text-green-700 px-1 py-0.5 rounded text-[10px] font-mono">
+                  trigger phrase
+                </span>{' '}
+                below to copy it
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* SHOW ALL TRIGGERS BUTTON                                 */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
+      <button
+        onClick={() => setShowAllTriggers(!showAllTriggers)}
+        className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors ${
+          showAllTriggers
+            ? 'bg-green-100 text-green-800 border border-green-300'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-200'
+        }`}
+      >
+        <Volume2 className="w-3.5 h-3.5" />
+        {showAllTriggers ? 'Hide All Triggers' : 'Show All Voice Triggers'}
+        <span className="bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
+          {templates.reduce((sum, t) => sum + t.trigger_phrases.length, 0)}
+        </span>
+      </button>
+
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* ALL TRIGGERS PANEL                                       */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
+      {showAllTriggers && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3 max-h-64 overflow-y-auto">
+          <div className="flex items-center gap-2 mb-3">
+            <Volume2 className="w-4 h-4 text-green-700" />
+            <h4 className="text-xs font-bold text-green-800 uppercase tracking-wider">
+              Voice Trigger Quick Reference
+            </h4>
+          </div>
+
+          <div className="space-y-3">
+            {templates.map((template) => (
+              <div key={template.id} className="flex items-start gap-2">
+                {/* Template name */}
+                <div className="flex-shrink-0 w-28">
+                  <span className="text-[11px] font-semibold text-gray-800 truncate block">
+                    {template.name.replace(/_/g, ' ')}
+                  </span>
+                  <span
+                    className={`inline-block px-1 py-0.5 text-[9px] font-medium rounded mt-0.5 ${
+                      CATEGORY_COLORS[template.category] || CATEGORY_COLORS.general
+                    }`}
+                  >
+                    {template.category}
+                  </span>
+                </div>
+
+                {/* Trigger phrases */}
+                <div className="flex-1 flex flex-wrap gap-1">
+                  {template.trigger_phrases.map((phrase, i) => (
+                    <button
+                      key={i}
+                      onClick={() => copyTrigger(phrase)}
+                      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer ${
+                        copiedTrigger === phrase
+                          ? 'bg-green-200 text-green-800'
+                          : 'bg-white text-green-700 border border-green-200 hover:bg-green-100'
+                      }`}
+                      title={`Click to copy: "insert ${phrase}"`}
+                    >
+                      {copiedTrigger === phrase ? (
+                        <Check className="w-2.5 h-2.5" />
+                      ) : (
+                        <Volume2 className="w-2.5 h-2.5 opacity-50" />
+                      )}
+                      &quot;{phrase}&quot;
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 pt-2 border-t border-green-200 text-[10px] text-green-600">
+            💡 Say <strong>&quot;insert [trigger]&quot;</strong> or{' '}
+            <strong>&quot;add [trigger]&quot;</strong> while recording.
+            Click any trigger to copy it.
+          </div>
+        </div>
+      )}
+
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* SEARCH & ACTIONS                                         */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search templates..."
+            placeholder="Search templates or triggers..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -264,7 +453,10 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
         </button>
       </div>
 
-      {/* ─── CATEGORY FILTER ─── */}
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* CATEGORY FILTER                                          */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
       {categories.length > 0 && (
         <div className="flex gap-1.5 flex-wrap">
           <button
@@ -275,50 +467,57 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
           >
-            All
+            All ({templates.length})
           </button>
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() =>
-                setSelectedCategory(selectedCategory === cat ? null : cat)
-              }
-              className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
-                selectedCategory === cat
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const count = templates.filter((t) => t.category === cat).length;
+            return (
+              <button
+                key={cat}
+                onClick={() =>
+                  setSelectedCategory(selectedCategory === cat ? null : cat)
+                }
+                className={`px-2.5 py-1 text-xs font-medium rounded-full transition-colors ${
+                  selectedCategory === cat
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {cat} ({count})
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {/* ─── ERROR DISPLAY ─── */}
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* ERROR                                                    */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
       {error && (
         <div className="flex items-start gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
           <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-xs text-red-700">{error}</p>
-          </div>
-          <button
-            onClick={clearError}
-            className="text-red-400 hover:text-red-600"
-          >
+          <p className="text-xs text-red-700 flex-1">{error}</p>
+          <button onClick={clearError} className="text-red-400 hover:text-red-600">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
-      {/* ─── LOADING STATE ─── */}
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* LOADING                                                  */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
       {isLoading && templates.length === 0 && (
         <div className="flex items-center justify-center py-8">
           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
         </div>
       )}
 
-      {/* ─── TEMPLATES LIST ─── */}
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* EMPTY STATE                                              */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
       {!isLoading && templates.length === 0 && (
         <div className="flex flex-col items-center justify-center py-8 text-center">
           <FileText className="w-10 h-10 text-gray-300 mb-2" />
@@ -329,8 +528,12 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
         </div>
       )}
 
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* TEMPLATES LIST                                           */}
+      {/* ═════════════════════════════════════════════════════════ */}
+
       <div
-        className="space-y-4 max-h-96 overflow-y-auto"
+        className="space-y-4 max-h-[400px] overflow-y-auto"
         role="list"
         aria-label="Templates list"
       >
@@ -338,16 +541,14 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
           <div key={category} role="group" aria-label={`${category} templates`}>
             <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
               {category}
-              <span className="ml-1 text-gray-400">
-                ({categoryTemplates.length})
-              </span>
+              <span className="ml-1 text-gray-400">({categoryTemplates.length})</span>
             </h3>
+
             <div className="space-y-2">
               {categoryTemplates.map((template) => {
                 const isExpanded = expandedTemplate === template.name;
                 const catColor =
-                  CATEGORY_COLORS[template.category] ||
-                  CATEGORY_COLORS.general;
+                  CATEGORY_COLORS[template.category] || CATEGORY_COLORS.general;
 
                 return (
                   <div
@@ -355,10 +556,11 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                     className="bg-gray-50 border border-gray-200 rounded-lg hover:border-blue-300 transition-colors group"
                     role="listitem"
                   >
-                    {/* Template Header */}
+                    {/* ─── Card Header ─── */}
                     <div className="p-3">
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
+                          {/* Name + Category badge */}
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-semibold text-sm text-gray-900 truncate">
                               {template.name.replace(/_/g, ' ')}
@@ -370,34 +572,50 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                             </span>
                           </div>
 
+                          {/* Description */}
                           {template.description && (
-                            <p className="text-xs text-gray-500 line-clamp-1">
+                            <p className="text-xs text-gray-500 mb-2">
                               {template.description}
                             </p>
                           )}
 
-                          {/* Trigger phrases */}
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {template.trigger_phrases
-                              .slice(0, 2)
-                              .map((phrase, i) => (
-                                <span
-                                  key={i}
-                                  className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded font-mono"
-                                >
-                                  &ldquo;{phrase}&rdquo;
-                                </span>
-                              ))}
-                            {template.trigger_phrases.length > 2 && (
-                              <span className="text-[10px] text-gray-400">
-                                +{template.trigger_phrases.length - 2} more
+                          {/* ═══ TRIGGER PHRASES (CLEARLY VISIBLE) ═══ */}
+                          <div className="mt-2">
+                            <div className="flex items-center gap-1 mb-1.5">
+                              <Volume2 className="w-3 h-3 text-green-600" />
+                              <span className="text-[10px] font-semibold text-green-700 uppercase tracking-wider">
+                                Voice Triggers:
                               </span>
-                            )}
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {template.trigger_phrases.map((phrase, i) => (
+                                <button
+                                  key={i}
+                                  onClick={() => copyTrigger(phrase)}
+                                  className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono transition-all cursor-pointer ${
+                                    copiedTrigger === phrase
+                                      ? 'bg-green-200 text-green-800 border border-green-300'
+                                      : 'bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 hover:border-green-300'
+                                  }`}
+                                  title={`Say: "insert ${phrase}" — Click to copy`}
+                                >
+                                  {copiedTrigger === phrase ? (
+                                    <Check className="w-2.5 h-2.5" />
+                                  ) : (
+                                    <Mic className="w-2.5 h-2.5 opacity-60" />
+                                  )}
+                                  &quot;{phrase}&quot;
+                                </button>
+                              ))}
+                            </div>
+                            <p className="text-[9px] text-gray-400 mt-1 ml-0.5">
+                              💡 Say <strong>&quot;insert {template.trigger_phrases[0]}&quot;</strong> while recording
+                            </p>
                           </div>
                         </div>
 
                         {/* Action buttons */}
-                        <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
                           <button
                             onClick={() => handleInsert(template)}
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
@@ -423,7 +641,7 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                       </div>
                     </div>
 
-                    {/* Expand/Collapse Preview */}
+                    {/* ─── Preview Toggle ─── */}
                     <button
                       onClick={() =>
                         setExpandedTemplate(isExpanded ? null : template.name)
@@ -438,17 +656,33 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                       ) : (
                         <>
                           <ChevronDown className="w-3 h-3" />
-                          Preview
+                          Preview Content
                         </>
                       )}
                     </button>
 
-                    {/* Preview Content */}
+                    {/* ─── Preview Content ─── */}
                     {isExpanded && (
                       <div className="px-3 pb-3">
                         <pre className="text-[11px] text-gray-600 bg-white p-2 rounded border border-gray-200 max-h-40 overflow-y-auto whitespace-pre-wrap font-mono leading-relaxed">
                           {template.content}
                         </pre>
+
+                        {/* Trigger reminder in preview */}
+                        <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-[10px] text-green-700">
+                          <span className="font-semibold">🎤 To insert via voice, say:</span>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {template.trigger_phrases.map((phrase, i) => (
+                              <code
+                                key={i}
+                                className="bg-green-100 px-1.5 py-0.5 rounded font-mono"
+                              >
+                                &quot;insert {phrase}&quot;
+                              </code>
+                            ))}
+                          </div>
+                        </div>
+
                         <div className="flex justify-end mt-2">
                           <button
                             onClick={() => handleInsert(template)}
@@ -467,9 +701,9 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
         ))}
       </div>
 
-      {/* ═══════════════════════════════════════════════════════ */}
-      {/* CREATE / EDIT FORM                                     */}
-      {/* ═══════════════════════════════════════════════════════ */}
+      {/* ═════════════════════════════════════════════════════════ */}
+      {/* CREATE / EDIT FORM                                       */}
+      {/* ═════════════════════════════════════════════════════════ */}
 
       <div className="border-t border-gray-200 pt-4">
         <button
@@ -510,11 +744,6 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
               {formErrors.name && (
                 <p className="text-xs text-red-600 mt-1">{formErrors.name}</p>
               )}
-              {!editingTemplate && (
-                <p className="text-[10px] text-gray-500 mt-1">
-                  Lowercase letters, numbers, underscores only
-                </p>
-              )}
             </div>
 
             {/* Trigger Phrases */}
@@ -532,12 +761,10 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                 }`}
               />
               {formErrors.triggers && (
-                <p className="text-xs text-red-600 mt-1">
-                  {formErrors.triggers}
-                </p>
+                <p className="text-xs text-red-600 mt-1">{formErrors.triggers}</p>
               )}
               <p className="text-[10px] text-gray-500 mt-1">
-                Comma-separated. Say &ldquo;insert [phrase]&rdquo; while dictating.
+                Comma-separated. Users will say &quot;insert [phrase]&quot; to trigger.
               </p>
             </div>
 
@@ -566,7 +793,7 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
               </label>
               <input
                 type="text"
-                placeholder="Brief description of this template"
+                placeholder="Brief description"
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -593,7 +820,7 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                 Template Content *
               </label>
               <textarea
-                placeholder="Enter your template content here..."
+                placeholder="Enter template content... Use ___ for blanks"
                 value={formContent}
                 onChange={(e) => setFormContent(e.target.value)}
                 className={`w-full px-3 py-2 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono ${
@@ -602,13 +829,8 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
                 rows={8}
               />
               {formErrors.content && (
-                <p className="text-xs text-red-600 mt-1">
-                  {formErrors.content}
-                </p>
+                <p className="text-xs text-red-600 mt-1">{formErrors.content}</p>
               )}
-              <p className="text-[10px] text-gray-500 mt-1">
-                Use ___ for blanks to fill in later
-              </p>
             </div>
 
             {/* Submit Error */}
@@ -623,7 +845,7 @@ export function TemplateManager({ onInsertTemplate, onToast }: TemplateManagerPr
               <button
                 onClick={handleSubmit}
                 disabled={isSubmitting}
-                className="flex-1 px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                className="flex-1 px-3 py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isSubmitting && (
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
