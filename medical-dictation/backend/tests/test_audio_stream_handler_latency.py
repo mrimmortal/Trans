@@ -52,6 +52,66 @@ class AudioStreamHandlerLatencyTests(unittest.TestCase):
 
         self.assertEqual(result["flush_reason"], "manual_flush")
 
+    def test_sanitize_stream_text_removes_trailing_hyphen_fragment(self):
+        with patch("app.services.template_manager.get_template_manager") as get_manager:
+            get_manager.return_value.list_templates.return_value = []
+            handler = AudioStreamHandler(FakeEngine(), self.config)
+
+        text = handler._sanitize_stream_text("Filtration occurs in the glomeric-")
+
+        self.assertEqual(text, "Filtration occurs in the")
+
+    def test_sanitize_stream_text_removes_repeated_boundary_words(self):
+        with patch("app.services.template_manager.get_template_manager") as get_manager:
+            get_manager.return_value.list_templates.return_value = []
+            handler = AudioStreamHandler(FakeEngine(), self.config)
+
+        handler.recent_emitted_words = ["filtration", "occurs", "in", "the", "glomerulus"]
+
+        text = handler._sanitize_stream_text("In the glomerulus, water is filtered.")
+
+        self.assertEqual(text, "Water is filtered.")
+
+    def test_sanitize_stream_text_removes_pause_filler_and_repeated_phrase(self):
+        with patch("app.services.template_manager.get_template_manager") as get_manager:
+            get_manager.return_value.list_templates.return_value = []
+            handler = AudioStreamHandler(FakeEngine(), self.config)
+
+        text = handler._sanitize_stream_text("Filtration occurs in the Pause in the glomerulus.")
+
+        self.assertEqual(text, "Filtration occurs in the glomerulus.")
+
+    def test_sanitize_stream_text_tolerates_one_character_boundary_mismatch(self):
+        with patch("app.services.template_manager.get_template_manager") as get_manager:
+            get_manager.return_value.list_templates.return_value = []
+            handler = AudioStreamHandler(FakeEngine(), self.config)
+
+        handler._remember_emitted_text("alpha bravo charlie")
+
+        text = handler._sanitize_stream_text("Alpha brava charlie delta echo.")
+
+        self.assertEqual(text, "Delta echo.")
+
+    def test_sanitize_stream_text_suppresses_repeated_paragraph_prefix(self):
+        with patch("app.services.template_manager.get_template_manager") as get_manager:
+            get_manager.return_value.list_templates.return_value = []
+            handler = AudioStreamHandler(FakeEngine(), self.config)
+
+        emitted = (
+            "The kidney participates in the control of the volume of various body fluids, "
+            "fluid osmolality, acid-base balance. Various electrolyte concentrations. "
+            "And removal of toxins. Filtration occurs in the glomerulus."
+        )
+        handler._remember_emitted_text(emitted)
+
+        text = handler._sanitize_stream_text(
+            "The kidney participates in the control of the volume of various body fluids, "
+            "fluid osmolality, acid-base balance. Various electrolyte concentrations. "
+            "And removal of toxins. Filtration occurs in the glomerulus, one-fifth of the blood volume."
+        )
+
+        self.assertEqual(text, "One-fifth of the blood volume.")
+
 
 if __name__ == "__main__":
     unittest.main()

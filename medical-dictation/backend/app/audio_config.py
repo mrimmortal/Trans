@@ -67,6 +67,7 @@ class AudioConfig:
     
     # Silero VAD settings (real-time speech detection)
     SILERO_VAD_THRESHOLD: float = 0.5  # 0.0-1.0, lower = more sensitive
+    SILERO_REQUIRE_SEGMENT: bool = os.getenv("SILERO_REQUIRE_SEGMENT", "false").lower() == "true"
     SILERO_MIN_SPEECH_MS: int = 200  # Minimum speech duration (catch short words)
     SILERO_MIN_SILENCE_MS: int = 300  # Minimum silence to split segments
     SILERO_SPEECH_PAD_MS: int = 200  # Padding around speech segments
@@ -82,6 +83,8 @@ class AudioConfig:
     COMPRESSION_RATIO_THRESHOLD: float = 2.2
     LOG_PROB_THRESHOLD: float = -0.7
     NO_SPEECH_THRESHOLD: float = 0.75
+    MIN_TRANSCRIPTION_CONFIDENCE: float = env_float("MIN_TRANSCRIPTION_CONFIDENCE", 0.10)
+    HALLUCINATION_MAX_NO_SPEECH_PROB: float = env_float("HALLUCINATION_MAX_NO_SPEECH_PROB", 0.65)
 
     # ─── VAD SETTINGS (for Whisper internal VAD) ───
     VAD_FILTER: bool = True

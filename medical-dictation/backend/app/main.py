@@ -118,6 +118,7 @@ class AudioStreamHandler:
         # Dynamic audio buffers
         self.audio_buffer = bytearray()
         self.overlap_buffer = bytearray()
+        self.recent_emitted_words: list[str] = []
         
         # VAD state tracking
         self.consecutive_silence_chunks = 0
@@ -273,6 +274,12 @@ class AudioStreamHandler:
 
             # ── FORMAT TEXT ──
             text = self.formatter.format(text)
+            text = self._sanitize_stream_text(text)
+            if not text:
+                self.audio_buffer.clear()
+                self.has_speech_in_buffer = False
+                self.pending_flush_reason = "unknown"
+                return None
 
             # ── PROCESS VOICE COMMANDS ──
             processed_text, commands = self.command_processor.process(text)
@@ -296,6 +303,7 @@ class AudioStreamHandler:
             self.transcriptions_count += 1
             if processed_text:
                 self.total_words += len(processed_text.split())
+                self._remember_emitted_text(processed_text)
 
             # ── CLEAR BUFFER ──
             self.audio_buffer.clear()
@@ -325,6 +333,131 @@ class AudioStreamHandler:
             self.overlap_buffer.clear()
             self.has_speech_in_buffer = False
             return None
+
+    def _sanitize_stream_text(self, text: str) -> str:
+        """Clean boundary artifacts caused by audio overlap in streaming mode."""
+        text = text.strip()
+        if not text:
+            return ""
+
+        # Whisper can emit a partial word as "word-" at chunk boundaries.
+        text = re.sub(r"\s+\w+-$", "", text).strip()
+        text = re.sub(r"\b(?:pause|paused)\b", "", text, flags=re.IGNORECASE)
+        text = self._remove_adjacent_repeated_phrases(text)
+        if not text:
+            return ""
+
+        words = text.split()
+        normalized_words = self._boundary_tokens(text)
+        recent = self.recent_emitted_words
+
+        max_overlap = min(len(normalized_words), len(recent), 8)
+        overlap_count = 0
+        remove_word_count = 0
+        for size in range(max_overlap, 0, -1):
+            if self._token_sequences_match(recent[-size:], normalized_words[:size]):
+                overlap_count = size
+                remove_word_count = self._word_count_for_boundary_tokens(words, size)
+                break
+
+        if not overlap_count:
+            max_repeated_prefix = min(len(normalized_words), len(recent))
+            for size in range(max_repeated_prefix, 7, -1):
+                if self._tokens_contain_sequence(recent, normalized_words[:size]):
+                    overlap_count = size
+                    remove_word_count = self._word_count_for_boundary_tokens(words, size)
+                    break
+
+        if overlap_count:
+            text = " ".join(words[remove_word_count:]).strip()
+
+        return self.formatter.format(text) if text else ""
+
+    def _remove_adjacent_repeated_phrases(self, text: str) -> str:
+        """Remove repeated 1-3 word phrases created around pauses."""
+        words = text.split()
+        output: list[str] = []
+        for word in words:
+            output.append(word)
+            for size in range(3, 0, -1):
+                if len(output) < size * 2:
+                    continue
+                first = [self._normalize_boundary_word(w) for w in output[-size * 2:-size]]
+                second = [self._normalize_boundary_word(w) for w in output[-size:]]
+                if first == second and all(first):
+                    del output[-size:]
+                    break
+
+        return " ".join(output)
+
+    def _remember_emitted_text(self, text: str):
+        """Keep a short normalized tail to remove duplicate overlap text later."""
+        words = self._boundary_tokens(text)
+        self.recent_emitted_words = (self.recent_emitted_words + words)[-240:]
+
+    @staticmethod
+    def _normalize_boundary_word(word: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", word.lower())
+
+    def _boundary_tokens(self, text: str) -> list[str]:
+        tokens: list[str] = []
+        for word in text.split():
+            for part in re.split(r"[-/]+", word):
+                normalized = self._normalize_boundary_word(part)
+                if normalized:
+                    tokens.append(normalized)
+        return tokens
+
+    def _word_count_for_boundary_tokens(self, words: list[str], token_count: int) -> int:
+        consumed_tokens = 0
+        for index, word in enumerate(words, start=1):
+            consumed_tokens += len(self._boundary_tokens(word))
+            if consumed_tokens >= token_count:
+                return index
+        return min(token_count, len(words))
+
+    @staticmethod
+    def _tokens_contain_sequence(tokens: list[str], sequence: list[str]) -> bool:
+        if not sequence or len(sequence) > len(tokens):
+            return False
+        for start in range(0, len(tokens) - len(sequence) + 1):
+            if AudioStreamHandler._token_sequences_match(
+                tokens[start:start + len(sequence)],
+                sequence,
+            ):
+                return True
+        return False
+
+    @staticmethod
+    def _token_sequences_match(left: list[str], right: list[str]) -> bool:
+        if len(left) != len(right):
+            return False
+        return all(AudioStreamHandler._tokens_match(a, b) for a, b in zip(left, right))
+
+    @staticmethod
+    def _tokens_match(left: str, right: str) -> bool:
+        if left == right:
+            return True
+        if min(len(left), len(right)) < 4:
+            return False
+        if abs(len(left) - len(right)) > 1:
+            return False
+
+        previous = list(range(len(right) + 1))
+        for i, left_char in enumerate(left, start=1):
+            current = [i]
+            for j, right_char in enumerate(right, start=1):
+                cost = 0 if left_char == right_char else 1
+                current.append(
+                    min(
+                        current[j - 1] + 1,
+                        previous[j] + 1,
+                        previous[j - 1] + cost,
+                    )
+                )
+            previous = current
+
+        return previous[-1] <= 1
 
     def flush(self) -> Optional[dict]:
         """

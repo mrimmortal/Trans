@@ -40,11 +40,14 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Browser audio format expected by backend: 16-bit PCM, 16kHz, mono.
 - Audio chunks are sent from frontend to backend as WebSocket binary messages.
 - `TranscriptionEngine.detect_speech` may receive chunks larger than Silero's 512-sample model window and must frame them internally before scoring.
+- Silero VAD defaults to realtime-friendly frame probability detection; set `SILERO_REQUIRE_SEGMENT=true` only if noise bursts are more problematic than missing short words.
 - Default transcription profile is `balanced_realtime`: roughly 0.6s minimum speech buffer, 0.7s silence pause trigger, 6s max forced buffer, and Whisper beam size 2.
 - WebSocket transcription responses include actual backend `processing_time_ms`, `audio_duration_seconds`, and `flush_reason` for latency diagnosis.
+- Whisper hallucination filtering primarily uses `no_speech_prob`; low-confidence text is only filtered when no-speech probability is also suspicious. Tune with `MIN_TRANSCRIPTION_CONFIDENCE` and `HALLUCINATION_MAX_NO_SPEECH_PROB`.
 - Control messages are sent as WebSocket JSON text messages.
 - Transcription responses are sent from backend to frontend as WebSocket JSON messages.
 - Frontend transcription insertion is event-based: `page.tsx` wraps processed text with an id, `DictationEditor` inserts it once, then clears the pending text.
+- Backend stream text is sanitized before command processing to remove trailing hyphen fragments, standalone pause fillers, adjacent repeated short phrases, and repeated overlap words from chunk boundaries.
 - Sessions, macros, settings, and autosave are primarily browser `localStorage` concerns.
 - Custom templates are backend/SQLite concerns.
 - Each WebSocket `AudioStreamHandler` owns a session `CommandProcessor` and must register active SQLite templates so phrases like `insert assessment` trigger template insertion during dictation.

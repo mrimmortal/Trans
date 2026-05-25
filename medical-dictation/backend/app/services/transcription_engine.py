@@ -292,7 +292,13 @@ class TranscriptionEngine:
                 })
             
             return {
-                'has_speech': speech_prob > self.config.SILERO_VAD_THRESHOLD,
+                'has_speech': (
+                    speech_prob > self.config.SILERO_VAD_THRESHOLD
+                    and (
+                        not getattr(self.config, "SILERO_REQUIRE_SEGMENT", False)
+                        or len(segments) > 0
+                    )
+                ),
                 'speech_prob': speech_prob,
                 'speech_segments': segments
             }
@@ -627,6 +633,7 @@ class TranscriptionEngine:
             # Iterate segments and collect results
             text_parts = []
             log_probs = []
+            no_speech_probs = []
             
             # Get language info from info object
             language = "en"
@@ -648,10 +655,14 @@ class TranscriptionEngine:
                     text_parts.append(segment.text)
                     if hasattr(segment, "avg_logprob"):
                         log_probs.append(segment.avg_logprob)
+                    if hasattr(segment, "no_speech_prob"):
+                        no_speech_probs.append(segment.no_speech_prob)
                 elif isinstance(segment, dict) and "text" in segment:
                     text_parts.append(segment["text"])
                     if "avg_logprob" in segment:
                         log_probs.append(segment["avg_logprob"])
+                    if "no_speech_prob" in segment:
+                        no_speech_probs.append(segment["no_speech_prob"])
                 else:
                     logger.warning(f"Unexpected segment format: {segment}")
 
@@ -664,6 +675,28 @@ class TranscriptionEngine:
                 confidence = float(np.clip(np.exp(avg_log_prob), 0.0, 1.0))
             else:
                 confidence = 1.0 if text else 0.0
+
+            max_no_speech_prob = max(no_speech_probs) if no_speech_probs else 0.0
+            if text and max_no_speech_prob >= self.config.HALLUCINATION_MAX_NO_SPEECH_PROB:
+                logger.debug(
+                    "Filtered hallucination from high no-speech probability: %.2f '%s'",
+                    max_no_speech_prob,
+                    text,
+                )
+                text = ""
+                confidence = 0.0
+
+            if (
+                text
+                and confidence < self.config.MIN_TRANSCRIPTION_CONFIDENCE
+                and max_no_speech_prob >= (self.config.HALLUCINATION_MAX_NO_SPEECH_PROB * 0.5)
+            ):
+                logger.debug(
+                    "Filtered hallucination from low confidence: %.2f '%s'",
+                    confidence,
+                    text,
+                )
+                text = ""
 
             return {
                 "text": text,

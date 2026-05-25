@@ -129,13 +129,16 @@ sequenceDiagram
 - Defines `AudioStreamHandler`, which owns per-connection audio buffering and command processing.
 - Registers active SQLite templates on each session command processor so spoken template triggers work over WebSocket.
 - Uses the balanced realtime profile to flush after short natural pauses and includes `processing_time_ms`, `audio_duration_seconds`, and `flush_reason` in transcription responses.
+- Sanitizes streaming boundary text before command processing to remove trailing hyphen fragments, pause fillers, adjacent repeated phrases, and repeated words introduced by audio overlap.
 
 `backend/app/services/transcription_engine.py`
 
 - Loads Silero VAD if available.
 - Loads Faster-Whisper model.
 - Detects speech from PCM bytes; chunks larger than Silero's 512-sample 16kHz model window are framed internally before scoring.
+- Defaults to realtime-friendly Silero frame probability detection; optional `SILERO_REQUIRE_SEGMENT=true` can make VAD stricter in noisy rooms.
 - Transcribes audio bytes.
+- Rejects likely hallucinations using configured no-speech probability and minimum confidence gates without dropping low-confidence text when Whisper reports low no-speech probability.
 - Returns structured dicts instead of letting transcription failures crash the WebSocket loop.
 
 `backend/app/services/medical_formatter.py`
