@@ -160,6 +160,8 @@ export interface ServerConfig {
   overlap_bytes: number;
   model: string;
   device: string;
+  language?: string;
+  accent_support_enabled?: boolean;
   vad_enabled: boolean;
   commands_enabled?: boolean;
   available_commands?: AvailableCommands;

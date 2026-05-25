@@ -28,6 +28,14 @@ def env_int(name: str, default: int) -> int:
         return default
 
 
+def env_bool(name: str, default: bool) -> bool:
+    """Read a boolean environment override with a safe fallback."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class AudioConfig:
     """Audio pipeline configuration tuned for real-time medical dictation."""
 
@@ -73,7 +81,14 @@ class AudioConfig:
     SILERO_SPEECH_PAD_MS: int = 200  # Padding around speech segments
 
     # ─── WHISPER MODEL SETTINGS ───
-    MODEL_SIZE: str = os.getenv("MODEL_SIZE", "base.en")
+    ACCENT_SUPPORT_ENABLED: bool = env_bool("ACCENT_SUPPORT_ENABLED", True)
+    DEFAULT_ACCENT_MODEL_SIZE: str = os.getenv("DEFAULT_ACCENT_MODEL_SIZE", "base")
+    DEFAULT_STANDARD_MODEL_SIZE: str = os.getenv("DEFAULT_STANDARD_MODEL_SIZE", "base.en")
+    MODEL_SIZE: str = os.getenv(
+        "MODEL_SIZE",
+        DEFAULT_ACCENT_MODEL_SIZE if ACCENT_SUPPORT_ENABLED else DEFAULT_STANDARD_MODEL_SIZE,
+    )
+    TRANSCRIPTION_LANGUAGE: str = os.getenv("TRANSCRIPTION_LANGUAGE", "en")
     DEVICE: str = os.getenv("DEVICE", "cpu")
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "int8")
     BEAM_SIZE: int = env_int("BEAM_SIZE", 2)
@@ -111,6 +126,19 @@ class AudioConfig:
         "Follow up in 2 weeks. Refer to cardiology for echocardiogram. "
         "Ibuprofen 400mg PRN for pain. Gabapentin 300mg QHS for neuropathy."
     )
+
+    ACCENT_CONTEXT_PROMPT: str = (
+        "This is English medical dictation. The speaker may use multiple English accents, "
+        "including Indian, American, British, Australian, African, Middle Eastern, or other "
+        "regional English pronunciations. Preserve the intended English medical terms."
+    )
+
+    @classmethod
+    def get_initial_prompt(cls) -> str:
+        """Return Whisper prompt context with optional accent guidance."""
+        if cls.ACCENT_SUPPORT_ENABLED:
+            return f"{cls.ACCENT_CONTEXT_PROMPT} {cls.MEDICAL_CONTEXT_PROMPT}"
+        return cls.MEDICAL_CONTEXT_PROMPT
 
     # ─── HALLUCINATION FILTER ───
     # FIXED: Removed common words like "the", "a", "um", "uh" - these are legitimate!

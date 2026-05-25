@@ -607,12 +607,12 @@ class TranscriptionEngine:
             try:
                 segments, info = self.model.transcribe(
                     audio,
-                    language="en",
+                    language=self._get_transcription_language(),
                     beam_size=self.config.BEAM_SIZE,
                     patience=self.config.PATIENCE,
                     best_of=self.config.BEST_OF,
                     temperature=self.config.TEMPERATURE,
-                    initial_prompt=self.config.MEDICAL_CONTEXT_PROMPT,
+                    initial_prompt=self._get_initial_prompt(),
                     compression_ratio_threshold=self.config.COMPRESSION_RATIO_THRESHOLD,
                     log_prob_threshold=self.config.LOG_PROB_THRESHOLD,
                     no_speech_threshold=self.config.NO_SPEECH_THRESHOLD,
@@ -841,12 +841,12 @@ class TranscriptionEngine:
             # Run transcription with full context
             segments, info = self.model.transcribe(
                 file_path,
-                language="en",
+                language=self._get_transcription_language(),
                 beam_size=self.config.BEAM_SIZE,
                 patience=self.config.PATIENCE,
                 best_of=self.config.BEST_OF,
                 temperature=self.config.TEMPERATURE,
-                initial_prompt=self.config.MEDICAL_CONTEXT_PROMPT,
+                initial_prompt=self._get_initial_prompt(),
                 compression_ratio_threshold=self.config.COMPRESSION_RATIO_THRESHOLD,
                 log_prob_threshold=self.config.LOG_PROB_THRESHOLD,
                 no_speech_threshold=self.config.NO_SPEECH_THRESHOLD,
@@ -906,6 +906,16 @@ class TranscriptionEngine:
                 "processing_time_ms": (time.time() - start_time) * 1000,
                 "error": f"File transcription failed: {str(e)}",
             }
+
+    def _get_transcription_language(self) -> str:
+        """Return configured transcription language with backward-compatible default."""
+        return getattr(self.config, "TRANSCRIPTION_LANGUAGE", "en")
+
+    def _get_initial_prompt(self) -> str:
+        """Return configured initial prompt with backward-compatible fallback."""
+        if hasattr(self.config, "get_initial_prompt"):
+            return self.config.get_initial_prompt()
+        return getattr(self.config, "MEDICAL_CONTEXT_PROMPT", "")
     
     def get_device_info(self) -> dict:
         """

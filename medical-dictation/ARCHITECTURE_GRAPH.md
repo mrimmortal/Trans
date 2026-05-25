@@ -135,6 +135,7 @@ sequenceDiagram
 
 - Loads Silero VAD if available.
 - Loads Faster-Whisper model.
+- Uses `TRANSCRIPTION_LANGUAGE` and `AudioConfig.get_initial_prompt()` so accent-aware English medical dictation guidance reaches Whisper.
 - Detects speech from PCM bytes; chunks larger than Silero's 512-sample 16kHz model window are framed internally before scoring.
 - Defaults to realtime-friendly Silero frame probability detection; optional `SILERO_REQUIRE_SEGMENT=true` can make VAD stricter in noisy rooms.
 - Transcribes audio bytes.

@@ -35,6 +35,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Frontend framework: Next.js/React.
 - Editor: TipTap.
 - Speech engine: Faster-Whisper through `TranscriptionEngine`.
+- Automatic English accent support is enabled by default through `ACCENT_SUPPORT_ENABLED=true`, `TRANSCRIPTION_LANGUAGE=en`, an accent-aware Whisper prompt, and default model `base` when `MODEL_SIZE` is not explicitly set.
 - WebSocket endpoint: `/ws/audio`.
 - Template REST API prefix: `/api/templates`.
 - Browser audio format expected by backend: 16-bit PCM, 16kHz, mono.

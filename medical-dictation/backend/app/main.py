@@ -707,6 +707,8 @@ async def get_config():
             "model": {
                 "size": config.MODEL_SIZE,
                 "device": config.DEVICE,
+                "language": config.TRANSCRIPTION_LANGUAGE,
+                "accent_support_enabled": config.ACCENT_SUPPORT_ENABLED,
             },
             "vad_enabled": app.state.transcription_engine.vad_model is not None,
             "templates": {
@@ -761,6 +763,8 @@ async def websocket_audio_stream(websocket: WebSocket):
             "overlap_bytes": app.state.config.OVERLAP_SIZE_BYTES,
             "model": app.state.config.MODEL_SIZE,
             "device": app.state.config.DEVICE,
+            "language": app.state.config.TRANSCRIPTION_LANGUAGE,
+            "accent_support_enabled": app.state.config.ACCENT_SUPPORT_ENABLED,
             "vad_enabled": app.state.transcription_engine.vad_model is not None,
             "commands_enabled": True,
             "available_commands": handler.command_processor.get_available_commands(),
