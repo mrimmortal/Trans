@@ -127,6 +127,7 @@ sequenceDiagram
 - Exposes REST endpoints `/`, `/health`, `/config`.
 - Exposes WebSocket endpoint `/ws/audio`.
 - Defines `AudioStreamHandler`, which owns per-connection audio buffering and command processing.
+- Registers active SQLite templates on each session command processor so spoken template triggers work over WebSocket.
 
 `backend/app/services/transcription_engine.py`
 

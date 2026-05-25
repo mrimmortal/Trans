@@ -57,6 +57,7 @@ load_dotenv()
 import logging
 import json
 import time
+import re
 from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime, timezone
@@ -112,6 +113,7 @@ class AudioStreamHandler:
         self.config = config
         self.formatter = MedicalFormatter()
         self.command_processor = CommandProcessor()
+        self._register_template_commands()
 
         # Dynamic audio buffers
         self.audio_buffer = bytearray()
@@ -135,6 +137,38 @@ class AudioStreamHandler:
         self.total_words = 0
         self.silence_chunks_skipped = 0
         self.commands_executed = 0
+
+    def _register_template_commands(self):
+        """Register active SQLite templates on this session's command processor."""
+        try:
+            from app.services.template_manager import get_template_manager
+
+            manager = get_template_manager()
+            templates = manager.list_templates()
+
+            for template in templates:
+                trigger_phrases = template.get("trigger_phrases") or []
+                escaped = [
+                    re.escape(phrase.lower().strip())
+                    for phrase in trigger_phrases
+                    if phrase and phrase.strip()
+                ]
+                if not escaped:
+                    continue
+
+                pattern = rf"\b(?:insert |add )?(?:{'|'.join(escaped)})(?: template)?\b"
+                self.command_processor.register_custom_command(
+                    pattern,
+                    VoiceCommand(
+                        command_type=CommandType.TEMPLATE,
+                        action=template["name"],
+                        replacement=template["content"],
+                    ),
+                )
+
+            logger.debug(f"Registered {len(templates)} template command groups for session")
+        except Exception as e:
+            logger.warning(f"Could not register template commands for session: {e}")
 
     def add_audio_chunk(self, audio_bytes: bytes) -> Optional[dict]:
         """

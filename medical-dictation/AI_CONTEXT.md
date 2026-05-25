@@ -45,6 +45,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Frontend transcription insertion is event-based: `page.tsx` wraps processed text with an id, `DictationEditor` inserts it once, then clears the pending text.
 - Sessions, macros, settings, and autosave are primarily browser `localStorage` concerns.
 - Custom templates are backend/SQLite concerns.
+- Each WebSocket `AudioStreamHandler` owns a session `CommandProcessor` and must register active SQLite templates so phrases like `insert assessment` trigger template insertion during dictation.
 - Supported environments: DEV-MAC, DEV-WINDOWS, hosted UAT-WIN, and hosted PROD-WIN.
 - Frontend URLs come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - Backend CORS origins come from `CORS_ORIGINS`.
