@@ -268,8 +268,9 @@ class TranscriptionEngine:
             # Convert to torch tensor
             audio_tensor = torch.from_numpy(audio)
             
-            # Get speech probability for the whole chunk
-            speech_prob = self.vad_model(audio_tensor, self.config.SAMPLE_RATE).item()
+            # Silero's low-level model only accepts fixed-size windows:
+            # 512 samples at 16 kHz, or 256 samples at 8 kHz.
+            speech_prob = self._score_silero_frames(audio_tensor)
             
             # Get detailed speech segments
             speech_timestamps = self.get_speech_timestamps(
@@ -299,6 +300,22 @@ class TranscriptionEngine:
         except Exception as e:
             logger.warning(f"Silero VAD error (falling back to RMS): {e}")
             return self._detect_speech_rms(audio_bytes)
+
+    def _score_silero_frames(self, audio_tensor) -> float:
+        """Return max Silero speech probability across valid model frames."""
+        frame_size = 512 if self.config.SAMPLE_RATE == 16000 else 256
+        sample_count = audio_tensor.shape[-1]
+        if sample_count == 0:
+            return 0.0
+
+        frame_scores = []
+        for start in range(0, sample_count, frame_size):
+            frame = audio_tensor[start:start + frame_size]
+            if frame.shape[-1] < frame_size:
+                frame = torch.nn.functional.pad(frame, (0, frame_size - frame.shape[-1]))
+            frame_scores.append(self.vad_model(frame, self.config.SAMPLE_RATE).item())
+
+        return max(frame_scores) if frame_scores else 0.0
     
     def _detect_speech_rms(self, audio_bytes: bytes) -> dict:
         """

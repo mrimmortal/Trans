@@ -13,7 +13,7 @@ pcm = (wave * 32767).astype(np.int16)
 audio_bytes = pcm.tobytes()
 
 async def test_ws():
-    uri = "ws://localhost:8000/ws/dictate"
+    uri = "ws://localhost:8000/ws/audio"
     async with websockets.connect(uri) as ws:
         print(f"Connected to {uri}")
         # Send audio bytes in one go

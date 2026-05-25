@@ -1,9 +1,6 @@
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import { ToastProvider } from '@/components/ui/Toast';
-
-const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'MedDictate - Medical Voice Dictation',
@@ -17,7 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} antialiased font-sans`}>
+      <body className="antialiased font-sans">
         <ToastProvider>{children}</ToastProvider>
       </body>
     </html>

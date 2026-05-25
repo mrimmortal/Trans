@@ -84,6 +84,44 @@ medical-dictation/
 - pnpm (or npm/yarn)
 - macOS, Linux, or Windows
 
+## Supported Environments
+
+This project now has explicit environment files for local Mac development, local Windows development, and hosted UAT.
+
+```text
+DEV-MAC      backend/.env.mac       frontend/.env.local.mac       scripts/run.sh mac-dev
+DEV-WINDOWS  backend/.env.windows   frontend/.env.local.windows   scripts/run.ps1 win-dev
+UAT-WIN      backend/.env.uat       frontend/.env.uat             GitHub Actions + scripts/run.ps1 uat-win
+PROD-WIN     backend/.env.prod      frontend/.env.prod            GitHub Actions + scripts/run.ps1 prod-win
+```
+
+See `ENVIRONMENTS.md` for the full environment guide.
+
+Quick start on macOS:
+
+```bash
+cd medical-dictation
+./scripts/run.sh mac-dev
+```
+
+This creates or updates `backend/venv` from `backend/requirements-mac.txt`.
+
+Quick start on Windows PowerShell:
+
+```powershell
+cd medical-dictation
+.\scripts\run.ps1 win-dev
+```
+
+This creates or updates `backend\venv` from `backend\requirements.txt`.
+
+Validate the UAT build:
+
+```bash
+cd medical-dictation
+./scripts/run.sh uat-check
+```
+
 ### Backend Setup
 
 1. **Navigate to backend directory**:
@@ -99,7 +137,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 3. **Install Python dependencies**:
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-mac.txt      # macOS CPU/MPS, no CUDA wheels
+pip install -r requirements.txt          # Windows/CUDA-capable environment
 ```
 
 4. **Verify backend setup**:
@@ -107,10 +146,10 @@ pip install -r requirements.txt
 python run.py
 ```
 
-The API should start on `http://localhost:8000`
-- Interactive API docs: `http://localhost:8000/docs`
-- WebSocket endpoint: `ws://localhost:8000/ws/dictate`
-- Health check: `http://localhost:8000/health`
+The API should start on `http://127.0.0.1:8000`
+- Interactive API docs: `http://127.0.0.1:8000/docs`
+- WebSocket endpoint: `ws://127.0.0.1:8000/ws/audio`
+- Health check: `http://127.0.0.1:8000/health`
 
 ### Frontend Setup
 
@@ -141,7 +180,7 @@ python run.py
 # Should show: 🚀 Starting Medical Dictation API
 #             📍 Server: http://0.0.0.0:8000
 #             📚 Docs: http://0.0.0.0:8000/docs
-#             🔌 WebSocket: ws://0.0.0.0:8000/ws/dictate
+#             🔌 WebSocket: ws://0.0.0.0:8000/ws/audio
 ```
 
 **Terminal 2 - Frontend**:
@@ -155,7 +194,7 @@ pnpm dev
 **Terminal 3 - Test services**:
 ```bash
 # Test backend health
-curl http://localhost:8000/health
+curl http://127.0.0.1:8000/health
 
 # Open frontend in browser
 open http://localhost:3000
@@ -169,7 +208,7 @@ open http://localhost:3000
 python run.py
 
 # View API documentation
-open http://localhost:8000/docs
+open http://127.0.0.1:8000/docs
 ```
 
 ### Frontend
@@ -203,8 +242,8 @@ PORT=8000
 
 ### Frontend (next.config.js)
 ```javascript
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_WS_URL=ws://localhost:8000
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+NEXT_PUBLIC_WS_URL=ws://127.0.0.1:8000/ws/audio
 ```
 
 ## Usage
@@ -294,7 +333,7 @@ The project includes placeholder implementations for the following:
 
 ### Frontend won't connect
 - Check API URL in `next.config.js`
-- Verify backend is running: `curl http://localhost:8000/health`
+- Verify backend is running: `curl http://127.0.0.1:8000/health`
 - Check browser console for WebSocket errors
 
 ### Audio recording issues

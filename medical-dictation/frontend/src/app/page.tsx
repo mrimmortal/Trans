@@ -895,11 +895,11 @@ export default function Page() {
               </button>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-              {Object.entries(availableCommands).map(([category, commands]) => (
+              {(Object.entries(availableCommands) as [string, string[]][]).map(([category, commands]) => (
                 <div key={category}>
                   <h4 className="font-semibold text-gray-700 capitalize mb-2">{category}</h4>
                   <ul className="space-y-1 text-gray-600">
-                    {commands.slice(0, 8).map((cmd, i) => (
+                    {commands.slice(0, 8).map((cmd: string, i: number) => (
                       <li key={i} className="truncate">&ldquo;{cmd}&rdquo;</li>
                     ))}
                     {commands.length > 8 && <li className="text-gray-400">+{commands.length - 8} more</li>}

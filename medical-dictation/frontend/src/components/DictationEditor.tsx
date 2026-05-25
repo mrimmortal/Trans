@@ -135,7 +135,8 @@ export function DictationEditor({
   // TEXT MANAGEMENT
   // ══════════════════════════════════════════════════════════
   
-  const updateText = useCallback((newText: string) => {
+  const updateText = useCallback((nextText: string | ((previousText: string) => string)) => {
+    const newText = typeof nextText === 'function' ? nextText(text) : nextText;
     setText(newText);
     onTextChange?.(newText);
     
@@ -157,7 +158,7 @@ export function DictationEditor({
       textHistoryRef.current.shift();
       historyIndexRef.current--;
     }
-  }, [onTextChange]);
+  }, [onTextChange, text]);
 
   const handleUndo = useCallback(() => {
     const history = textHistoryRef.current;
@@ -464,11 +465,11 @@ export function DictationEditor({
         <div className="px-4 py-3 bg-gray-50 border-b max-h-60 overflow-y-auto">
           <h3 className="font-semibold text-gray-700 mb-2">Available Voice Commands</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 text-sm">
-            {Object.entries(availableCommands).map(([category, commands]) => (
+            {(Object.entries(availableCommands) as [string, string[]][]).map(([category, commands]) => (
               <div key={category}>
                 <h4 className="font-medium text-gray-600 capitalize mb-1">{category}</h4>
                 <ul className="space-y-0.5 text-gray-500">
-                  {commands.slice(0, 6).map((cmd, i) => (
+                  {commands.slice(0, 6).map((cmd: string, i: number) => (
                     <li key={i} className="truncate">"{cmd}"</li>
                   ))}
                   {commands.length > 6 && (

@@ -3,6 +3,15 @@
 import os
 
 
+def parse_cors_origins(value: str | None) -> list[str]:
+    """Parse comma-separated CORS origins from environment configuration."""
+    if not value:
+        return ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+    origins = [origin.strip().rstrip("/") for origin in value.split(",") if origin.strip()]
+    return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+
 class AudioConfig:
     """Audio pipeline configuration tuned for real-time medical dictation."""
 
@@ -13,6 +22,8 @@ class AudioConfig:
     DTYPE: str = "int16"                 # numpy dtype for incoming audio
     HOST: str = os.getenv("HOST", "0.0.0.0")  # Server host address
     PORT: int = int(os.getenv("PORT", "8000"))  # Server port
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    CORS_ORIGINS: list[str] = parse_cors_origins(os.getenv("CORS_ORIGINS"))
 
     # ─── BUFFERING STRATEGY ───
     # Dynamic buffering based on speech detection (VAD-driven)

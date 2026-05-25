@@ -42,7 +42,6 @@ def main():
         logger.info("🚀 Starting server...")
         logger.info(f"📍 API:       http://{host}:{port}")
         logger.info(f"📚 Docs:      http://{host}:{port}/docs")
-        # ✅ FIX: was /ws/dictate — actual endpoint is /ws/audio
         logger.info(f"🔌 WebSocket: ws://{host}:{port}/ws/audio")
         logger.info("")
         logger.info("Press Ctrl+C to stop the server")

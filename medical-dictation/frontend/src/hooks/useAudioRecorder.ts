@@ -13,11 +13,15 @@ interface AudioRecorderOptions {
 
 interface AudioRecorderHook {
   isRecording: boolean;
+  isPaused: boolean;
   isInitialized: boolean;
   error: string | null;
   audioLevel: number;
+  duration: number;
   startRecording: () => Promise<void>;
   stopRecording: () => void;
+  pauseRecording: () => void;
+  resumeRecording: () => void;
   toggleRecording: () => Promise<void>;
 }
 
@@ -35,9 +39,11 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
   } = options;
 
   const [isRecording, setIsRecording] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -50,6 +56,7 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const audioBufferRef = useRef<Float32Array[]>([]);
   const chunkIntervalRef = useRef<number | null>(null);
+  const durationIntervalRef = useRef<number | null>(null);
 
   // Cleanup function
   const cleanup = useCallback(() => {
@@ -61,6 +68,11 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
     if (chunkIntervalRef.current) {
       clearInterval(chunkIntervalRef.current);
       chunkIntervalRef.current = null;
+    }
+
+    if (durationIntervalRef.current) {
+      clearInterval(durationIntervalRef.current);
+      durationIntervalRef.current = null;
     }
 
     if (workletNodeRef.current) {
@@ -161,7 +173,7 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
 
   // Update audio level visualization
   const updateAudioLevel = useCallback(() => {
-    if (!analyserRef.current || !isRecording) return;
+    if (!analyserRef.current || !isRecording || isPaused) return;
 
     const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
     analyserRef.current.getByteFrequencyData(dataArray);
@@ -177,12 +189,14 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
     setAudioLevel(normalizedLevel);
 
     animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
-  }, [isRecording]);
+  }, [isRecording, isPaused]);
 
   // Start recording
   const startRecording = useCallback(async () => {
     try {
       setError(null);
+      setDuration(0);
+      setIsPaused(false);
 
       // Request microphone permission
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -221,7 +235,7 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
       scriptProcessorRef.current = scriptProcessor;
 
       scriptProcessor.onaudioprocess = (event) => {
-        if (!isRecording) return;
+        if (!isRecording || isPaused) return;
         
         const inputData = event.inputBuffer.getChannelData(0);
         // Clone the data since the buffer will be reused
@@ -233,6 +247,9 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
 
       // Start chunk interval
       chunkIntervalRef.current = window.setInterval(processAudioBuffer, chunkIntervalMs);
+      durationIntervalRef.current = window.setInterval(() => {
+        setDuration((prev) => prev + 1);
+      }, 1000);
 
       setIsRecording(true);
       setIsInitialized(true);
@@ -249,7 +266,7 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
       onError?.(errorMessage);
       cleanup();
     }
-  }, [sampleRate, channelCount, chunkIntervalMs, isRecording, processAudioBuffer, updateAudioLevel, cleanup, onError]);
+  }, [sampleRate, channelCount, chunkIntervalMs, isRecording, isPaused, processAudioBuffer, updateAudioLevel, cleanup, onError]);
 
   // Stop recording
   const stopRecording = useCallback(() => {
@@ -259,8 +276,20 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
     processAudioBuffer();
     
     setIsRecording(false);
+    setIsPaused(false);
     cleanup();
   }, [processAudioBuffer, cleanup]);
+
+  const pauseRecording = useCallback(() => {
+    if (!isRecording) return;
+    setIsPaused(true);
+  }, [isRecording]);
+
+  const resumeRecording = useCallback(() => {
+    if (!isRecording) return;
+    setIsPaused(false);
+    animationFrameRef.current = requestAnimationFrame(updateAudioLevel);
+  }, [isRecording, updateAudioLevel]);
 
   // Toggle recording
   const toggleRecording = useCallback(async () => {
@@ -282,20 +311,24 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
   useEffect(() => {
     if (scriptProcessorRef.current) {
       scriptProcessorRef.current.onaudioprocess = (event) => {
-        if (!isRecording) return;
+        if (!isRecording || isPaused) return;
         const inputData = event.inputBuffer.getChannelData(0);
         audioBufferRef.current.push(new Float32Array(inputData));
       };
     }
-  }, [isRecording]);
+  }, [isRecording, isPaused]);
 
   return {
     isRecording,
+    isPaused,
     isInitialized,
     error,
     audioLevel,
+    duration,
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
     toggleRecording,
   };
 }

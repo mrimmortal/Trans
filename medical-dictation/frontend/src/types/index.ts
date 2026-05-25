@@ -12,6 +12,27 @@ export interface Macro {
   category?: string;
 }
 
+export interface AppSettings {
+  audio: {
+    deviceId: string;
+    noiseSuppression: boolean;
+    echoCancellation: boolean;
+    autoGainControl: boolean;
+    silenceSensitivity: number;
+  };
+  transcription: {
+    language: string;
+    autoPunctuation: boolean;
+    medicalFormatting: boolean;
+  };
+  editor: {
+    fontSize: number;
+    fontFamily: string;
+    darkMode: boolean;
+    showCommandNotifications: boolean;
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // TEMPLATE TYPES (SQLite backend based)
 // ═══════════════════════════════════════════════════════════════
@@ -75,6 +96,19 @@ export interface VoiceCommand {
   action: string;
   original_text: string;
   replacement: string;
+}
+
+export interface ProcessedCommand {
+  type: 'punctuation' | 'format' | 'action' | 'control';
+  value?: string;
+  action?: string;
+}
+
+export interface ProcessedResult {
+  text: string;
+  commands: ProcessedCommand[];
+  wasCommand: boolean;
+  isMacro?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════
