@@ -18,6 +18,7 @@ interface WebSocketHook {
   // Messages
   lastMessage: TranscriptionMessage | null;
   lastTranscription: string | null;
+  lastTranscriptionEvent: { id: number; text: string } | null;
   lastCommands: VoiceCommand[];
   
   // Available commands from server
@@ -27,6 +28,7 @@ interface WebSocketHook {
   // Connection methods
   connect: () => void;
   disconnect: () => void;
+  clearTranscriptState: () => void;
   
   // Audio methods
   sendBinary: (data: ArrayBuffer) => void;
@@ -58,6 +60,7 @@ export function useWebSocket(url: string): WebSocketHook {
   const [isConnecting, setIsConnecting] = useState(false);
   const [lastMessage, setLastMessage] = useState<TranscriptionMessage | null>(null);
   const [lastTranscription, setLastTranscription] = useState<string | null>(null);
+  const [lastTranscriptionEvent, setLastTranscriptionEvent] = useState<{ id: number; text: string } | null>(null);
   const [lastCommands, setLastCommands] = useState<VoiceCommand[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [availableCommands, setAvailableCommands] = useState<AvailableCommands | null>(null);
@@ -70,6 +73,7 @@ export function useWebSocket(url: string): WebSocketHook {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const pingIntervalRef = useRef<number | null>(null);
+  const transcriptionEventIdRef = useRef(0);
 
   // ══════════════════════════════════════════════════════════
   // MESSAGE HANDLER
@@ -95,7 +99,12 @@ export function useWebSocket(url: string): WebSocketHook {
         case 'transcription':
           // Update transcription
           if (msg.text) {
+            transcriptionEventIdRef.current += 1;
             setLastTranscription(msg.text);
+            setLastTranscriptionEvent({
+              id: transcriptionEventIdRef.current,
+              text: msg.text,
+            });
           }
           // Update commands
           if (msg.commands && msg.commands.length > 0) {
@@ -245,6 +254,13 @@ export function useWebSocket(url: string): WebSocketHook {
     setIsConnecting(false);
   }, []);
 
+  const clearTranscriptState = useCallback(() => {
+    setLastMessage(null);
+    setLastTranscription(null);
+    setLastTranscriptionEvent(null);
+    setLastCommands([]);
+  }, []);
+
   // ══════════════════════════════════════════════════════════
   // AUDIO METHODS
   // ══════════════════════════════════════════════════════════
@@ -351,6 +367,7 @@ export function useWebSocket(url: string): WebSocketHook {
     // Messages
     lastMessage,
     lastTranscription,
+    lastTranscriptionEvent,
     lastCommands,
     
     // Commands
@@ -360,6 +377,7 @@ export function useWebSocket(url: string): WebSocketHook {
     // Connection methods
     connect,
     disconnect,
+    clearTranscriptState,
     
     // Audio methods
     sendBinary,

@@ -42,6 +42,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - `TranscriptionEngine.detect_speech` may receive chunks larger than Silero's 512-sample model window and must frame them internally before scoring.
 - Control messages are sent as WebSocket JSON text messages.
 - Transcription responses are sent from backend to frontend as WebSocket JSON messages.
+- Frontend transcription insertion is event-based: `page.tsx` wraps processed text with an id, `DictationEditor` inserts it once, then clears the pending text.
 - Sessions, macros, settings, and autosave are primarily browser `localStorage` concerns.
 - Custom templates are backend/SQLite concerns.
 - Supported environments: DEV-MAC, DEV-WINDOWS, hosted UAT-WIN, and hosted PROD-WIN.

@@ -21,9 +21,10 @@ interface ToolbarProps {
   editor: Editor | null;
   macros?: Macro[];
   onToast: (message: string) => void;
+  onClearContent?: () => void;
 }
 
-export function Toolbar({ editor, macros = [], onToast }: ToolbarProps) {
+export function Toolbar({ editor, macros = [], onToast, onClearContent }: ToolbarProps) {
   const [showCopiedTooltip, setShowCopiedTooltip] = useState(false);
 
   if (!editor) return null;
@@ -43,6 +44,7 @@ export function Toolbar({ editor, macros = [], onToast }: ToolbarProps) {
   const handleClearAll = () => {
     if (window.confirm('Are you sure you want to clear all content?')) {
       editor.chain().focus().clearContent().run();
+      onClearContent?.();
     }
   };
 

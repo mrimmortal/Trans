@@ -551,6 +551,7 @@ async def websocket_audio_stream(websocket: WebSocket):
     """
     session_id = f"session_{int(time.time() * 1000)}"
     handler = None
+    client_disconnected = False
 
     try:
         # ── STEP 1: Accept connection ──
@@ -632,11 +633,13 @@ async def websocket_audio_stream(websocket: WebSocket):
                         await websocket.send_json(error.model_dump())
 
             except WebSocketDisconnect:
+                client_disconnected = True
                 logger.info(f"[{session_id}] Client disconnected")
                 break
 
             except RuntimeError as e:
                 if "disconnect" in str(e).lower():
+                    client_disconnected = True
                     logger.info(f"[{session_id}] WebSocket already disconnected")
                     break
                 else:
@@ -661,26 +664,28 @@ async def websocket_audio_stream(websocket: WebSocket):
                 # Flush remaining audio
                 remaining = handler.flush()
                 if remaining:
-                    try:
-                        response = {
-                            "type": "transcription",
-                            "text": remaining["text"],
-                            "commands": remaining.get("commands", []),
-                            "is_final": True,
-                            "confidence": 0.95,
-                            "processing_time_ms": 100,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                        await websocket.send_json(response)
-                    except Exception as e:
-                        logger.warning(f"[{session_id}] Could not send final transcription: {e}")
+                    if not client_disconnected:
+                        try:
+                            response = {
+                                "type": "transcription",
+                                "text": remaining["text"],
+                                "commands": remaining.get("commands", []),
+                                "is_final": True,
+                                "confidence": 0.95,
+                                "processing_time_ms": 100,
+                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                            }
+                            await websocket.send_json(response)
+                        except Exception as e:
+                            logger.debug(f"[{session_id}] Final transcription not sent after disconnect: {e}")
 
                 # Send final stats
                 final_stats = handler.get_stats()
-                try:
-                    await websocket.send_json({"type": "stats", "data": final_stats})
-                except Exception as e:
-                    logger.warning(f"[{session_id}] Could not send final stats: {e}")
+                if not client_disconnected:
+                    try:
+                        await websocket.send_json({"type": "stats", "data": final_stats})
+                    except Exception as e:
+                        logger.debug(f"[{session_id}] Final stats not sent after disconnect: {e}")
 
                 logger.info(
                     f"[{session_id}] Session ended: {final_stats['transcriptions_count']} transcriptions, "

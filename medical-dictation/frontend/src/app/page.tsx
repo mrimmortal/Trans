@@ -5,6 +5,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { Header } from '@/components/Header/Header';
 import { Toolbar } from '@/components/Editor/Toolbar';
 import { DictationEditor, DictationEditorHandle } from '@/components/Editor/DictationEditor';
+import { Editor } from '@tiptap/react';
 import { RecordButton } from '@/components/Recorder/RecordButton';
 import { AudioVisualizer } from '@/components/Recorder/AudioVisualizer';
 import { Sidebar } from '@/components/Sidebar/Sidebar';
@@ -74,13 +75,14 @@ export default function Page() {
     isConnected,
     isConnecting,
     lastMessage,
-    lastTranscription,
+    lastTranscriptionEvent,
     lastCommands,
     availableCommands,
     commandsEnabled,
     error: wsError,
     connect,
     disconnect,
+    clearTranscriptState,
     sendBinary,
     sendControl,
     flush,
@@ -115,7 +117,6 @@ export default function Page() {
   const { showToast } = useToast();
 
   // ─── STATE ───
-  const [processedText, setProcessedText] = useState<string | null>(null);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [dismissedErrors, setDismissedErrors] = useState<Set<string>>(new Set());
@@ -136,9 +137,16 @@ export default function Page() {
   const [recordingStatusAnnouncement, setRecordingStatusAnnouncement] = useState('');
   const [pendingRecordStart, setPendingRecordStart] = useState(false);
   const [commandNotification, setCommandNotification] = useState<string | null>(null);
+  const [toolbarEditor, setToolbarEditor] = useState<Editor | null>(null);
 
   const editorRef = useRef<DictationEditorHandle>(null);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const processedTranscriptEventIdRef = useRef<number | null>(null);
+
+  const clearPendingTranscript = useCallback(() => {
+    processedTranscriptEventIdRef.current = null;
+    clearTranscriptState();
+  }, [clearTranscriptState]);
 
   // ─── LOAD DATA FROM LOCALSTORAGE ───
   useEffect(() => {
@@ -283,7 +291,7 @@ export default function Page() {
 
   // ─── START RECORDING ───
   const handleStartRecording = useCallback(() => {
-    setProcessedText(null);
+    clearPendingTranscript();
     setIsInitializingMicrophone(true);
     setMicrophoneError(null);
     setDismissedErrors(new Set());
@@ -302,7 +310,7 @@ export default function Page() {
         return false;
       });
     }, 3000);
-  }, [connect, startRecording]);
+  }, [clearPendingTranscript, connect, startRecording]);
 
   useEffect(() => {
     if (pendingRecordStart && isConnected && !isRecording) {
@@ -328,7 +336,7 @@ export default function Page() {
 
     setTimeout(() => disconnect(), 600);
 
-    setProcessedText(null);
+    clearPendingTranscript();
     setRecordingStatusAnnouncement('Recording stopped');
 
     const plainText = editorRef.current?.editor?.getText() || '';
@@ -357,13 +365,16 @@ export default function Page() {
     }
 
     setTimeout(() => editorRef.current?.editor?.commands.focus(), 100);
-  }, [stopRecording, flush, disconnect, wordCount, duration, showToast]);
+  }, [stopRecording, flush, disconnect, clearPendingTranscript, wordCount, duration, showToast]);
 
   // ─── PROCESS INCOMING TRANSCRIPTIONS ───
   useEffect(() => {
-    if (!lastTranscription) return;
+    if (!lastTranscriptionEvent?.text) return;
+    if (processedTranscriptEventIdRef.current === lastTranscriptionEvent.id) return;
 
-    const result = processText(lastTranscription, macros);
+    processedTranscriptEventIdRef.current = lastTranscriptionEvent.id;
+
+    const result = processText(lastTranscriptionEvent.text, macros);
 
     if (result.wasCommand) {
       const action = result.commands[0]?.action;
@@ -381,6 +392,7 @@ export default function Page() {
         case 'clearAll':
           if (window.confirm('Clear all content?')) {
             editorRef.current?.editor?.chain().focus().clearContent().run();
+            clearPendingTranscript();
           }
           break;
         case 'deleteLast':
@@ -396,12 +408,12 @@ export default function Page() {
 
       showToast(`Command: ${action}`, 'command');
     } else if (result.isMacro) {
-      setProcessedText(result.text);
+      editorRef.current?.editor?.chain().focus('end').insertContent(result.text + ' ').run();
       showToast('Macro inserted', 'command');
     } else if (result.text) {
-      setProcessedText(result.text);
+      editorRef.current?.editor?.chain().focus('end').insertContent(result.text + ' ').run();
     }
-  }, [lastTranscription, processText, macros, pauseRecording, handleStopRecording, showToast]);
+  }, [lastTranscriptionEvent?.id, lastTranscriptionEvent?.text, processText, macros, pauseRecording, handleStopRecording, clearPendingTranscript, showToast]);
 
   // ─── HANDLE SERVER-SIDE COMMANDS ───
   useEffect(() => {
@@ -429,6 +441,7 @@ export default function Page() {
         case 'clear_all':
           if (window.confirm('Clear all content?')) {
             editorRef.current?.editor?.chain().focus().clearContent().run();
+            clearPendingTranscript();
           }
           break;
         case 'select_all':
@@ -453,7 +466,7 @@ export default function Page() {
         }
       }
     });
-  }, [lastCommands, pauseRecording, resumeRecording, handleSaveSession]);
+  }, [lastCommands, pauseRecording, resumeRecording, handleSaveSession, clearPendingTranscript]);
 
   // ─── KEYBOARD SHORTCUTS ───
   useEffect(() => {
@@ -965,7 +978,12 @@ export default function Page() {
           </div>
 
           {/* Toolbar */}
-          <Toolbar editor={editorRef.current?.editor || null} macros={macros} onToast={handleToast} />
+          <Toolbar
+            editor={toolbarEditor}
+            macros={macros}
+            onToast={handleToast}
+            onClearContent={clearPendingTranscript}
+          />
 
           {/* Editor */}
           <div
@@ -977,8 +995,8 @@ export default function Page() {
           >
             <DictationEditor
               ref={editorRef}
-              incomingText={processedText}
               onContentChange={handleContentChange}
+              onEditorReady={setToolbarEditor}
             />
           </div>
 

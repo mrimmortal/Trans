@@ -12,14 +12,14 @@ export interface DictationEditorHandle {
 }
 
 interface DictationEditorProps {
-  incomingText: string | null;
   onContentChange: (html: string, text: string) => void;
+  onEditorReady?: (editor: Editor | null) => void;
 }
 
 export const DictationEditor = forwardRef<
   DictationEditorHandle,
   DictationEditorProps
->(({ incomingText, onContentChange }, ref) => {
+>(({ onContentChange, onEditorReady }, ref) => {
   const editor = useEditor({
     extensions: [
       StarterKit,
@@ -40,13 +40,10 @@ export const DictationEditor = forwardRef<
     },
   });
 
-  // Watch for incoming text from WebSocket and append it
   useEffect(() => {
-    if (editor && incomingText && incomingText.trim()) {
-      editor.commands.focus('end');
-      editor.commands.insertContent(incomingText + ' ');
-    }
-  }, [editor, incomingText]);
+    onEditorReady?.(editor);
+    return () => onEditorReady?.(null);
+  }, [editor, onEditorReady]);
 
   // Listen to editor updates and call onContentChange
   useEffect(() => {

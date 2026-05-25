@@ -163,7 +163,7 @@ sequenceDiagram
 - Starts/stops recording.
 - Owns editor ref and session state.
 - Wires audio recorder to WebSocket binary sending.
-- Processes incoming transcriptions and command events.
+- Processes incoming transcriptions and command events; transcription text is queued as one-shot editor insertion events and cleared after consumption.
 - Persists sessions/macros/autosave in localStorage.
 
 `frontend/src/hooks/useAudioRecorder.ts`
