@@ -132,6 +132,8 @@ export interface TranscriptionMessage {
   is_final?: boolean;
   confidence?: number;
   processing_time_ms?: number;
+  audio_duration_seconds?: number;
+  flush_reason?: string;
   timestamp?: number | string;
   commands?: VoiceCommand[];
   code?: string;

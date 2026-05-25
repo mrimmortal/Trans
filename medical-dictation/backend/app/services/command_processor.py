@@ -329,8 +329,8 @@ class CommandProcessor:
                 )
                 commands_executed.append(new_cmd)
                 
-                # Replace command with formatting marker
-                processed_text = pattern.sub(cmd.replacement, processed_text)
+                # Formatting is an editor action, not literal text insertion.
+                processed_text = pattern.sub("", processed_text)
         
         # ── 3. PROCESS TEMPLATE COMMANDS ──
         for pattern, cmd in self.compiled_templates.items():

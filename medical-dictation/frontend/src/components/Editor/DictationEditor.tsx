@@ -4,6 +4,7 @@ import { useEffect, forwardRef, useImperativeHandle } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
+import { Mark } from '@tiptap/core';
 
 export interface DictationEditorHandle {
   editor: Editor | null;
@@ -16,6 +17,18 @@ interface DictationEditorProps {
   onEditorReady?: (editor: Editor | null) => void;
 }
 
+const Underline = Mark.create({
+  name: 'underline',
+
+  parseHTML() {
+    return [{ tag: 'u' }, { style: 'text-decoration=underline' }];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return ['u', HTMLAttributes, 0];
+  },
+});
+
 export const DictationEditor = forwardRef<
   DictationEditorHandle,
   DictationEditorProps
@@ -23,6 +36,7 @@ export const DictationEditor = forwardRef<
   const editor = useEditor({
     extensions: [
       StarterKit,
+      Underline,
       Placeholder.configure({
         placeholder: 'Start speaking or type here...',
       }),

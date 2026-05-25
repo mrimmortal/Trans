@@ -123,6 +123,7 @@ class AudioStreamHandler:
         self.consecutive_silence_chunks = 0
         self.last_speech_time = time.time()
         self.has_speech_in_buffer = False
+        self.pending_flush_reason = "unknown"
         
         # Buffer size limits
         self.min_buffer_size = config.MIN_CHUNK_SIZE_BYTES
@@ -198,6 +199,7 @@ class AudioStreamHandler:
             # Check if buffer is too large (safety: force transcription)
             if len(self.audio_buffer) >= self.max_buffer_size:
                 logger.info(f"Max buffer size reached ({len(self.audio_buffer)} bytes), forcing transcription")
+                self.pending_flush_reason = "max_buffer"
                 return self._transcribe_buffer()
         
         else:
@@ -219,6 +221,7 @@ class AudioStreamHandler:
                 time_since_speech >= self.config.SILENCE_TIMEOUT_SECONDS):
                 
                 logger.info(f"Natural pause detected ({time_since_speech:.1f}s silence), transcribing")
+                self.pending_flush_reason = "natural_pause"
                 return self._transcribe_buffer()
         
         return None
@@ -237,6 +240,12 @@ class AudioStreamHandler:
             return None
 
         try:
+            buffered_audio_bytes = len(self.audio_buffer)
+            audio_duration_seconds = buffered_audio_bytes / (
+                self.config.SAMPLE_RATE * self.config.SAMPLE_WIDTH
+            )
+            flush_reason = self.pending_flush_reason
+
             # ── PREPEND OVERLAP FROM PREVIOUS CHUNK ──
             if len(self.overlap_buffer) > 0:
                 audio_with_overlap = bytes(self.overlap_buffer) + bytes(self.audio_buffer)
@@ -246,6 +255,7 @@ class AudioStreamHandler:
             
             # ── TRANSCRIBE ──
             result = self.engine.transcribe_audio_bytes(audio_with_overlap)
+            processing_time_ms = float(result.get("processing_time_ms") or 0.0)
 
             if result.get("error"):
                 logger.warning(f"Transcription error: {result['error']}")
@@ -275,6 +285,12 @@ class AudioStreamHandler:
                 self.overlap_buffer = bytearray(self.audio_buffer)
             
             logger.debug(f"Saved {len(self.overlap_buffer)} bytes for overlap")
+            logger.info(
+                "Transcribed %.2fs audio in %.0fms (%s)",
+                audio_duration_seconds,
+                processing_time_ms,
+                flush_reason,
+            )
 
             # ── UPDATE STATS ──
             self.transcriptions_count += 1
@@ -284,10 +300,14 @@ class AudioStreamHandler:
             # ── CLEAR BUFFER ──
             self.audio_buffer.clear()
             self.has_speech_in_buffer = False
+            self.pending_flush_reason = "unknown"
 
             # ── RETURN RESULT WITH COMMANDS ──
             return {
                 "text": processed_text,
+                "processing_time_ms": processing_time_ms,
+                "audio_duration_seconds": audio_duration_seconds,
+                "flush_reason": flush_reason,
                 "commands": [
                     {
                         "type": cmd.command_type.value if hasattr(cmd.command_type, 'value') else str(cmd.command_type),
@@ -317,6 +337,7 @@ class AudioStreamHandler:
             return None
 
         logger.debug(f"Flushing buffer with {len(self.audio_buffer)} bytes")
+        self.pending_flush_reason = "manual_flush"
         return self._transcribe_buffer()
 
     def get_stats(self) -> dict:
@@ -640,7 +661,9 @@ async def websocket_audio_stream(websocket: WebSocket):
                             "commands": result.get("commands", []),
                             "is_final": True,
                             "confidence": 0.95,
-                            "processing_time_ms": 50,
+                            "processing_time_ms": result.get("processing_time_ms", 0.0),
+                            "audio_duration_seconds": result.get("audio_duration_seconds", 0.0),
+                            "flush_reason": result.get("flush_reason", "unknown"),
                             "timestamp": datetime.now(timezone.utc).timestamp(),
                         }
                         await websocket.send_json(response)

@@ -40,6 +40,8 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Browser audio format expected by backend: 16-bit PCM, 16kHz, mono.
 - Audio chunks are sent from frontend to backend as WebSocket binary messages.
 - `TranscriptionEngine.detect_speech` may receive chunks larger than Silero's 512-sample model window and must frame them internally before scoring.
+- Default transcription profile is `balanced_realtime`: roughly 0.6s minimum speech buffer, 0.7s silence pause trigger, 6s max forced buffer, and Whisper beam size 2.
+- WebSocket transcription responses include actual backend `processing_time_ms`, `audio_duration_seconds`, and `flush_reason` for latency diagnosis.
 - Control messages are sent as WebSocket JSON text messages.
 - Transcription responses are sent from backend to frontend as WebSocket JSON messages.
 - Frontend transcription insertion is event-based: `page.tsx` wraps processed text with an id, `DictationEditor` inserts it once, then clears the pending text.
@@ -62,8 +64,9 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 8. On pause/max buffer/flush, `TranscriptionEngine` transcribes audio.
 9. `MedicalFormatter` applies medical text cleanup.
 10. `CommandProcessor` extracts punctuation, editing, formatting, control, custom, and template commands.
-11. Backend sends `{ type: "transcription", text, commands }`.
-12. Frontend inserts text into the editor and executes supported commands.
+11. Punctuation and template commands produce insertable text; formatting, editing, navigation, and control commands are editor/app actions and should not insert literal marker text.
+12. Backend sends `{ type: "transcription", text, commands }`.
+13. Frontend inserts text into the editor and executes supported commands.
 
 ## Common Change Targets
 

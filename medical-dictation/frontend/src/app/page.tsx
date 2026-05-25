@@ -367,6 +367,192 @@ export default function Page() {
     setTimeout(() => editorRef.current?.editor?.commands.focus(), 100);
   }, [stopRecording, flush, disconnect, clearPendingTranscript, wordCount, duration, showToast]);
 
+  const setEditorPlainText = useCallback((text: string) => {
+    editorRef.current?.editor?.chain().focus().setContent(text).run();
+  }, []);
+
+  const deleteLastWord = useCallback(() => {
+    const text = editorRef.current?.editor?.getText() || '';
+    setEditorPlainText(text.replace(/\s*\S+\s*$/, ''));
+  }, [setEditorPlainText]);
+
+  const deleteLastSentence = useCallback(() => {
+    const text = editorRef.current?.editor?.getText() || '';
+    setEditorPlainText(text.replace(/\s*[^.!?\n]+[.!?]?\s*$/, ''));
+  }, [setEditorPlainText]);
+
+  const deleteLastParagraph = useCallback(() => {
+    const text = editorRef.current?.editor?.getText() || '';
+    const trimmed = text.trimEnd();
+    const lastBreak = trimmed.lastIndexOf('\n\n');
+    setEditorPlainText(lastBreak >= 0 ? trimmed.slice(0, lastBreak) : '');
+  }, [setEditorPlainText]);
+
+  const writeClipboardText = useCallback(
+    async (text: string) => {
+      if (!text.trim()) {
+        showToast('Nothing to copy', 'info');
+        return false;
+      }
+
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Copied to clipboard', 'success');
+        return true;
+      } catch {
+        showToast('Clipboard is not available', 'error');
+        return false;
+      }
+    },
+    [showToast]
+  );
+
+  const getSelectedOrAllText = useCallback(() => {
+    const editor = editorRef.current?.editor;
+    if (!editor) return '';
+
+    const { from, to, empty } = editor.state.selection;
+    if (!empty) {
+      return editor.state.doc.textBetween(from, to, '\n');
+    }
+
+    return editor.getText();
+  }, []);
+
+  const copySelectionOrDocument = useCallback(async () => {
+    await writeClipboardText(getSelectedOrAllText());
+  }, [getSelectedOrAllText, writeClipboardText]);
+
+  const cutSelectionOrDocument = useCallback(async () => {
+    const editor = editorRef.current?.editor;
+    if (!editor) return;
+
+    const { empty } = editor.state.selection;
+    const copied = await writeClipboardText(getSelectedOrAllText());
+    if (!copied) return;
+
+    if (empty) {
+      editor.chain().focus().clearContent().run();
+      clearPendingTranscript();
+    } else {
+      editor.chain().focus().deleteSelection().run();
+    }
+  }, [clearPendingTranscript, getSelectedOrAllText, writeClipboardText]);
+
+  const pasteClipboardText = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        editorRef.current?.editor?.chain().focus().insertContent(text).run();
+      }
+    } catch {
+      showToast('Clipboard is not available', 'error');
+    }
+  }, [showToast]);
+
+  const executeServerCommand = useCallback(
+    (cmd: VoiceCommand) => {
+      const editor = editorRef.current?.editor;
+      if (!editor) return;
+
+      switch (cmd.action) {
+        case 'bold':
+          editor.chain().focus().toggleBold().run();
+          break;
+        case 'italic':
+          editor.chain().focus().toggleItalic().run();
+          break;
+        case 'underline':
+          editor.chain().focus().toggleMark('underline').run();
+          break;
+        case 'strikethrough':
+          editor.chain().focus().toggleStrike().run();
+          break;
+        case 'heading1':
+          editor.chain().focus().toggleHeading({ level: 1 }).run();
+          break;
+        case 'heading2':
+          editor.chain().focus().toggleHeading({ level: 2 }).run();
+          break;
+        case 'heading3':
+          editor.chain().focus().toggleHeading({ level: 3 }).run();
+          break;
+        case 'bullet':
+          editor.chain().focus().toggleBulletList().run();
+          break;
+        case 'numbered':
+          editor.chain().focus().toggleOrderedList().run();
+          break;
+        case 'undo':
+          editor.chain().focus().undo().run();
+          break;
+        case 'redo':
+          editor.chain().focus().redo().run();
+          break;
+        case 'delete_last_word':
+          deleteLastWord();
+          break;
+        case 'delete_last_sentence':
+          deleteLastSentence();
+          break;
+        case 'delete_last_paragraph':
+          deleteLastParagraph();
+          break;
+        case 'clear_all':
+          if (window.confirm('Clear all content?')) {
+            editor.chain().focus().clearContent().run();
+            clearPendingTranscript();
+          }
+          break;
+        case 'select_all':
+          editor.chain().focus().selectAll().run();
+          break;
+        case 'copy':
+          void copySelectionOrDocument();
+          break;
+        case 'cut':
+          void cutSelectionOrDocument();
+          break;
+        case 'paste':
+          void pasteClipboardText();
+          break;
+        case 'save':
+          handleSaveSession();
+          break;
+        case 'pause':
+          pauseRecording();
+          break;
+        case 'resume':
+          resumeRecording();
+          break;
+        case 'go_to_start':
+          editor.chain().focus().setTextSelection(0).run();
+          break;
+        case 'go_to_end':
+          editor.chain().focus().setTextSelection(editor.state.doc.content.size).run();
+          break;
+        case 'scroll_up':
+          editor.view.dom.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          break;
+        case 'scroll_down':
+          editor.view.dom.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          break;
+      }
+    },
+    [
+      clearPendingTranscript,
+      copySelectionOrDocument,
+      cutSelectionOrDocument,
+      deleteLastParagraph,
+      deleteLastSentence,
+      deleteLastWord,
+      handleSaveSession,
+      pasteClipboardText,
+      pauseRecording,
+      resumeRecording,
+    ]
+  );
+
   // ─── PROCESS INCOMING TRANSCRIPTIONS ───
   useEffect(() => {
     if (!lastTranscriptionEvent?.text) return;
@@ -425,48 +611,9 @@ export default function Page() {
         setTimeout(() => setCommandNotification(null), TOAST_DURATION / 2);
       }
 
-      switch (cmd.action) {
-        case 'undo':
-          editorRef.current?.editor?.chain().focus().undo().run();
-          break;
-        case 'redo':
-          editorRef.current?.editor?.chain().focus().redo().run();
-          break;
-        case 'delete_last_word': {
-          const text = editorRef.current?.editor?.getText() || '';
-          const newText = text.replace(/\s*\S+\s*$/, '');
-          editorRef.current?.editor?.chain().focus().setContent(newText).run();
-          break;
-        }
-        case 'clear_all':
-          if (window.confirm('Clear all content?')) {
-            editorRef.current?.editor?.chain().focus().clearContent().run();
-            clearPendingTranscript();
-          }
-          break;
-        case 'select_all':
-          editorRef.current?.editor?.chain().focus().selectAll().run();
-          break;
-        case 'save':
-          handleSaveSession();
-          break;
-        case 'pause':
-          pauseRecording();
-          break;
-        case 'resume':
-          resumeRecording();
-          break;
-        case 'go_to_start':
-          editorRef.current?.editor?.chain().focus().setTextSelection(0).run();
-          break;
-        case 'go_to_end': {
-          const endPos = editorRef.current?.editor?.state.doc.content.size || 0;
-          editorRef.current?.editor?.chain().focus().setTextSelection(endPos).run();
-          break;
-        }
-      }
+      executeServerCommand(cmd);
     });
-  }, [lastCommands, pauseRecording, resumeRecording, handleSaveSession, clearPendingTranscript]);
+  }, [lastCommands, executeServerCommand]);
 
   // ─── KEYBOARD SHORTCUTS ───
   useEffect(() => {

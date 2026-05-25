@@ -12,6 +12,22 @@ def parse_cors_origins(value: str | None) -> list[str]:
     return origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
+def env_float(name: str, default: float) -> float:
+    """Read a float environment override with a safe fallback."""
+    try:
+        return float(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+def env_int(name: str, default: int) -> int:
+    """Read an integer environment override with a safe fallback."""
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
 class AudioConfig:
     """Audio pipeline configuration tuned for real-time medical dictation."""
 
@@ -26,13 +42,15 @@ class AudioConfig:
     CORS_ORIGINS: list[str] = parse_cors_origins(os.getenv("CORS_ORIGINS"))
 
     # ─── BUFFERING STRATEGY ───
+    TRANSCRIPTION_PROFILE: str = os.getenv("TRANSCRIPTION_PROFILE", "balanced_realtime")
+
     # Dynamic buffering based on speech detection (VAD-driven)
     # These are now MAXIMUM thresholds, actual transcription happens on pauses
-    MIN_CHUNK_DURATION_SECONDS: float = 1.0  # Minimum before transcribing
-    MAX_CHUNK_DURATION_SECONDS: float = 10.0  # Force transcription if too long
+    MIN_CHUNK_DURATION_SECONDS: float = env_float("MIN_CHUNK_DURATION_SECONDS", 0.6)
+    MAX_CHUNK_DURATION_SECONDS: float = env_float("MAX_CHUNK_DURATION_SECONDS", 6.0)
     
-    MIN_CHUNK_SIZE_BYTES: int = int(16000 * 2 * 1.0)  # 32,000 bytes (1 second)
-    MAX_CHUNK_SIZE_BYTES: int = int(16000 * 2 * 10.0)  # 320,000 bytes (10 seconds)
+    MIN_CHUNK_SIZE_BYTES: int = int(SAMPLE_RATE * SAMPLE_WIDTH * MIN_CHUNK_DURATION_SECONDS)
+    MAX_CHUNK_SIZE_BYTES: int = int(SAMPLE_RATE * SAMPLE_WIDTH * MAX_CHUNK_DURATION_SECONDS)
 
     # Overlap: Keep the last 0.5s of previous chunk and prepend to next chunk.
     # Prevents words at chunk boundaries from being cut in half.
@@ -45,7 +63,7 @@ class AudioConfig:
     MIN_AUDIO_SAMPLES: int = int(16000 * 0.5)
     
     # Pause-based transcription trigger
-    SILENCE_TIMEOUT_SECONDS: float = 1.5  # Transcribe after 1.5s of silence
+    SILENCE_TIMEOUT_SECONDS: float = env_float("SILENCE_TIMEOUT_SECONDS", 0.7)
     
     # Silero VAD settings (real-time speech detection)
     SILERO_VAD_THRESHOLD: float = 0.5  # 0.0-1.0, lower = more sensitive
@@ -57,7 +75,7 @@ class AudioConfig:
     MODEL_SIZE: str = os.getenv("MODEL_SIZE", "base.en")
     DEVICE: str = os.getenv("DEVICE", "cpu")
     COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "int8")
-    BEAM_SIZE: int = 5
+    BEAM_SIZE: int = env_int("BEAM_SIZE", 2)
     TEMPERATURE: tuple = (0.0,)  # Single temp for accuracy
     BEST_OF: int = 1
     PATIENCE: float = 1.0

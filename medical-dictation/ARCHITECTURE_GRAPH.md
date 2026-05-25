@@ -128,6 +128,7 @@ sequenceDiagram
 - Exposes WebSocket endpoint `/ws/audio`.
 - Defines `AudioStreamHandler`, which owns per-connection audio buffering and command processing.
 - Registers active SQLite templates on each session command processor so spoken template triggers work over WebSocket.
+- Uses the balanced realtime profile to flush after short natural pauses and includes `processing_time_ms`, `audio_duration_seconds`, and `flush_reason` in transcription responses.
 
 `backend/app/services/transcription_engine.py`
 
@@ -149,6 +150,7 @@ sequenceDiagram
 - Parses voice commands.
 - Handles punctuation commands like "period" and "new line".
 - Handles editing/navigation/control/template/custom commands.
+- Punctuation and template commands may return insertable text; formatting, editing, navigation, and control commands are action events for the frontend editor/app.
 - Maintains per-handler command history.
 
 `backend/app/api/template_routes.py`
@@ -164,7 +166,7 @@ sequenceDiagram
 - Starts/stops recording.
 - Owns editor ref and session state.
 - Wires audio recorder to WebSocket binary sending.
-- Processes incoming transcriptions and command events; transcription text is queued as one-shot editor insertion events and cleared after consumption.
+- Processes incoming transcriptions and command events; transcription text is queued as one-shot editor insertion events, while server command events run TipTap/app actions such as formatting, deletion, navigation, clipboard, save, pause, and resume.
 - Persists sessions/macros/autosave in localStorage.
 
 `frontend/src/hooks/useAudioRecorder.ts`
@@ -226,7 +228,7 @@ Server to client:
 
 ```json
 { "type": "connected", "message": "...", "config": {} }
-{ "type": "transcription", "text": "...", "commands": [], "is_final": true }
+{ "type": "transcription", "text": "...", "commands": [], "is_final": true, "processing_time_ms": 123.4, "audio_duration_seconds": 1.2, "flush_reason": "natural_pause" }
 { "type": "control_ack", "action": "flush" }
 { "type": "available_commands", "commands_list": {} }
 { "type": "stats", "data": {} }
