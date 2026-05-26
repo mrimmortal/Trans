@@ -30,7 +30,7 @@ def main():
         port = config.PORT
 
         logger.info("=" * 80)
-        logger.info("MEDICAL DICTATION API - DEVELOPMENT SERVER")
+        logger.info("TRANSCRIPTION TEMPLATE API - DEVELOPMENT SERVER")
         logger.info("=" * 80)
         logger.info(f"Host:        {host}")
         logger.info(f"Port:        {port}")

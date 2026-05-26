@@ -23,7 +23,7 @@ export interface AppSettings {
   transcription: {
     language: string;
     autoPunctuation: boolean;
-    medicalFormatting: boolean;
+    domainFormatting: boolean;
   };
   editor: {
     fontSize: number;
@@ -31,60 +31,6 @@ export interface AppSettings {
     darkMode: boolean;
     showCommandNotifications: boolean;
   };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// TEMPLATE TYPES (SQLite backend based)
-// ═══════════════════════════════════════════════════════════════
-
-export interface Template {
-  id: number;
-  name: string;
-  trigger_phrases: string[];
-  content: string;
-  category: string;
-  description: string;
-  author: string;
-  created_at: string;
-  updated_at: string;
-  is_active: boolean;
-}
-
-export interface TemplateCreate {
-  name: string;
-  trigger_phrases: string[];
-  content: string;
-  category?: string;
-  description?: string;
-  author?: string;
-}
-
-export interface TemplateUpdate {
-  trigger_phrases?: string[];
-  content?: string;
-  category?: string;
-  description?: string;
-  author?: string;
-}
-
-export interface TemplateListResponse {
-  templates: Template[];
-  total: number;
-  categories: string[];
-}
-
-export interface TemplateTestResponse {
-  original_text: string;
-  processed_text: string;
-  commands_executed: CommandExecuted[];
-}
-
-export interface CommandExecuted {
-  type: string;
-  action: string;
-  original_text: string;
-  replacement?: string;
-  replacement_preview?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -124,8 +70,7 @@ export interface TranscriptionMessage {
     | 'stats'
     | 'control_ack'
     | 'available_commands'
-    | 'command_history'
-    | 'templates_list';
+    | 'command_history';
   message?: string;
   config?: ServerConfig;
   text?: string;
@@ -142,14 +87,6 @@ export interface TranscriptionMessage {
   action?: string;
   commands_list?: AvailableCommands;
   history?: CommandHistoryItem[];
-  templates?: TemplateListItem[];
-}
-
-export interface TemplateListItem {
-  name: string;
-  trigger_phrases: string[];
-  category: string;
-  description: string;
 }
 
 export interface ServerConfig {
@@ -189,7 +126,7 @@ export interface AvailableCommands {
   editing: string[];
   navigation: string[];
   control: string[];
-  templates: string[];
+  custom: string[];
 }
 
 export interface CommandHistoryItem {

@@ -13,7 +13,6 @@ class CommandType(str, Enum):
     """Types of voice commands"""
     FORMATTING = "formatting"      # Bold, italic, underline
     NAVIGATION = "navigation"      # Move cursor, select text
-    TEMPLATE = "template"          # Insert templates
     EDITING = "editing"            # Delete, replace, insert
     PUNCTUATION = "punctuation"    # Period, comma, new line
     CONTROL = "control"            # Start, stop, pause dictation
@@ -45,9 +44,9 @@ class CommandProcessor:
     
     Usage:
         processor = CommandProcessor()
-        result = processor.process("Patient has period new paragraph Next section")
+        result = processor.process("Project status period new paragraph Next section")
         # result.command = VoiceCommand for "period"
-        # result.remaining_text = "Patient has. \n\nNext section"
+        # result.remaining_text = "Project status. \n\nNext section"
     """
     
     def __init__(self):
@@ -199,53 +198,6 @@ class CommandProcessor:
             ),
         }
         
-        # ══════════════════════════════════════════════════════════
-        # MEDICAL TEMPLATE COMMANDS
-        # ══════════════════════════════════════════════════════════
-        self.template_commands = {
-            r"\b(?:insert|add) (?:vitals|vital signs)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "vitals",
-                replacement="\n\nVital Signs:\n• BP: ___/___\n• HR: ___\n• RR: ___\n• Temp: ___\n• SpO2: ___%\n\n"
-            ),
-            r"\b(?:insert|add) (?:soap|soap note)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "soap_note",
-                replacement="\n\nSOAP Note:\n\nSubjective:\n\n\nObjective:\n\n\nAssessment:\n\n\nPlan:\n\n"
-            ),
-            r"\b(?:insert|add) (?:hpi|history of present illness)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "hpi",
-                replacement="\n\nHistory of Present Illness:\nThe patient is a ___-year-old ___ who presents with ___. "
-                           "Onset was ___. Duration is ___. Location is ___. Character is ___. "
-                           "Severity is ___/10. Aggravating factors include ___. "
-                           "Relieving factors include ___. Associated symptoms include ___.\n\n"
-            ),
-            r"\b(?:insert|add) (?:ros|review of systems)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "ros",
-                replacement="\n\nReview of Systems:\n• Constitutional: ___\n• HEENT: ___\n• Cardiovascular: ___\n"
-                           "• Respiratory: ___\n• GI: ___\n• GU: ___\n• Musculoskeletal: ___\n"
-                           "• Neurological: ___\n• Psychiatric: ___\n• Skin: ___\n\n"
-            ),
-            r"\b(?:insert|add) (?:physical exam|pe)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "physical_exam",
-                replacement="\n\nPhysical Examination:\n• General: ___\n• HEENT: ___\n• Neck: ___\n"
-                           "• Lungs: ___\n• Heart: ___\n• Abdomen: ___\n• Extremities: ___\n"
-                           "• Neurological: ___\n• Skin: ___\n\n"
-            ),
-            r"\b(?:insert|add) (?:assessment and plan|a and p)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "assessment_plan",
-                replacement="\n\nAssessment and Plan:\n\n1. Problem #1: ___\n   • Assessment: ___\n   • Plan: ___\n\n"
-                           "2. Problem #2: ___\n   • Assessment: ___\n   • Plan: ___\n\n"
-            ),
-            r"\b(?:insert|add) (?:medication list|medications)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "medications",
-                replacement="\n\nMedications:\n1. ___ ___ mg ___ times daily\n2. ___ ___ mg ___ times daily\n"
-                           "3. ___ ___ mg ___ times daily\n\n"
-            ),
-            r"\b(?:insert|add) (?:allergy list|allergies)(?: template)?\b": VoiceCommand(
-                CommandType.TEMPLATE, "allergies",
-                replacement="\n\nAllergies:\n• ___: ___\n• NKDA: ☐\n\n"
-            ),
-        }
-        
         # Compile all patterns for efficiency
         self._compile_patterns()
     
@@ -276,11 +228,6 @@ class CommandProcessor:
             for pattern, cmd in self.control_commands.items()
         }
         
-        self.compiled_templates = {
-            re.compile(pattern, re.IGNORECASE): cmd
-            for pattern, cmd in self.template_commands.items()
-        }
-    
     def process(self, text: str) -> Tuple[str, List[VoiceCommand]]:
         """
         Process text for voice commands.
@@ -332,22 +279,7 @@ class CommandProcessor:
                 # Formatting is an editor action, not literal text insertion.
                 processed_text = pattern.sub("", processed_text)
         
-        # ── 3. PROCESS TEMPLATE COMMANDS ──
-        for pattern, cmd in self.compiled_templates.items():
-            match = pattern.search(processed_text)
-            if match:
-                new_cmd = VoiceCommand(
-                    command_type=cmd.command_type,
-                    action=cmd.action,
-                    original_text=match.group(),
-                    replacement=cmd.replacement
-                )
-                commands_executed.append(new_cmd)
-                
-                # Replace command with template
-                processed_text = pattern.sub(cmd.replacement, processed_text)
-        
-        # ── 4. PROCESS NAVIGATION COMMANDS ──
+        # ── 3. PROCESS NAVIGATION COMMANDS ──
         for pattern, cmd in self.compiled_navigation.items():
             match = pattern.search(processed_text)
             if match:
@@ -365,7 +297,7 @@ class CommandProcessor:
                 else:
                     processed_text = pattern.sub("", processed_text)
         
-        # ── 5. PROCESS EDITING COMMANDS (action only, no text replacement) ──
+        # ── 4. PROCESS EDITING COMMANDS (action only, no text replacement) ──
         for pattern, cmd in self.compiled_editing.items():
             match = pattern.search(processed_text)
             if match:
@@ -379,7 +311,7 @@ class CommandProcessor:
                 # Remove command from text
                 processed_text = pattern.sub("", processed_text)
         
-        # ── 6. PROCESS CONTROL COMMANDS (action only) ──
+        # ── 5. PROCESS CONTROL COMMANDS (action only) ──
         for pattern, cmd in self.compiled_control.items():
             match = pattern.search(processed_text)
             if match:
@@ -393,7 +325,7 @@ class CommandProcessor:
                 # Remove command from text
                 processed_text = pattern.sub("", processed_text)
         
-        # ── 7. PROCESS CUSTOM COMMANDS ──
+        # ── 6. PROCESS CUSTOM COMMANDS ──
         for pattern_str, cmd in self.custom_commands.items():
             pattern = re.compile(pattern_str, re.IGNORECASE)
             match = pattern.search(processed_text)
@@ -491,12 +423,7 @@ class CommandProcessor:
                 "stop dictation", "start dictation", "pause dictation",
                 "resume dictation", "save document"
             ],
-            "templates": [
-                "insert vitals", "insert soap note", "insert hpi",
-                "insert review of systems", "insert physical exam",
-                "insert assessment and plan", "insert medications",
-                "insert allergies"
-            ],
+            "custom": list(self.custom_commands.keys()),
         }
     
     def get_command_history(self, limit: int = 50) -> List[Dict]:
@@ -541,14 +468,12 @@ if __name__ == "__main__":
     
     # Test cases
     test_cases = [
-        "Patient has diabetes period new paragraph Next section",
-        "The patient is a 45 year old male comma presenting with chest pain period",
-        "Insert vitals template",
-        "Bold this is important",
-        "Delete last word",
-        "Insert soap note template",
-        "Blood pressure is 120 over 80 comma heart rate 72 period",
-    ]
+            "Project status period new paragraph Next section",
+            "The next milestone is Friday comma blockers are resolved period",
+            "Bold this is important",
+            "Delete last word",
+            "Budget is 120 over 80 comma confidence is high period",
+        ]
     
     print("=" * 60)
     print("COMMAND PROCESSOR TEST")

@@ -1,6 +1,7 @@
 'use client';
 
 import { Mic, Settings, HelpCircle, Wifi, WifiOff } from 'lucide-react';
+import { APP_CONFIG } from '@/lib/appConfig';
 
 interface HeaderProps {
   isConnected: boolean;
@@ -16,12 +17,12 @@ export function Header({ isConnected, isConnecting, onSettingsClick, onHelpClick
         {/* Left: App name with icon */}
         <div className="flex items-center gap-2">
           <Mic className="w-6 h-6 text-blue-600" aria-hidden="true" />
-          <h1 className="text-2xl font-bold text-gray-900">MedDictate</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{APP_CONFIG.shortName}</h1>
         </div>
 
         {/* Center: Tagline */}
         <div className="hidden sm:block">
-          <p className="text-sm text-gray-500">Medical Voice Dictation</p>
+          <p className="text-sm text-gray-500">{APP_CONFIG.tagline}</p>
         </div>
 
         {/* Right: Status and actions */}

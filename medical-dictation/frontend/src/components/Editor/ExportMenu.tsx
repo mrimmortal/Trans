@@ -3,6 +3,7 @@
 import { useRef, useEffect, useState } from 'react';
 import { Download, FileText, Copy, File, Printer } from 'lucide-react';
 import { Editor } from '@tiptap/react';
+import { APP_CONFIG } from '@/lib/appConfig';
 
 interface ExportMenuProps {
   editor: Editor | null;
@@ -112,7 +113,7 @@ export function ExportMenu({ editor, onToast }: ExportMenuProps) {
       </head>
       <body>
         <div class="header">
-          <h1>Medical Dictation</h1>
+          <h1>${APP_CONFIG.name}</h1>
           <p>${new Date().toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
@@ -191,7 +192,7 @@ export function ExportMenu({ editor, onToast }: ExportMenuProps) {
       </head>
       <body>
         <div class="header">
-          <h1>Medical Dictation</h1>
+          <h1>${APP_CONFIG.name}</h1>
           <p>${new Date().toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',

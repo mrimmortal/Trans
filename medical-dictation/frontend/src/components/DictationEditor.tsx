@@ -6,6 +6,7 @@ import { useWebSocket } from '../hooks/useWebSocket';
 import { useAudioRecorder } from '../hooks/useAudioRecorder';
 import { useCommandHandler } from '../hooks/useCommandHandler';
 import { VoiceCommand } from '../types';
+import { APP_CONFIG } from '@/lib/appConfig';
 
 // ══════════════════════════════════════════════════════════════════
 // ICONS (inline SVG to avoid dependencies)
@@ -66,7 +67,7 @@ interface DictationEditorProps {
 
 export function DictationEditor({
   wsUrl = 'ws://localhost:8000/ws/audio',
-  placeholder = 'Start dictating... Try saying "period", "new paragraph", "insert vitals template"',
+  placeholder = 'Start dictating... Try saying "period" or "new paragraph"',
   initialText = '',
   onTextChange,
   onSave,
@@ -307,7 +308,7 @@ export function DictationEditor({
       // Register custom signature
       registerCustomCommand({
         pattern: 'my signature',
-        replacement: '\n\n— Dictated using Medical Dictation AI\n',
+        replacement: APP_CONFIG.dictatedSignature,
       });
     }
   }, [isConnected, registerCustomCommand]);

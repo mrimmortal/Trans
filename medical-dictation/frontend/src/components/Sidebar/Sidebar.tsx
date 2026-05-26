@@ -2,9 +2,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Menu, X, FileText, Clock, Zap } from 'lucide-react';
+import { Menu, X, Clock, Zap } from 'lucide-react';
 import { MacroManager } from './MacroManager';
-import { TemplateManager } from './TemplateManager';
 import { SessionHistory, Session } from './SessionHistory';
 import { Macro } from '@/types';
 
@@ -12,7 +11,6 @@ interface SidebarProps {
   macros: Macro[];
   sessions: Session[];
   onInsertMacro: (text: string) => void;
-  onInsertTemplate: (content: string) => void;
   onLoadSession: (session: Session) => void;
   onDeleteSession: (id: string) => void;
   onUpdateSession: (session: Session) => void;
@@ -26,7 +24,6 @@ export function Sidebar({
   macros,
   sessions,
   onInsertMacro,
-  onInsertTemplate,
   onLoadSession,
   onDeleteSession,
   onUpdateSession,
@@ -35,19 +32,12 @@ export function Sidebar({
   isMobileOpen,
   onToggleMobile,
 }: SidebarProps) {
-  const [activeTab, setActiveTab] = useState<'templates' | 'macros' | 'history'>(
-    'templates'
-  );
+  const [activeTab, setActiveTab] = useState<'macros' | 'history'>('macros');
 
   const tabs = [
     {
-      id: 'templates' as const,
-      label: 'Templates',
-      icon: FileText,
-    },
-    {
       id: 'macros' as const,
-      label: 'Macros',
+      label: 'Snippets',
       icon: Zap,
     },
     {
@@ -98,26 +88,12 @@ export function Sidebar({
 
         {/* Tab Content */}
         <div className="flex-1 overflow-y-auto p-4">
-          {/* Templates Tab */}
-          {activeTab === 'templates' && (
-            <div
-              role="tabpanel"
-              id="sidebar-panel-templates"
-              aria-label="Templates panel"
-            >
-              <TemplateManager
-                onInsertTemplate={onInsertTemplate}
-                onToast={onToast}
-              />
-            </div>
-          )}
-
-          {/* Macros Tab */}
+          {/* Snippets Tab */}
           {activeTab === 'macros' && (
             <div
               role="tabpanel"
               id="sidebar-panel-macros"
-              aria-label="Macros panel"
+              aria-label="Snippets panel"
             >
               <MacroManager onInsertMacro={onInsertMacro} />
             </div>
@@ -143,9 +119,7 @@ export function Sidebar({
 
         {/* Footer */}
         <div className="border-t border-gray-200 p-3 text-xs text-gray-500 text-center">
-          {activeTab === 'templates'
-            ? 'Say "insert [template name]" while recording'
-            : activeTab === 'macros'
+          {activeTab === 'macros'
             ? 'Say trigger phrase while recording to auto-insert'
             : `${sessions.length} sessions saved`}
         </div>

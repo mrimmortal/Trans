@@ -4,8 +4,6 @@ This project has four supported environments.
 
 ## DEV-MAC
 
-Local macOS development.
-
 Backend env:
 
 ```text
@@ -25,12 +23,6 @@ cd medical-dictation
 ./scripts/run.sh mac-dev
 ```
 
-Backend dependencies are installed into `backend/venv` from:
-
-```text
-backend/requirements-mac.txt
-```
-
 Default URLs:
 
 ```text
@@ -45,11 +37,7 @@ Backend transcription domain defaults to vanilla/general:
 DEFAULT_TRANSCRIPTION_DOMAIN=general
 ```
 
-Use `ws://127.0.0.1:8000/ws/audio?domain=medical` or set `DEFAULT_TRANSCRIPTION_DOMAIN=medical` to enable medical formatting, commands, and template triggers by default.
-
 ## DEV-WINDOWS
-
-Local Windows development.
 
 Backend env:
 
@@ -70,12 +58,6 @@ cd medical-dictation
 .\scripts\run.ps1 win-dev
 ```
 
-Backend dependencies are installed into `backend\venv` from:
-
-```text
-backend/requirements.txt
-```
-
 Default URLs:
 
 ```text
@@ -90,20 +72,7 @@ Backend transcription domain defaults to vanilla/general:
 DEFAULT_TRANSCRIPTION_DOMAIN=general
 ```
 
-Use `ws://127.0.0.1:8000/ws/audio?domain=medical` or set `DEFAULT_TRANSCRIPTION_DOMAIN=medical` to enable medical formatting, commands, and template triggers by default.
-
-`backend/requirements.txt` is the Windows dependency file. For CUDA on Windows, edit `backend/.env.windows` after verifying the machine has a working CUDA stack:
-
-```text
-DEVICE=cuda
-COMPUTE_TYPE=float16
-```
-
-Keep the default CPU settings for machines without CUDA.
-
 ## UAT
-
-Hosted Windows web app used for acceptance testing before production.
 
 Backend env:
 
@@ -132,33 +101,7 @@ cd medical-dictation
 ./scripts/run.sh uat-check
 ```
 
-GitHub Actions deployment target:
-
-```text
-Environment: UAT
-Runner labels: self-hosted, Windows, uat-win
-Deploy command: scripts/run.ps1 uat-win
-Service restart: handled by scripts/run.ps1
-```
-
-Required GitHub environment secrets:
-
-```text
-UAT_BACKEND_ENV
-UAT_FRONTEND_ENV
-```
-
-Optional GitHub environment variables:
-
-```text
-WIN_INSTALL_ROOT
-BACKEND_SERVICE_NAME
-FRONTEND_SERVICE_NAME
-```
-
 ## PROD-WIN
-
-Hosted Windows production web app.
 
 Backend env:
 
@@ -180,30 +123,6 @@ frontend/.env.prod: NEXT_PUBLIC_API_URL=https://api.example.com
 frontend/.env.prod: NEXT_PUBLIC_WS_URL=wss://api.example.com/ws/audio
 ```
 
-GitHub Actions deployment target:
-
-```text
-Environment: Production
-Runner labels: self-hosted, Windows, prod-win
-Deploy command: scripts/run.ps1 prod-win
-Service restart: handled by scripts/run.ps1
-```
-
-Required GitHub environment secrets:
-
-```text
-PROD_BACKEND_ENV
-PROD_FRONTEND_ENV
-```
-
-Optional GitHub environment variables:
-
-```text
-WIN_INSTALL_ROOT
-BACKEND_SERVICE_NAME
-FRONTEND_SERVICE_NAME
-```
-
 Production deploys only run from a manual workflow dispatch targeting `prod-win` or a pushed version tag matching `v*`.
 
 ## Pipeline
@@ -214,32 +133,15 @@ GitHub Actions workflow:
 .github/workflows/medical-dictation-pipeline.yml
 ```
 
-Jobs:
-
-```text
-mac-dev-validate   runs on macos-latest
-win-dev-validate   runs on windows-latest
-package-deployment creates the source artifact
-deploy-uat-win     runs on self-hosted Windows runner labeled uat-win
-deploy-prod-win    runs on self-hosted Windows runner labeled prod-win
-```
-
-Branch and deployment behavior:
-
-```text
-pull_request to main/develop/custome_template: validate only
-push to custome_template or develop: validate, package, deploy UAT
-push tag v*: validate, package, deploy Production
-manual dispatch uat-win: validate, package, deploy UAT
-manual dispatch prod-win: validate, package, deploy Production
-```
+The workflow filename still uses the original folder naming. Treat the workflow plus `scripts/run.ps1` as the deployment source of truth until the repository path is renamed.
 
 ## Rules
 
 - Do not hardcode dev tunnel URLs in `frontend/src/lib/constants.ts`.
 - Frontend API/WebSocket URLs must come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
-- Backend CORS must come from `CORS_ORIGINS`.
-- UAT must use HTTPS and WSS.
-- Production must use HTTPS and WSS.
-- UAT and Production deployments require self-hosted Windows GitHub Actions runners with the labels above.
-- If an environment file changes the runtime contract, update `AI_CONTEXT.md` and `ARCHITECTURE_GRAPH.md`.
+- Backend CORS origins must come from `CORS_ORIGINS`.
+- Keep `DEFAULT_TRANSCRIPTION_DOMAIN=general` unless a wrapper adds and documents a new adapter.
+
+## Last Updated Notes
+
+- 2026-05-26: Removed built-in domain-specific environment notes. Vanilla deploys use only `/ws/audio` and the `general` domain.

@@ -72,7 +72,7 @@ interface UseVoiceCommandsReturn {
  * Hook for processing transcribed text and detecting voice commands.
  *
  * Command detection priority:
- * 1. Macros (exact match or "insert <macro>")
+ * 1. Snippets (exact match or "insert <trigger>")
  * 2. Entire text is a command
  * 3. Command at end of text
  * 4. Punctuation commands in middle of text
@@ -90,7 +90,7 @@ export function useVoiceCommands(): UseVoiceCommandsReturn {
         for (const macro of macros) {
           const macroTrigger = macro.trigger.toLowerCase();
 
-          // Exact match: "my macro"
+          // Exact match: "meeting summary"
           if (lowercase === macroTrigger) {
             return {
               // ✅ FIX: was macro.expansion — Macro type field is `text`
@@ -101,7 +101,7 @@ export function useVoiceCommands(): UseVoiceCommandsReturn {
             };
           }
 
-          // Insert variant: "insert my macro"
+          // Insert variant: "insert meeting summary"
           if (lowercase.startsWith('insert ' + macroTrigger)) {
             return {
               // ✅ FIX: was macro.expansion — Macro type field is `text`

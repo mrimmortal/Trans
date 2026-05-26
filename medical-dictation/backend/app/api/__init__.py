@@ -1,7 +1,1 @@
-"""API module - REST endpoints"""
-
-from .template_routes import router as template_router
-
-__all__ = [
-    "template_router",
-]
+"""API package reserved for wrapper-specific REST endpoints."""

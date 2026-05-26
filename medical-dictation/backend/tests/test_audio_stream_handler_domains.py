@@ -1,6 +1,5 @@
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
 
 from app.main import AudioStreamHandler
 
@@ -8,7 +7,7 @@ from app.main import AudioStreamHandler
 class FakeEngine:
     def transcribe_audio_bytes(self, audio_bytes):
         return {
-            "text": "patient takes aspirin period",
+            "text": "project update period",
             "processing_time_ms": 10.0,
             "error": None,
         }
@@ -33,21 +32,18 @@ class AudioStreamHandlerDomainTests(unittest.TestCase):
         result = handler._transcribe_buffer()
 
         self.assertEqual(result["domain"], "general")
-        self.assertEqual(result["text"], "patient takes aspirin period")
+        self.assertEqual(result["text"], "project update period")
         self.assertEqual(result["commands"], [])
 
-    def test_medical_domain_preserves_current_medical_behavior(self):
-        with patch("app.services.template_manager.get_template_manager") as get_manager:
-            get_manager.return_value.list_templates.return_value = []
-            handler = AudioStreamHandler(FakeEngine(), self.config, domain="medical")
-
+    def test_unknown_domain_uses_vanilla_transcript(self):
+        handler = AudioStreamHandler(FakeEngine(), self.config, domain="legacy-domain")
         handler.audio_buffer.extend(b"\x01\x00" * 16000)
 
         result = handler._transcribe_buffer()
 
-        self.assertEqual(result["domain"], "medical")
-        self.assertEqual(result["text"], "Patient takes Aspirin.")
-        self.assertEqual(len(result["commands"]), 1)
+        self.assertEqual(result["domain"], "general")
+        self.assertEqual(result["text"], "project update period")
+        self.assertEqual(result["commands"], [])
 
 
 if __name__ == "__main__":

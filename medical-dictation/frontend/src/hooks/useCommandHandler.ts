@@ -37,8 +37,8 @@ interface CommandHandlerOptions {
  * 
  * Server-side processed (text is already modified):
  * - Punctuation: "period" → "."
- * - Formatting: "bold" → "**"
- * - Templates: "insert vitals" → full template
+ * - Formatting commands remove spoken command text and emit UI actions
+ * - Wrapper commands can emit custom actions
  * 
  * Client-side processed (needs UI action):
  * - Undo/Redo, Copy/Cut/Paste

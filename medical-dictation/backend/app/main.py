@@ -1,4 +1,4 @@
-"""FastAPI application with WebSocket audio streaming and template management"""
+"""FastAPI application with WebSocket audio streaming."""
 
 # ============================================
 # CUDA PATH FIX FOR VIRTUAL ENVIRONMENT
@@ -69,17 +69,13 @@ from fastapi.responses import JSONResponse
 from app.audio_config import AudioConfig
 from app.domains.registry import get_domain_adapter
 from app.services.transcription_engine import TranscriptionEngine
-from app.services.command_processor import CommandProcessor, VoiceCommand, CommandType
+from app.services.command_processor import VoiceCommand, CommandType
 from app.models.schemas import (
     TranscriptionResponse,
     ConnectionResponse,
     ErrorResponse,
     StatsResponse,
 )
-
-# Import database and template modules
-from app.database.init_db import init_database, get_database_info
-from app.api.template_routes import router as template_router
 
 # Configure logging
 logging.basicConfig(
@@ -98,7 +94,7 @@ logger = logging.getLogger(__name__)
 class AudioStreamHandler:
     """
     Handles real-time audio streaming with VAD-based dynamic buffering
-    and voice command processing.
+    and optional wrapper command processing.
     """
 
     def __init__(self, transcription_engine: TranscriptionEngine, config: AudioConfig, domain: str | None = None):
@@ -475,44 +471,29 @@ class AudioStreamHandler:
 async def lifespan(app: FastAPI):
     """
     Manage application lifecycle with async context manager.
-    Initializes database, models, and template manager on startup.
+    Initializes audio configuration and transcription models on startup.
     """
     # ══════════════════════════════════════════════════════════════
     # STARTUP
     # ══════════════════════════════════════════════════════════════
     logger.info("=" * 80)
-    logger.info("MEDICAL DICTATION API - STARTING UP")
+    logger.info("TRANSCRIPTION TEMPLATE API - STARTING UP")
     logger.info("=" * 80)
 
     try:
-        # ── Step 1: Initialize Database ──
-        logger.info("Initializing SQLite database...")
-        seed_defaults = os.getenv("SEED_DEFAULT_TEMPLATES", "true").lower() == "true"
-        db_result = init_database(seed_defaults=seed_defaults)
-        db_info = get_database_info()
-        logger.info(f"✓ Database ready: {db_info['active_templates']} templates")
-        
-        # ── Step 2: Load Audio Config ──
+        # ── Step 1: Load Audio Config ──
         config = AudioConfig()
         logger.info(f"✓ Audio Config: {config.MODEL_SIZE} on {config.DEVICE}")
 
-        # ── Step 3: Load Whisper Model ──
+        # ── Step 2: Load Whisper Model ──
         logger.info("Loading Whisper model and VAD (this may take 30-60 seconds)...")
         engine = TranscriptionEngine(config)
         logger.info("✓ Whisper model loaded successfully")
-
-        # ── Step 4: Initialize Template Manager ──
-        logger.info("Initializing template manager...")
-        from app.services.template_manager import get_template_manager
-        template_manager = get_template_manager()
-        template_stats = template_manager.get_stats()
-        logger.info(f"✓ Template manager ready: {template_stats['registered_patterns']} patterns registered")
 
         # ── Store in app state ──
         app.state.config = config
         app.state.transcription_engine = engine
         app.state.active_connections = 0
-        app.state.template_manager = template_manager
 
         logger.info("=" * 80)
         logger.info("✓ APPLICATION READY FOR REQUESTS")
@@ -521,7 +502,6 @@ async def lifespan(app: FastAPI):
         logger.info(f"  📍 API:         http://0.0.0.0:8000")
         logger.info(f"  📚 Docs:        http://0.0.0.0:8000/docs")
         logger.info(f"  🔌 WebSocket:   ws://0.0.0.0:8000/ws/audio")
-        logger.info(f"  📝 Templates:   http://0.0.0.0:8000/api/templates")
         logger.info("")
         logger.info("=" * 80)
 
@@ -551,21 +531,17 @@ async def lifespan(app: FastAPI):
 # ─────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Medical Dictation API",
+    title="Transcription Template API",
     description="""
-    Real-time medical voice dictation with WebSocket audio streaming.
+    Real-time voice transcription with WebSocket audio streaming.
     
     ## Features
     - 🎤 Real-time audio transcription via WebSocket
     - 🗣️ Voice Activity Detection (VAD) for efficient processing
-    - 📝 Custom template management with SQLite storage
-    - ⚡ Voice commands for formatting and templates
+    - 🧩 Wrapper-ready domain adapter layer
     
     ## WebSocket Endpoint
     Connect to `/ws/audio` for real-time audio streaming.
-    
-    ## Template API
-    Use `/api/templates` endpoints to manage custom voice-activated templates.
     """,
     version="1.0.0",
     lifespan=lifespan,
@@ -582,14 +558,6 @@ app.add_middleware(
 
 
 # ─────────────────────────────────────────────────────────────────
-# INCLUDE ROUTERS
-# ─────────────────────────────────────────────────────────────────
-
-# Template API routes
-app.include_router(template_router, prefix="/api")
-
-
-# ─────────────────────────────────────────────────────────────────
 # REST ENDPOINTS
 # ─────────────────────────────────────────────────────────────────
 
@@ -599,33 +567,24 @@ async def root():
     """Root endpoint with API overview"""
     return {
         "status": "online",
-        "service": "Medical Dictation API",
+        "service": "Transcription Template API",
         "version": "1.0.0",
         "active_connections": app.state.active_connections,
         "endpoints": {
             "docs": "/docs",
             "health": "/health",
             "config": "/config",
-            "websocket": "/ws/audio",
-            "templates": "/api/templates"
+            "websocket": "/ws/audio"
         }
     }
 
 
 @app.get("/health")
 async def health():
-    """Detailed health check with model and database status"""
+    """Detailed health check with model status."""
     try:
         engine = app.state.transcription_engine
         config = app.state.config
-        
-        # Get database info
-        db_info = get_database_info()
-        
-        # Get template stats
-        from app.services.template_manager import get_template_manager
-        template_stats = get_template_manager().get_stats()
-        
         vad_status = "enabled" if engine.vad_model is not None else "disabled (fallback to RMS)"
 
         return JSONResponse(
@@ -637,16 +596,6 @@ async def health():
                     "device": config.DEVICE,
                 },
                 "vad_status": vad_status,
-                "database": {
-                    "path": db_info["database_path"],
-                    "templates": db_info["active_templates"],
-                    "size_kb": db_info["file_size_kb"]
-                },
-                "templates": {
-                    "total": template_stats["total_templates"],
-                    "registered_patterns": template_stats["registered_patterns"],
-                    "categories": template_stats["categories"]
-                },
                 "active_connections": app.state.active_connections,
             },
             status_code=200,
@@ -664,11 +613,6 @@ async def get_config():
     """Get current audio and system configuration"""
     try:
         config = app.state.config
-        
-        # Get template manager stats
-        from app.services.template_manager import get_template_manager
-        template_stats = get_template_manager().get_stats()
-        
         return {
             "audio": {
                 "sample_rate": config.SAMPLE_RATE,
@@ -686,13 +630,9 @@ async def get_config():
             },
             "domains": {
                 "default": config.DEFAULT_TRANSCRIPTION_DOMAIN,
-                "available": ["general", "medical"],
+                "available": ["general"],
             },
             "vad_enabled": app.state.transcription_engine.vad_model is not None,
-            "templates": {
-                "total": template_stats["total_templates"],
-                "categories": template_stats["categories"]
-            }
         }
     except Exception as e:
         logger.error(f"Get config failed: {e}")
@@ -744,7 +684,7 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
             "language": app.state.config.TRANSCRIPTION_LANGUAGE,
             "accent_support_enabled": app.state.config.ACCENT_SUPPORT_ENABLED,
             "domain": handler.domain,
-            "available_domains": ["general", "medical"],
+            "available_domains": ["general"],
             "vad_enabled": app.state.transcription_engine.vad_model is not None,
             "commands_enabled": handler.domain_adapter.commands_enabled,
             "available_commands": handler.command_processor.get_available_commands(),
@@ -752,7 +692,7 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
         
         welcome = ConnectionResponse(
             type="connected",
-            message="Connected to Medical Dictation API with VAD, Voice Commands, and Custom Templates",
+            message="Connected to Transcription Template API",
             config=welcome_config,
         )
         await websocket.send_json(welcome.model_dump())
@@ -1028,46 +968,6 @@ async def _handle_control_message(
             })
 
         # ══════════════════════════════════════════════════════════
-        # TEMPLATE-RELATED CONTROL MESSAGES
-        # ══════════════════════════════════════════════════════════
-        
-        elif msg_type == "get_templates":
-            # Get available templates
-            from app.services.template_manager import get_template_manager
-            manager = get_template_manager()
-            templates = manager.list_templates()
-            
-            await websocket.send_json({
-                "type": "templates_list",
-                "templates": [
-                    {
-                        "name": t["name"],
-                        "trigger_phrases": t["trigger_phrases"],
-                        "category": t["category"],
-                        "description": t["description"]
-                    }
-                    for t in templates
-                ],
-                "timestamp": timestamp,
-            })
-            logger.debug(f"[{session_id}] Templates list sent")
-
-        elif msg_type == "refresh_templates":
-            # Refresh templates from database
-            from app.services.template_manager import get_template_manager
-            manager = get_template_manager()
-            manager.refresh()
-            stats = manager.get_stats()
-            
-            await websocket.send_json({
-                "type": "control_ack",
-                "action": "refresh_templates",
-                "stats": stats,
-                "timestamp": timestamp,
-            })
-            logger.info(f"[{session_id}] Templates refreshed")
-
-        # ══════════════════════════════════════════════════════════
         # UNKNOWN MESSAGE TYPE
         # ══════════════════════════════════════════════════════════
         
@@ -1106,7 +1006,6 @@ if __name__ == "__main__":
     logger.info(f"📍 API:        http://0.0.0.0:8000")
     logger.info(f"📚 Docs:       http://0.0.0.0:8000/docs")
     logger.info(f"🔌 WebSocket:  ws://0.0.0.0:8000/ws/audio")
-    logger.info(f"📝 Templates:  http://0.0.0.0:8000/api/templates")
     logger.info("")
     logger.info("Press Ctrl+C to stop the server")
     logger.info("=" * 80)

@@ -79,13 +79,12 @@ class StatsResponse(BaseModel):
     )
 
 
-class MedicalNote(BaseModel):
-    """Medical note/dictation"""
+class DictationNote(BaseModel):
+    """Generic dictation note."""
     id: str = Field(..., description="Unique note ID")
     content: str = Field(..., description="Note content")
-    patient_id: Optional[str] = Field(default=None, description="Associated patient ID")
-    patient_name: Optional[str] = Field(default=None, description="Patient name")
-    note_type: Optional[str] = Field(default=None, description="Type of note (Progress, Encounter, etc.)")
+    title: Optional[str] = Field(default=None, description="Optional note title")
+    note_type: Optional[str] = Field(default=None, description="Optional note type")
     created_at: str = Field(..., description="Creation timestamp ISO 8601")
     updated_at: str = Field(..., description="Last update timestamp ISO 8601")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Additional metadata")
@@ -119,4 +118,3 @@ class SessionEnd(BaseModel):
     timestamp: float = Field(default_factory=lambda: datetime.utcnow().timestamp(), description="UTC timestamp")
     total_audio_seconds: float = Field(..., description="Total audio processed in session")
     total_words: int = Field(..., description="Total words transcribed")
-

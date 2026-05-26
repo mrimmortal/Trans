@@ -22,12 +22,17 @@ class AccentSupportConfigTests(unittest.TestCase):
         prompt = AudioConfig.get_initial_prompt()
 
         self.assertIn("multiple English accents", prompt)
-        self.assertIn("medical dictation", prompt.lower())
-        self.assertIn(AudioConfig.MEDICAL_CONTEXT_PROMPT, prompt)
+        self.assertIn("dictation", prompt.lower())
+        self.assertIn(AudioConfig.TRANSCRIPTION_CONTEXT_PROMPT, prompt)
+        self.assertNotIn("medical", prompt.lower())
+        self.assertNotIn("clinical", prompt.lower())
 
-    def test_initial_prompt_does_not_seed_fake_patient_facts(self):
+    def test_initial_prompt_does_not_seed_domain_specific_facts(self):
         prompt = AudioConfig.get_initial_prompt().lower()
 
+        self.assertNotIn("symptoms", prompt)
+        self.assertNotIn("diagnoses", prompt)
+        self.assertNotIn("medications", prompt)
         self.assertNotIn("patient presents with hypertension", prompt)
         self.assertNotIn("metformin 500mg", prompt)
         self.assertNotIn("hba1c 7.2", prompt)

@@ -2,8 +2,6 @@
 
 import { useState } from 'react';
 import { Editor } from '@tiptap/react';
-import { Macro } from '@/types';
-import { TemplateDropdown } from './TemplateDropdown';
 import { ExportMenu } from './ExportMenu';
 import {
   Bold,
@@ -19,12 +17,11 @@ import {
 
 interface ToolbarProps {
   editor: Editor | null;
-  macros?: Macro[];
   onToast: (message: string) => void;
   onClearContent?: () => void;
 }
 
-export function Toolbar({ editor, macros = [], onToast, onClearContent }: ToolbarProps) {
+export function Toolbar({ editor, onToast, onClearContent }: ToolbarProps) {
   const [showCopiedTooltip, setShowCopiedTooltip] = useState(false);
 
   if (!editor) return null;
@@ -46,10 +43,6 @@ export function Toolbar({ editor, macros = [], onToast, onClearContent }: Toolba
       editor.chain().focus().clearContent().run();
       onClearContent?.();
     }
-  };
-
-  const handleInsertTemplate = (text: string) => {
-    editor.chain().focus().insertContent(text).run();
   };
 
   return (
@@ -159,12 +152,6 @@ export function Toolbar({ editor, macros = [], onToast, onClearContent }: Toolba
       >
         <Trash2 className="w-4 h-4" aria-hidden="true" />
       </button>
-
-      {/* Divider */}
-      <div className="w-px h-6 bg-gray-300 mx-1" role="separator" aria-orientation="vertical" />
-
-      {/* Template Dropdown */}
-      <TemplateDropdown macros={macros} onInsert={handleInsertTemplate} />
 
       {/* Export Menu */}
       <ExportMenu editor={editor} onToast={onToast} />

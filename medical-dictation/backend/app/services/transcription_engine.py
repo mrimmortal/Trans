@@ -757,9 +757,9 @@ class TranscriptionEngine:
         # ── CHECK 2B: PROMPT INSTRUCTION LEAKAGE ──
         instruction_leak_patterns = [
             "transcribe only the words spoken",
-            "do not invent symptoms",
+            "do not invent names",
             "prefer silence over guessing",
-            "preserve medical terminology",
+            "preserve dictated wording",
         ]
         if any(pattern in text_lower for pattern in instruction_leak_patterns):
             logger.debug(f"Filtered hallucination (prompt leakage): '{text}'")
@@ -941,7 +941,7 @@ class TranscriptionEngine:
         """Return configured initial prompt with backward-compatible fallback."""
         if hasattr(self.config, "get_initial_prompt"):
             return self.config.get_initial_prompt()
-        return getattr(self.config, "MEDICAL_CONTEXT_PROMPT", "")
+        return getattr(self.config, "TRANSCRIPTION_CONTEXT_PROMPT", "")
     
     def get_device_info(self) -> dict:
         """

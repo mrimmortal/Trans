@@ -30,7 +30,7 @@ class WhisperHallucinationFilterTests(unittest.TestCase):
             PATIENCE=1.0,
             BEST_OF=1,
             TEMPERATURE=(0.0,),
-            MEDICAL_CONTEXT_PROMPT="",
+            TRANSCRIPTION_CONTEXT_PROMPT="",
             COMPRESSION_RATIO_THRESHOLD=2.2,
             LOG_PROB_THRESHOLD=-0.7,
             NO_SPEECH_THRESHOLD=0.75,
@@ -61,7 +61,7 @@ class WhisperHallucinationFilterTests(unittest.TestCase):
         engine = self.make_engine([])
 
         self.assertEqual(
-            engine._filter_hallucinations("The patient is stable. The patient is stable."),
+            engine._filter_hallucinations("The project is stable. The project is stable."),
             "",
         )
 
@@ -69,28 +69,28 @@ class WhisperHallucinationFilterTests(unittest.TestCase):
         engine = self.make_engine([])
 
         self.assertEqual(
-            engine._filter_hallucinations("Transcribe only the words spoken by the clinician."),
+            engine._filter_hallucinations("Transcribe only the words spoken by the speaker."),
             "",
         )
 
     def test_run_whisper_keeps_low_confidence_speech_when_no_speech_is_low(self):
         engine = self.make_engine([
-            FakeSegment("No chest pain.", avg_logprob=-2.0, no_speech_prob=0.1)
+            FakeSegment("No blockers.", avg_logprob=-2.0, no_speech_prob=0.1)
         ])
 
         result = engine._run_whisper(np.ones(16000, dtype=np.float32))
 
-        self.assertEqual(result["text"], "No chest pain.")
+        self.assertEqual(result["text"], "No blockers.")
         self.assertLess(result["confidence"], 0.25)
 
     def test_run_whisper_keeps_confident_speech(self):
         engine = self.make_engine([
-            FakeSegment("Patient has chest pain.", avg_logprob=-0.1, no_speech_prob=0.05)
+            FakeSegment("Project has momentum.", avg_logprob=-0.1, no_speech_prob=0.05)
         ])
 
         result = engine._run_whisper(np.ones(16000, dtype=np.float32))
 
-        self.assertEqual(result["text"], "Patient has chest pain.")
+        self.assertEqual(result["text"], "Project has momentum.")
         self.assertGreaterEqual(result["confidence"], 0.10)
 
 

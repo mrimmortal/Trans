@@ -4,25 +4,18 @@
 import { useState, useEffect } from 'react';
 import { Macro } from '@/types';
 import { DEFAULT_MACROS } from '@/lib/defaultMacros';
+import { APP_CONFIG } from '@/lib/appConfig';
 import { PlusCircle, X, ChevronDown } from 'lucide-react';
 
-const STORAGE_KEY = 'medDictateMacros';
-const CATEGORIES = [
-  'Cardiovascular',
-  'Respiratory',
-  'Neurological',
-  'Gastrointestinal',
-  'Templates',
-  'Vitals',
-  'Custom',
-];
+const STORAGE_KEY = APP_CONFIG.storageKeys.macros;
+const CATEGORIES = ['General', 'Writing', 'Operations', 'Custom'];
 
 interface MacroManagerProps {
   onInsertMacro: (text: string) => void;
 }
 
 /**
- * Migrate old localStorage macros that used `expansion` → `text`.
+ * Migrate old localStorage snippets that used `expansion` -> `text`.
  */
 function migrateMacros(raw: any[]): Macro[] {
   return raw.map((m) => ({
@@ -42,7 +35,7 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
   const [newExpansion, setNewExpansion] = useState('');
   const [newCategory, setNewCategory] = useState('Custom');
 
-  // Load macros from localStorage on mount with migration
+  // Load snippets from localStorage on mount with migration
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -61,7 +54,7 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
     }
   }, []);
 
-  // Filter macros by search query
+  // Filter snippets by search query
   const filteredMacros = macros.filter(
     (m) =>
       m.trigger.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -69,7 +62,7 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
       (m.category || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Group macros by category
+  // Group snippets by category
   const grouped = filteredMacros.reduce(
     (acc, macro) => {
       const cat = macro.category || 'Uncategorized';
@@ -80,7 +73,7 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
     {} as Record<string, Macro[]>
   );
 
-  // Validate and add custom macro
+  // Validate and add custom snippet
   const handleAddMacro = () => {
     const triggerWords = newTrigger.trim().split(/\s+/).length;
     if (triggerWords < 2) {
@@ -110,9 +103,9 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
     setIsFormOpen(false);
   };
 
-  // Delete macro
+  // Delete snippet
   const handleDeleteMacro = (id: string) => {
-    if (!window.confirm('Delete this macro?')) return;
+    if (!window.confirm('Delete this snippet?')) return;
     const updated = macros.filter((m) => m.id !== id);
     setMacros(updated);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
@@ -123,21 +116,21 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
       {/* Search */}
       <input
         type="text"
-        placeholder="Search macros..."
+        placeholder="Search snippets..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        aria-label="Search macros"
+        aria-label="Search snippets"
       />
 
-      {/* Macros by category */}
-      <div className="space-y-4 max-h-96 overflow-y-auto" role="list" aria-label="Macros list">
+      {/* Snippets by category */}
+      <div className="space-y-4 max-h-96 overflow-y-auto" role="list" aria-label="Snippets list">
         {Object.keys(grouped).length === 0 && (
-          <p className="text-sm text-gray-500 text-center py-4">No macros found</p>
+          <p className="text-sm text-gray-500 text-center py-4">No snippets found</p>
         )}
 
         {Object.entries(grouped).map(([category, categoryMacros]) => (
-          <div key={category} role="group" aria-label={`${category} macros`}>
+          <div key={category} role="group" aria-label={`${category} snippets`}>
             <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
               {category}
             </h3>
@@ -165,14 +158,14 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
                         <button
                           onClick={() => onInsertMacro(displayText)}
                           className="p-1 text-blue-600 hover:bg-blue-100 rounded transition-colors"
-                          aria-label={`Insert macro: ${macro.trigger}`}
+                          aria-label={`Insert snippet: ${macro.trigger}`}
                         >
                           <PlusCircle className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDeleteMacro(macro.id)}
                           className="p-1 text-gray-400 hover:bg-red-100 hover:text-red-600 rounded transition-colors"
-                          aria-label={`Delete macro: ${macro.trigger}`}
+                          aria-label={`Delete snippet: ${macro.trigger}`}
                         >
                           <X className="w-4 h-4" />
                         </button>
@@ -186,14 +179,14 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
         ))}
       </div>
 
-      {/* Add Custom Macro */}
+      {/* Add Custom Snippet */}
       <div className="border-t border-gray-200 pt-4">
         <button
           onClick={() => setIsFormOpen(!isFormOpen)}
           className="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
           aria-expanded={isFormOpen}
         >
-          Add Custom Macro
+          Add Custom Snippet
           <ChevronDown
             className={`w-4 h-4 transition-transform ${isFormOpen ? 'rotate-180' : ''}`}
           />
@@ -203,18 +196,18 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
           <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg space-y-3">
             <input
               type="text"
-              placeholder="Trigger (e.g. 'normal heart exam')"
+              placeholder="Trigger (e.g. 'meeting summary')"
               value={newTrigger}
               onChange={(e) => setNewTrigger(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Macro trigger phrase"
+              aria-label="Snippet trigger phrase"
             />
 
             <select
               value={newCategory}
               onChange={(e) => setNewCategory(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Macro category"
+              aria-label="Snippet category"
             >
               {CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
@@ -228,7 +221,7 @@ export function MacroManager({ onInsertMacro }: MacroManagerProps) {
               value={newExpansion}
               onChange={(e) => setNewExpansion(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-24"
-              aria-label="Macro expansion text"
+              aria-label="Snippet expansion text"
             />
 
             <div className="flex gap-2">

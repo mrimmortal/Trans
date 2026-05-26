@@ -1,1 +1,1 @@
-"""Medical Dictation Backend Application"""
+"""Transcription Template Backend Application."""

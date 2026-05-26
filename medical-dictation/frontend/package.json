@@ -1,7 +1,7 @@
 {
-  "name": "medical-dictation",
+  "name": "transcription-template",
   "version": "1.0.0",
-  "description": "Medical voice dictation web application",
+  "description": "Wrapper-ready vanilla voice transcription web application",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -18,13 +18,13 @@ import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/components/ui/Toast';
 import {
   WS_URL,
-  API_URL,
   AUDIO_SAMPLE_RATE,
   AUDIO_CHUNK_INTERVAL,
   AUTO_SAVE_INTERVAL,
   MAX_SESSIONS,
   TOAST_DURATION,
 } from '@/lib/constants';
+import { APP_CONFIG } from '@/lib/appConfig';
 import { DEFAULT_MACROS } from '@/lib/defaultMacros';
 import { Macro, VoiceCommand } from '@/types';
 import {
@@ -52,7 +52,7 @@ const KEYBOARD_SHORTCUTS = [
 ];
 
 // ══════════════════════════════════════════════════════════════════
-// HELPER: Migrate old localStorage macros (expansion → text)
+// HELPER: Migrate old localStorage snippets (expansion -> text)
 // ══════════════════════════════════════════════════════════════════
 
 function migrateMacros(raw: any[]): Macro[] {
@@ -152,23 +152,23 @@ export default function Page() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const savedMacros = localStorage.getItem('medDictateMacros');
+    const savedMacros = localStorage.getItem(APP_CONFIG.storageKeys.macros);
     if (savedMacros) {
       try {
         const parsed = JSON.parse(savedMacros);
         const migrated = migrateMacros(parsed);
         setMacros(migrated);
-        localStorage.setItem('medDictateMacros', JSON.stringify(migrated));
+        localStorage.setItem(APP_CONFIG.storageKeys.macros, JSON.stringify(migrated));
       } catch {
         setMacros(DEFAULT_MACROS);
-        localStorage.setItem('medDictateMacros', JSON.stringify(DEFAULT_MACROS));
+        localStorage.setItem(APP_CONFIG.storageKeys.macros, JSON.stringify(DEFAULT_MACROS));
       }
     } else {
       setMacros(DEFAULT_MACROS);
-      localStorage.setItem('medDictateMacros', JSON.stringify(DEFAULT_MACROS));
+      localStorage.setItem(APP_CONFIG.storageKeys.macros, JSON.stringify(DEFAULT_MACROS));
     }
 
-    const savedSessions = localStorage.getItem('medDictateSessions');
+    const savedSessions = localStorage.getItem(APP_CONFIG.storageKeys.sessions);
     if (savedSessions) {
       try {
         setSessions(JSON.parse(savedSessions));
@@ -177,7 +177,7 @@ export default function Page() {
       }
     }
 
-    const autoSaveData = localStorage.getItem('medDictateAutoSave');
+    const autoSaveData = localStorage.getItem(APP_CONFIG.storageKeys.autoSave);
     if (autoSaveData && !restoredAutoSave) {
       try {
         const { timestamp } = JSON.parse(autoSaveData);
@@ -185,10 +185,10 @@ export default function Page() {
         if (hoursOld < 24) {
           setShowAutoSaveRestore(true);
         } else {
-          localStorage.removeItem('medDictateAutoSave');
+          localStorage.removeItem(APP_CONFIG.storageKeys.autoSave);
         }
       } catch {
-        localStorage.removeItem('medDictateAutoSave');
+        localStorage.removeItem(APP_CONFIG.storageKeys.autoSave);
       }
     }
   }, [restoredAutoSave]);
@@ -248,7 +248,7 @@ export default function Page() {
 
       registerCustomCommand({
         pattern: 'my signature',
-        replacement: '\n\n— Dictated using MedDictate AI\n',
+        replacement: APP_CONFIG.dictatedSignature,
       });
     }
   }, [isConnected, macros, registerCustomCommand]);
@@ -282,7 +282,7 @@ export default function Page() {
 
     setSessions((prev: Session[]) => {
       const updated = [session, ...prev].slice(0, MAX_SESSIONS);
-      localStorage.setItem('medDictateSessions', JSON.stringify(updated));
+      localStorage.setItem(APP_CONFIG.storageKeys.sessions, JSON.stringify(updated));
       return updated;
     });
 
@@ -357,7 +357,7 @@ export default function Page() {
 
       setSessions((prev: Session[]) => {
         const updated = [newSession, ...prev].slice(0, MAX_SESSIONS);
-        localStorage.setItem('medDictateSessions', JSON.stringify(updated));
+        localStorage.setItem(APP_CONFIG.storageKeys.sessions, JSON.stringify(updated));
         return updated;
       });
 
@@ -595,7 +595,7 @@ export default function Page() {
       showToast(`Command: ${action}`, 'command');
     } else if (result.isMacro) {
       editorRef.current?.editor?.chain().focus('end').insertContent(result.text + ' ').run();
-      showToast('Macro inserted', 'command');
+      showToast('Snippet inserted', 'command');
     } else if (result.text) {
       editorRef.current?.editor?.chain().focus('end').insertContent(result.text + ' ').run();
     }
@@ -684,19 +684,9 @@ export default function Page() {
   const handleInsertMacro = useCallback(
     (macroText: string) => {
       editorRef.current?.editor?.chain().focus().insertContent(macroText + ' ').run();
-      showToast('Macro inserted', 'command');
+      showToast('Snippet inserted', 'command');
     },
     [showToast]
-  );
-
-  // ─── TEMPLATE INSERT HANDLER (NEW) ───
-  const handleInsertTemplate = useCallback(
-    (content: string) => {
-      if (editorRef.current?.editor) {
-        editorRef.current.editor.chain().focus().insertContent(content + '\n').run();
-      }
-    },
-    []
   );
 
   // ─── SESSION HANDLERS ───
@@ -710,7 +700,7 @@ export default function Page() {
     (id: string) => {
       setSessions((prev: Session[]) => {
         const updated = prev.filter((s: Session) => s.id !== id);
-        localStorage.setItem('medDictateSessions', JSON.stringify(updated));
+        localStorage.setItem(APP_CONFIG.storageKeys.sessions, JSON.stringify(updated));
         return updated;
       });
       showToast('Session deleted', 'success');
@@ -721,7 +711,7 @@ export default function Page() {
   const handleUpdateSession = useCallback((session: Session) => {
     setSessions((prev: Session[]) => {
       const updated = prev.map((s: Session) => (s.id === session.id ? session : s));
-      localStorage.setItem('medDictateSessions', JSON.stringify(updated));
+      localStorage.setItem(APP_CONFIG.storageKeys.sessions, JSON.stringify(updated));
       return updated;
     });
   }, []);
@@ -757,7 +747,7 @@ export default function Page() {
         if (plainText.trim().length > 0) {
           const timestamp = new Date().toISOString();
           localStorage.setItem(
-            'medDictateAutoSave',
+            APP_CONFIG.storageKeys.autoSave,
             JSON.stringify({ content, timestamp })
           );
           setAutoSaveTimestamp(timestamp);
@@ -770,7 +760,7 @@ export default function Page() {
 
   // ─── AUTO-SAVE RESTORE/DISCARD ───
   const handleRestoreAutoSave = useCallback(() => {
-    const autoSaveData = localStorage.getItem('medDictateAutoSave');
+    const autoSaveData = localStorage.getItem(APP_CONFIG.storageKeys.autoSave);
     if (autoSaveData) {
       try {
         const { content } = JSON.parse(autoSaveData);
@@ -790,7 +780,7 @@ export default function Page() {
   }, [showToast]);
 
   const handleDiscardAutoSave = useCallback(() => {
-    localStorage.removeItem('medDictateAutoSave');
+    localStorage.removeItem(APP_CONFIG.storageKeys.autoSave);
     setRestoredAutoSave(true);
     setShowAutoSaveRestore(false);
   }, []);
@@ -883,7 +873,7 @@ export default function Page() {
           <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-gray-900 mb-2">Browser Not Supported</h1>
           <p className="text-gray-600 mb-6">
-            MedDictate requires <strong>MediaRecorder</strong> and{' '}
+            {APP_CONFIG.name} requires <strong>MediaRecorder</strong> and{' '}
             <strong>AudioContext</strong> APIs which are not available in your current browser.
           </p>
           <p className="text-sm text-gray-500">
@@ -1081,7 +1071,6 @@ export default function Page() {
           macros={macros}
           sessions={sessions}
           onInsertMacro={handleInsertMacro}
-          onInsertTemplate={handleInsertTemplate}
           onLoadSession={handleLoadSession}
           onDeleteSession={handleDeleteSession}
           onUpdateSession={handleUpdateSession}
@@ -1127,7 +1116,6 @@ export default function Page() {
           {/* Toolbar */}
           <Toolbar
             editor={toolbarEditor}
-            macros={macros}
             onToast={handleToast}
             onClearContent={clearPendingTranscript}
           />

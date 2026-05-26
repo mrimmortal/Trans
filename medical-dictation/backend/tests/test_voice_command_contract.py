@@ -35,12 +35,11 @@ class VoiceCommandContractTests(unittest.TestCase):
         self.assertEqual(len(commands), 1)
         self.assertEqual(commands[0].command_type.value, "punctuation")
 
-    def test_template_commands_still_insert_template_text(self):
-        processed_text, commands = self.processor.process("insert vitals")
+    def test_vanilla_command_processor_has_no_domain_templates(self):
+        processed_text, commands = self.processor.process("insert status report")
 
-        self.assertIn("Vital Signs", processed_text)
-        self.assertEqual(len(commands), 1)
-        self.assertEqual(commands[0].action, "vitals")
+        self.assertEqual(processed_text, "insert status report")
+        self.assertEqual(commands, [])
 
 
 if __name__ == "__main__":

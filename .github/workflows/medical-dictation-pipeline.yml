@@ -1,4 +1,4 @@
-name: Medical Dictation Pipeline
+name: Transcription Template Pipeline
 
 on:
   pull_request:
@@ -173,8 +173,8 @@ jobs:
           FRONTEND_SERVICE_NAME: ${{ vars.FRONTEND_SERVICE_NAME }}
         run: |
           $installRoot = if ($env:WIN_INSTALL_ROOT) { $env:WIN_INSTALL_ROOT } else { "C:\Apps\medical-dictation" }
-          $backendService = if ($env:BACKEND_SERVICE_NAME) { $env:BACKEND_SERVICE_NAME } else { "MedDictateBackendUAT" }
-          $frontendService = if ($env:FRONTEND_SERVICE_NAME) { $env:FRONTEND_SERVICE_NAME } else { "MedDictateFrontendUAT" }
+          $backendService = if ($env:BACKEND_SERVICE_NAME) { $env:BACKEND_SERVICE_NAME } else { "TranscriptionTemplateBackendUAT" }
+          $frontendService = if ($env:FRONTEND_SERVICE_NAME) { $env:FRONTEND_SERVICE_NAME } else { "TranscriptionTemplateFrontendUAT" }
           .\artifact\medical-dictation\scripts\run.ps1 uat-win `
             -SourceDir ".\artifact\medical-dictation" `
             -InstallRoot $installRoot `
@@ -211,8 +211,8 @@ jobs:
           FRONTEND_SERVICE_NAME: ${{ vars.FRONTEND_SERVICE_NAME }}
         run: |
           $installRoot = if ($env:WIN_INSTALL_ROOT) { $env:WIN_INSTALL_ROOT } else { "C:\Apps\medical-dictation" }
-          $backendService = if ($env:BACKEND_SERVICE_NAME) { $env:BACKEND_SERVICE_NAME } else { "MedDictateBackendProd" }
-          $frontendService = if ($env:FRONTEND_SERVICE_NAME) { $env:FRONTEND_SERVICE_NAME } else { "MedDictateFrontendProd" }
+          $backendService = if ($env:BACKEND_SERVICE_NAME) { $env:BACKEND_SERVICE_NAME } else { "TranscriptionTemplateBackendProd" }
+          $frontendService = if ($env:FRONTEND_SERVICE_NAME) { $env:FRONTEND_SERVICE_NAME } else { "TranscriptionTemplateFrontendProd" }
           .\artifact\medical-dictation\scripts\run.ps1 prod-win `
             -SourceDir ".\artifact\medical-dictation" `
             -InstallRoot $installRoot `

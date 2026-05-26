@@ -37,7 +37,7 @@ def env_bool(name: str, default: bool) -> bool:
 
 
 class AudioConfig:
-    """Audio pipeline configuration tuned for real-time medical dictation."""
+    """Audio pipeline configuration tuned for real-time transcription."""
 
     # ─── AUDIO FORMAT (What the frontend MUST send) ───
     SAMPLE_RATE: int = 16000            # Whisper requires 16kHz
@@ -112,26 +112,26 @@ class AudioConfig:
         "speech_pad_ms": 200,  # FIXED: Increased from 100 (more context)
     }
 
-    # ─── MEDICAL CONTEXT PROMPT ───
-    MEDICAL_CONTEXT_PROMPT: str = (
-        "Transcribe only the words spoken by the clinician. Do not invent symptoms, "
-        "diagnoses, medications, doses, lab results, vitals, plans, or follow-up details. "
-        "Prefer silence over guessing when audio is unclear. Preserve medical terminology, "
-        "abbreviations, punctuation commands, and clinical units exactly as dictated."
+    # ─── TRANSCRIPTION CONTEXT PROMPT ───
+    TRANSCRIPTION_CONTEXT_PROMPT: str = (
+        "Transcribe only the words spoken by the speaker. Do not invent names, numbers, "
+        "tasks, decisions, dates, plans, or follow-up details. Prefer silence over guessing "
+        "when audio is unclear. Preserve dictated wording, punctuation commands, and units "
+        "exactly as spoken."
     )
 
     ACCENT_CONTEXT_PROMPT: str = (
-        "This is English medical dictation. The speaker may use multiple English accents, "
+        "This is English dictation. The speaker may use multiple English accents, "
         "including Indian, American, British, Australian, African, Middle Eastern, or other "
-        "regional English pronunciations. Preserve the intended English medical terms."
+        "regional English pronunciations. Preserve the intended English words."
     )
 
     @classmethod
     def get_initial_prompt(cls) -> str:
         """Return Whisper prompt context with optional accent guidance."""
         if cls.ACCENT_SUPPORT_ENABLED:
-            return f"{cls.ACCENT_CONTEXT_PROMPT} {cls.MEDICAL_CONTEXT_PROMPT}"
-        return cls.MEDICAL_CONTEXT_PROMPT
+            return f"{cls.ACCENT_CONTEXT_PROMPT} {cls.TRANSCRIPTION_CONTEXT_PROMPT}"
+        return cls.TRANSCRIPTION_CONTEXT_PROMPT
 
     # ─── HALLUCINATION FILTER ───
     # FIXED: Removed common words like "the", "a", "um", "uh" - these are legitimate!

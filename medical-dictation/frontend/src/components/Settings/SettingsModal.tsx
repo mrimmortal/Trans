@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Sliders } from 'lucide-react';
 import { AppSettings } from '@/types';
+import { APP_CONFIG } from '@/lib/appConfig';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -303,27 +304,27 @@ export function SettingsModal({
 
                   <div className="flex items-center justify-between">
                     <div>
-                      <label className="text-sm font-medium text-gray-900" htmlFor="settings-medical-formatting">
-                        Medical Formatting
+                      <label className="text-sm font-medium text-gray-900" htmlFor="settings-domain-formatting">
+                        Wrapper Formatting
                       </label>
                       <p className="text-xs text-gray-600 mt-0.5">
-                        Format medical terminology and abbreviations
+                        Reserved for domain wrappers that transform transcript text
                       </p>
                     </div>
                     <input
-                      id="settings-medical-formatting"
+                      id="settings-domain-formatting"
                       type="checkbox"
-                      checked={settings.transcription.medicalFormatting}
+                      checked={settings.transcription.domainFormatting}
                       onChange={(e) =>
                         onUpdateSettings({
                           transcription: {
                             ...settings.transcription,
-                            medicalFormatting: e.target.checked,
+                            domainFormatting: e.target.checked,
                           },
                         })
                       }
                       className="w-5 h-5 rounded border-gray-300 text-blue-600 cursor-pointer"
-                      aria-label="Toggle medical formatting"
+                      aria-label="Toggle wrapper formatting"
                     />
                   </div>
                 </div>
@@ -419,10 +420,10 @@ export function SettingsModal({
               <div className="space-y-4" role="tabpanel" id="settings-panel-about" aria-labelledby="settings-tab-about">
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                    MedDictate v1.0.0
+                    {APP_CONFIG.name} v1.0.0
                   </h3>
                   <p className="text-sm text-gray-600">
-                    Medical voice dictation made simple and accurate.
+                    {APP_CONFIG.description}
                   </p>
                 </div>
 
@@ -437,7 +438,7 @@ export function SettingsModal({
 
                 <div className="border-t border-gray-200 pt-4">
                   <p className="text-xs text-gray-500">
-                    © 2026 MedDictate. All rights reserved.
+                    © 2026 {APP_CONFIG.name}. All rights reserved.
                   </p>
                 </div>
               </div>

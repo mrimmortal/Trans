@@ -28,8 +28,8 @@ Optional deploy parameters:
   -InstallRoot C:\Apps\medical-dictation
   -BackendEnvContent  <env file content from GitHub secret>
   -FrontendEnvContent <env file content from GitHub secret>
-  -BackendServiceName MedDictateBackendUAT
-  -FrontendServiceName MedDictateFrontendUAT
+  -BackendServiceName TranscriptionTemplateBackendUAT
+  -FrontendServiceName TranscriptionTemplateFrontendUAT
 "@
 }
 
@@ -278,18 +278,18 @@ function Deploy-Win {
 
     if ($EnvironmentName -eq "uat-win") {
         if ([string]::IsNullOrWhiteSpace($BackendServiceName)) {
-            $BackendServiceName = "MedDictateBackendUAT"
+            $BackendServiceName = "TranscriptionTemplateBackendUAT"
         }
         if ([string]::IsNullOrWhiteSpace($FrontendServiceName)) {
-            $FrontendServiceName = "MedDictateFrontendUAT"
+            $FrontendServiceName = "TranscriptionTemplateFrontendUAT"
         }
     }
     else {
         if ([string]::IsNullOrWhiteSpace($BackendServiceName)) {
-            $BackendServiceName = "MedDictateBackendProd"
+            $BackendServiceName = "TranscriptionTemplateBackendProd"
         }
         if ([string]::IsNullOrWhiteSpace($FrontendServiceName)) {
-            $FrontendServiceName = "MedDictateFrontendProd"
+            $FrontendServiceName = "TranscriptionTemplateFrontendProd"
         }
     }
 

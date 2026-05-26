@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { AppSettings } from '@/types';
+import { APP_CONFIG } from '@/lib/appConfig';
 
 const DEFAULT_SETTINGS: AppSettings = {
   audio: {
@@ -14,7 +15,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   transcription: {
     language: 'en',
     autoPunctuation: true,
-    medicalFormatting: true,
+    domainFormatting: false,
   },
   editor: {
     fontSize: 16,
@@ -31,7 +32,7 @@ export function useSettings() {
   // Load settings from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('medDictateSettings');
+      const saved = localStorage.getItem(APP_CONFIG.storageKeys.settings);
       if (saved) {
         try {
           const parsed = JSON.parse(saved);
@@ -65,7 +66,7 @@ export function useSettings() {
 
       // Persist to localStorage
       if (typeof window !== 'undefined') {
-        localStorage.setItem('medDictateSettings', JSON.stringify(updated));
+        localStorage.setItem(APP_CONFIG.storageKeys.settings, JSON.stringify(updated));
       }
 
       return updated;
@@ -76,7 +77,7 @@ export function useSettings() {
   const resetSettings = () => {
     setSettings(DEFAULT_SETTINGS);
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('medDictateSettings');
+      localStorage.removeItem(APP_CONFIG.storageKeys.settings);
     }
   };
 

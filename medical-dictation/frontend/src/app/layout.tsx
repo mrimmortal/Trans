@@ -3,8 +3,8 @@ import './globals.css';
 import { ToastProvider } from '@/components/ui/Toast';
 
 export const metadata: Metadata = {
-  title: 'MedDictate - Medical Voice Dictation',
-  description: 'AI-powered medical voice dictation tool for healthcare professionals',
+  title: 'Transcription Template',
+  description: 'Wrapper-ready vanilla voice transcription workspace',
 };
 
 export default function RootLayout({

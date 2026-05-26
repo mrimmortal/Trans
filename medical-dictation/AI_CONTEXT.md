@@ -1,19 +1,21 @@
-# AI Context: Medical Dictation
+# AI Context: Transcription Template
 
 Use this file first to reduce context and avoid hallucinated architecture.
 
 ## Product
 
-Medical Dictation is evolving into a multi-domain real-time transcription platform. The browser records microphone audio, streams it to a FastAPI backend over WebSocket, receives transcribed text plus optional domain command events, and inserts/acts on those results in a TipTap editor.
+Transcription Template is a vanilla, wrapper-ready real-time transcription app. The browser records microphone audio, streams 16 kHz mono PCM to a FastAPI backend over WebSocket, receives vanilla transcript events, and inserts text into a TipTap editor. Domain wrappers should extend the adapter/config seams instead of changing the core audio pipeline.
 
 ## Read These First
 
 Frontend entry:
 
 - `frontend/src/app/page.tsx`
+- `frontend/src/lib/appConfig.ts`
 - `frontend/src/lib/constants.ts`
 - `frontend/src/hooks/useAudioRecorder.ts`
 - `frontend/src/hooks/useWebSocket.ts`
+- `frontend/src/hooks/useVoiceCommands.ts`
 
 Backend entry:
 
@@ -22,12 +24,8 @@ Backend entry:
 - `backend/app/services/transcription_engine.py`
 - `backend/app/domains/base.py`
 - `backend/app/domains/general.py`
-- `backend/app/domains/medical.py`
 - `backend/app/domains/registry.py`
-- `backend/app/services/medical_formatter.py`
 - `backend/app/services/command_processor.py`
-- `backend/app/services/template_manager.py`
-- `backend/app/api/template_routes.py`
 
 For the full map, read `ARCHITECTURE_GRAPH.md`.
 
@@ -39,29 +37,20 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Frontend framework: Next.js/React.
 - Editor: TipTap.
 - Speech engine: Faster-Whisper through `TranscriptionEngine`.
-- Automatic English accent support is enabled by default through `ACCENT_SUPPORT_ENABLED=true`, `TRANSCRIPTION_LANGUAGE=en`, an accent-aware Whisper prompt, and default model `base` when `MODEL_SIZE` is not explicitly set.
-- Whisper initial prompt must be guidance-only, not sample patient content. Do not seed fake diagnoses, medications, vitals, labs, or plans in the prompt.
 - WebSocket endpoint: `/ws/audio`.
-- WebSocket domain selection: `/ws/audio` uses `DEFAULT_TRANSCRIPTION_DOMAIN` (`general` by default); `/ws/audio?domain=medical` enables medical formatting, commands, and template triggers.
-- Template REST API prefix: `/api/templates`.
-- Browser audio format expected by backend: 16-bit PCM, 16kHz, mono.
+- Browser audio format expected by backend: 16-bit PCM, 16 kHz, mono.
 - Audio chunks are sent from frontend to backend as WebSocket binary messages.
-- `TranscriptionEngine.detect_speech` may receive chunks larger than Silero's 512-sample model window and must frame them internally before scoring.
-- Silero VAD defaults to realtime-friendly frame probability detection; set `SILERO_REQUIRE_SEGMENT=true` only if noise bursts are more problematic than missing short words.
-- Default transcription profile is `balanced_realtime`: roughly 0.6s minimum speech buffer, 0.7s silence pause trigger, 6s max forced buffer, and Whisper beam size 2.
-- WebSocket transcription responses include actual backend `processing_time_ms`, `audio_duration_seconds`, and `flush_reason` for latency diagnosis.
-- Whisper hallucination filtering uses `no_speech_prob`, repeated-sentence detection, boilerplate matching, and prompt-leak detection. Low-confidence text is only filtered when no-speech probability is also suspicious. Tune with `MIN_TRANSCRIPTION_CONFIDENCE` and `HALLUCINATION_MAX_NO_SPEECH_PROB`.
 - Control messages are sent as WebSocket JSON text messages.
 - Transcription responses are sent from backend to frontend as WebSocket JSON messages.
-- Frontend transcription insertion is event-based: `page.tsx` wraps processed text with an id, `DictationEditor` inserts it once, then clears the pending text.
-- Backend stream text is sanitized before domain processing to remove trailing hyphen fragments, standalone pause fillers, adjacent repeated short phrases, and repeated overlap words from chunk boundaries.
-- Domain adapters own post-transcription behavior. `general` is vanilla transcription with no medical formatting or commands. `medical` wraps the vanilla transcript with `MedicalFormatter`, `CommandProcessor`, and SQLite template triggers.
-- Sessions, macros, settings, and autosave are primarily browser `localStorage` concerns.
-- Custom templates are backend/SQLite concerns.
-- Each WebSocket `AudioStreamHandler` owns a session `CommandProcessor` and must register active SQLite templates so phrases like `insert assessment` trigger template insertion during dictation.
-- Supported environments: DEV-MAC, DEV-WINDOWS, hosted UAT-WIN, and hosted PROD-WIN.
+- Built-in backend domain: `general` only.
+- Unknown `domain` query values fall back to `general`.
+- `general` is vanilla transcription with no domain formatting, templates, or server-side commands.
+- Wrapper-ready backend seams: `backend/app/domains/*`, `CommandProcessor`, and `AudioConfig.get_initial_prompt()`.
+- Wrapper-ready frontend seam: `frontend/src/lib/appConfig.ts`.
+- Sessions, snippets, settings, and autosave are browser `localStorage` concerns.
 - Frontend URLs come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - Backend CORS origins come from `CORS_ORIGINS`.
+- Do not hardcode temporary tunnel URLs in source code.
 
 ## Current Runtime Flow
 
@@ -73,69 +62,28 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 6. `backend/app/main.py` receives chunks in `websocket_audio_stream`.
 7. `AudioStreamHandler` runs speech detection and buffers useful audio.
 8. On pause/max buffer/flush, `TranscriptionEngine` transcribes audio.
-9. The selected domain adapter processes transcript text.
-10. `general` returns vanilla text with no commands; `medical` applies `MedicalFormatter` and `CommandProcessor`.
-11. In medical mode, punctuation and template commands produce insertable text; formatting, editing, navigation, and control commands are editor/app actions and should not insert literal marker text.
-12. Backend sends `{ type: "transcription", text, domain, commands }`.
-13. Frontend inserts text into the editor and executes supported commands.
+9. The selected domain adapter processes transcript text; built-in `general` returns text unchanged.
+10. Backend sends `{ type: "transcription", text, domain, commands }`.
+11. Frontend processes local snippets/voice commands and inserts text into the editor.
 
 ## Common Change Targets
 
-- Change environment setup: update `ENVIRONMENTS.md`, relevant `.env.*` files, scripts under `scripts/`, and this file.
+- Change frontend branding/wrapper toggles: update `frontend/src/lib/appConfig.ts`.
+- Change backend wrapper behavior: update `backend/app/domains/*` and `backend/app/domains/registry.py`.
 - Change backend endpoint/protocol: update `backend/app/main.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
 - Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, backend handler expectations, and docs.
-- Change voice commands: update `backend/app/services/command_processor.py`; if frontend action is needed, update command handling in `frontend/src/app/page.tsx`.
-- Change domain behavior: update `backend/app/domains/*`.
-- Change medical formatting: update `backend/app/services/medical_formatter.py` and `backend/app/domains/medical.py`.
-- Change templates: update `backend/app/services/template_manager.py`, `backend/app/api/template_routes.py`, frontend template hooks/components, and docs.
-- Change editor behavior: update `frontend/src/components/Editor/DictationEditor.tsx` and command insertion logic in `frontend/src/app/page.tsx`.
+- Change generic voice commands: update `backend/app/services/command_processor.py` and `frontend/src/hooks/useVoiceCommands.ts`.
+- Change editor insertion behavior: update `frontend/src/app/page.tsx` and `frontend/src/components/Editor/DictationEditor.tsx`.
 
 ## Hallucination Guards
 
-- Do not refer to the old dictate WebSocket path; current backend endpoint is `/ws/audio`.
-- Do not assume all persistence is backend database. Local user macros/sessions/settings/autosave use `localStorage`.
-- Do not assume template CRUD is frontend-only. Template CRUD is exposed by backend REST routes under `/api/templates`.
-- Do not assume the app uses server-sent events or HTTP polling for transcription. It uses WebSocket.
+- Do not refer to old medical-specific behavior as built in.
+- Do not add clinical prompts, clinical templates, or domain-specific defaults to the vanilla template.
+- Do not invent alternate endpoints. The backend WebSocket endpoint is `/ws/audio`.
+- Do not assume backend persistence exists. User snippets, sessions, settings, and autosave use `localStorage`.
+- Do not assume template CRUD exists in vanilla. Add it only inside a wrapper-specific change.
 - Do not add a second transcription pipeline unless explicitly requested.
-- Do not hardcode dev tunnel URLs in `frontend/src/lib/constants.ts`.
 
-## Environments And Pipeline
+## Last Updated Notes
 
-DEV-MAC:
-
-- Backend env: `backend/.env.mac`
-- Backend dependencies: `backend/requirements-mac.txt` installed into `backend/venv` by `scripts/run.sh mac-dev`
-- Frontend env: `frontend/.env.local.mac`
-- Startup command: `scripts/run.sh mac-dev`
-- Default WebSocket: `ws://127.0.0.1:8000/ws/audio`
-
-DEV-WINDOWS:
-
-- Backend env: `backend/.env.windows`
-- Backend dependencies: `backend/requirements.txt` installed into `backend/venv` by `scripts/run.ps1 win-dev`
-- Frontend env: `frontend/.env.local.windows`
-- Startup command: `scripts/run.ps1 win-dev`
-- Default WebSocket: `ws://127.0.0.1:8000/ws/audio`
-
-UAT:
-
-- Backend env: `backend/.env.uat`
-- Frontend env: `frontend/.env.uat`
-- Validation command: `scripts/run.sh uat-check`
-- Must use HTTPS/WSS and restricted CORS origins.
-- Deployment target: GitHub environment `UAT` on self-hosted Windows runner labels `self-hosted`, `Windows`, `uat-win`.
-
-PROD-WIN:
-
-- Backend env: `backend/.env.prod`
-- Frontend env: `frontend/.env.prod`
-- Must use HTTPS/WSS and restricted CORS origins.
-- Deployment target: GitHub environment `Production` on self-hosted Windows runner labels `self-hosted`, `Windows`, `prod-win`.
-
-Pipeline:
-
-- Workflow: `.github/workflows/medical-dictation-pipeline.yml`
-- Script entry points: `scripts/run.sh` and `scripts/run.ps1`
-- Service restart is handled inside `scripts/run.ps1`.
-- UAT secrets: `UAT_BACKEND_ENV`, `UAT_FRONTEND_ENV`
-- Production secrets: `PROD_BACKEND_ENV`, `PROD_FRONTEND_ENV`
+- 2026-05-26: Converted the project to a vanilla transcription template. Removed built-in medical formatter/domain/template storage and made UI branding/config wrapper-ready.
