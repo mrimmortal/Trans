@@ -1,10 +1,8 @@
 'use client';
 
-import { useEffect, forwardRef, useImperativeHandle } from 'react';
+import { useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import { Mark } from '@tiptap/core';
+import { createEditorExtensions } from '@/lib/tiptap/extensions';
 
 export interface DictationEditorHandle {
   editor: Editor | null;
@@ -17,35 +15,22 @@ interface DictationEditorProps {
   onEditorReady?: (editor: Editor | null) => void;
 }
 
-const Underline = Mark.create({
-  name: 'underline',
-
-  parseHTML() {
-    return [{ tag: 'u' }, { style: 'text-decoration=underline' }];
-  },
-
-  renderHTML({ HTMLAttributes }) {
-    return ['u', HTMLAttributes, 0];
-  },
-});
-
 export const DictationEditor = forwardRef<
   DictationEditorHandle,
   DictationEditorProps
 >(({ onContentChange, onEditorReady }, ref) => {
+  const extensions = useMemo(
+    () => createEditorExtensions('Start speaking or type here...'),
+    []
+  );
+
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      Placeholder.configure({
-        placeholder: 'Start speaking or type here...',
-      }),
-    ],
+    extensions,
     content: '',
+    immediatelyRender: false,
     editorProps: {
       attributes: {
-        class:
-          'prose prose-sm sm:prose max-w-none focus:outline-none min-h-[400px] p-4',
+        class: 'tiptap focus:outline-none min-h-[400px] p-4',
         role: 'textbox',
         'aria-label': 'Dictation editor',
         'aria-multiline': 'true',
@@ -59,7 +44,6 @@ export const DictationEditor = forwardRef<
     return () => onEditorReady?.(null);
   }, [editor, onEditorReady]);
 
-  // Listen to editor updates and call onContentChange
   useEffect(() => {
     if (!editor) return;
 
@@ -74,7 +58,6 @@ export const DictationEditor = forwardRef<
     };
   }, [editor, onContentChange]);
 
-  // Expose editor instance and methods to parent
   useImperativeHandle(
     ref,
     () => ({

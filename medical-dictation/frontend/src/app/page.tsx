@@ -25,6 +25,7 @@ import {
   TOAST_DURATION,
 } from '@/lib/constants';
 import { APP_CONFIG } from '@/lib/appConfig';
+import { toggleUnderline } from '@/lib/tiptap/commands';
 import { DEFAULT_MACROS } from '@/lib/defaultMacros';
 import { Macro, VoiceCommand } from '@/types';
 import {
@@ -388,6 +389,51 @@ export default function Page() {
     setEditorPlainText(lastBreak >= 0 ? trimmed.slice(0, lastBreak) : '');
   }, [setEditorPlainText]);
 
+  const applyBoldLastWord = useCallback(() => {
+    const editor = editorRef.current?.editor;
+    if (!editor) return;
+
+    // Bold the last word in the document (works even when there's no explicit selection).
+    // This is used by the voice command `bold that`.
+    const plain = editor.getText();
+    const match = plain.match(/(\S+)\s*$/);
+    if (!match || match.index === undefined) return;
+
+    const wordStartChar = match.index;
+    const wordEndChar = match.index + match[1].length;
+
+    let cumulativeTextChars = 0;
+    let fromPos: number | null = null;
+    let toPos: number | null = null;
+
+    editor.state.doc.descendants((node, pos) => {
+      if (!node.isText) return;
+
+      const text = node.text ?? '';
+      const nodeFrom = cumulativeTextChars;
+      const nodeTo = cumulativeTextChars + text.length;
+
+      // Map plain-text char offsets -> ProseMirror positions.
+      if (fromPos === null && wordStartChar >= nodeFrom && wordStartChar < nodeTo) {
+        fromPos = pos + (wordStartChar - nodeFrom);
+      }
+      if (toPos === null && wordEndChar > nodeFrom && wordEndChar <= nodeTo) {
+        toPos = pos + (wordEndChar - nodeFrom);
+      }
+
+      cumulativeTextChars = nodeTo;
+    });
+
+    if (fromPos === null || toPos === null || fromPos >= toPos) return;
+
+    editor
+      .chain()
+      .focus()
+      .setTextSelection({ from: fromPos, to: toPos })
+      .toggleBold()
+      .run();
+  }, []);
+
   const writeClipboardText = useCallback(
     async (text: string) => {
       if (!text.trim()) {
@@ -463,7 +509,7 @@ export default function Page() {
           editor.chain().focus().toggleItalic().run();
           break;
         case 'underline':
-          editor.chain().focus().toggleMark('underline').run();
+          toggleUnderline(editor);
           break;
         case 'strikethrough':
           editor.chain().focus().toggleStrike().run();
@@ -562,44 +608,74 @@ export default function Page() {
 
     const result = processText(lastTranscriptionEvent.text, macros);
 
-    if (result.wasCommand) {
-      const action = result.commands[0]?.action;
-
-      switch (action) {
-        case 'stopRecording':
-          handleStopRecording();
-          break;
-        case 'pauseRecording':
-          pauseRecording();
-          break;
-        case 'undo':
-          editorRef.current?.editor?.chain().focus().undo().run();
-          break;
-        case 'clearAll':
-          if (window.confirm('Clear all content?')) {
-            editorRef.current?.editor?.chain().focus().clearContent().run();
-            clearPendingTranscript();
-          }
-          break;
-        case 'deleteLast':
-          editorRef.current?.editor?.chain().focus().deleteSelection().run();
-          break;
-        case 'newline':
-          editorRef.current?.editor?.chain().focus().insertContent('\n').run();
-          break;
-        case 'newParagraph':
-          editorRef.current?.editor?.chain().focus().insertContent('<p></p>').run();
-          break;
-      }
-
-      showToast(`Command: ${action}`, 'command');
-    } else if (result.isMacro) {
+    if (result.isMacro) {
       editorRef.current?.editor?.chain().focus('end').insertContent(result.text + ' ').run();
       showToast('Snippet inserted', 'command');
-    } else if (result.text) {
-      editorRef.current?.editor?.chain().focus('end').insertContent(result.text + ' ').run();
+      return;
     }
-  }, [lastTranscriptionEvent?.id, lastTranscriptionEvent?.text, processText, macros, pauseRecording, handleStopRecording, clearPendingTranscript, showToast]);
+
+    const editor = editorRef.current?.editor;
+
+    // Insert any leftover/normal text first, then apply non-punctuation commands.
+    if (result.text && editor) {
+      editor.chain().focus('end').insertContent(result.text + ' ').run();
+    }
+
+    if (result.commands && result.commands.length > 0) {
+      const nonPunctuation = result.commands.filter((c) => c.type !== 'punctuation' && c.action);
+      const executed: string[] = [];
+
+      for (const cmd of nonPunctuation) {
+        const action = cmd.action as string;
+
+        switch (action) {
+          case 'stopRecording':
+            handleStopRecording();
+            break;
+          case 'pauseRecording':
+            pauseRecording();
+            break;
+          case 'undo':
+            editor?.chain().focus().undo().run();
+            break;
+          case 'clearAll':
+            if (editor && window.confirm('Clear all content?')) {
+              editor.chain().focus().clearContent().run();
+              clearPendingTranscript();
+            }
+            break;
+          case 'deleteLast':
+            editor?.chain().focus().deleteSelection().run();
+            break;
+          case 'newline':
+            editor?.chain().focus().insertContent('\n').run();
+            break;
+          case 'newParagraph':
+            editor?.chain().focus().insertContent('<p></p>').run();
+            break;
+          case 'boldLast':
+            applyBoldLastWord();
+            break;
+        }
+
+        executed.push(action);
+      }
+
+      if (executed.length > 0) {
+        showToast(`Command: ${executed[0]}`, 'command');
+      }
+    }
+  }, [
+    lastTranscriptionEvent?.id,
+    lastTranscriptionEvent?.text,
+    processText,
+    macros,
+    pauseRecording,
+    handleStopRecording,
+    clearPendingTranscript,
+    showToast,
+    applyBoldLastWord,
+  ]);
 
   // ─── HANDLE SERVER-SIDE COMMANDS ───
   useEffect(() => {
