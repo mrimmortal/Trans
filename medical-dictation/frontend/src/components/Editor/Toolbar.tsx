@@ -1,14 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useReducer, useState, type MouseEvent, type ReactNode } from 'react';
 import { Editor } from '@tiptap/react';
 import { ExportMenu } from './ExportMenu';
+import { isUnderlineActive, toggleUnderline } from '@/lib/tiptap/commands';
 import {
   Bold,
   Italic,
+  Underline as UnderlineIcon,
+  Strikethrough,
+  Heading1,
   Heading2,
+  Heading3,
+  Pilcrow,
   List,
   ListOrdered,
+  Quote,
+  Code,
+  SquareCode,
+  Minus,
   Undo2,
   Redo2,
   Copy,
@@ -21,14 +31,66 @@ interface ToolbarProps {
   onClearContent?: () => void;
 }
 
+function useToolbarRefresh(editor: Editor | null) {
+  const [, refresh] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    if (!editor) return;
+
+    const handleUpdate = () => refresh();
+
+    editor.on('transaction', handleUpdate);
+    editor.on('selectionUpdate', handleUpdate);
+
+    return () => {
+      editor.off('transaction', handleUpdate);
+      editor.off('selectionUpdate', handleUpdate);
+    };
+  }, [editor]);
+}
+
+function ToolbarSeparator() {
+  return <div className="w-px h-6 bg-gray-300 mx-0.5 shrink-0" role="separator" aria-orientation="vertical" />;
+}
+
+interface ToolbarButtonProps {
+  label: string;
+  isActive?: boolean;
+  disabled?: boolean;
+  onPress: () => void;
+  children: ReactNode;
+}
+
+function ToolbarButton({ label, isActive = false, disabled = false, onPress, children }: ToolbarButtonProps) {
+  const className = `p-2 rounded hover:bg-gray-200 transition-colors shrink-0 ${
+    isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:text-gray-900'
+  } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onMouseDown={(event: MouseEvent) => {
+        event.preventDefault();
+        if (!disabled) onPress();
+      }}
+      className={className}
+      aria-label={label}
+      aria-pressed={isActive}
+      title={label}
+    >
+      {children}
+    </button>
+  );
+}
+
 export function Toolbar({ editor, onToast, onClearContent }: ToolbarProps) {
   const [showCopiedTooltip, setShowCopiedTooltip] = useState(false);
+  useToolbarRefresh(editor);
 
   if (!editor) return null;
 
-  const buttonClass = (isActive: boolean) =>
-    `p-2 rounded hover:bg-gray-200 transition-colors ${isActive ? 'bg-blue-100 text-blue-700' : 'text-gray-700 hover:text-gray-900'
-    }`;
+  const chain = () => editor.chain().focus();
 
   const handleCopyAll = () => {
     const text = editor.getText();
@@ -46,114 +108,137 @@ export function Toolbar({ editor, onToast, onClearContent }: ToolbarProps) {
   };
 
   return (
-    <div className="flex items-center gap-1 p-2 bg-gray-50 border-b rounded-t-lg toolbar" role="toolbar" aria-label="Text formatting toolbar">
-      {/* Text Formatting */}
-      <button
-        onClick={() => editor.chain().focus().toggleBold().run()}
-        className={buttonClass(editor.isActive('bold'))}
-        aria-label="Toggle bold"
-        aria-pressed={editor.isActive('bold')}
-        tabIndex={0}
-      >
+    <div
+      className="flex flex-wrap items-center gap-0.5 p-2 bg-gray-50 border-b rounded-t-lg toolbar"
+      role="toolbar"
+      aria-label="Text formatting toolbar"
+    >
+      {/* Inline marks */}
+      <ToolbarButton label="Bold" isActive={editor.isActive('bold')} onPress={() => chain().toggleBold().run()}>
         <Bold className="w-4 h-4" aria-hidden="true" />
-      </button>
-
-      <button
-        onClick={() => editor.chain().focus().toggleItalic().run()}
-        className={buttonClass(editor.isActive('italic'))}
-        aria-label="Toggle italic"
-        aria-pressed={editor.isActive('italic')}
-        tabIndex={0}
-      >
+      </ToolbarButton>
+      <ToolbarButton label="Italic" isActive={editor.isActive('italic')} onPress={() => chain().toggleItalic().run()}>
         <Italic className="w-4 h-4" aria-hidden="true" />
-      </button>
+      </ToolbarButton>
+      <ToolbarButton
+        label="Underline"
+        isActive={isUnderlineActive(editor)}
+        onPress={() => toggleUnderline(editor)}
+      >
+        <UnderlineIcon className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
+      <ToolbarButton
+        label="Strikethrough"
+        isActive={editor.isActive('strike')}
+        onPress={() => chain().toggleStrike().run()}
+      >
+        <Strikethrough className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
+      <ToolbarButton label="Inline code" isActive={editor.isActive('code')} onPress={() => chain().toggleCode().run()}>
+        <Code className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
 
-      <button
-        onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-        className={buttonClass(editor.isActive('heading', { level: 2 }))}
-        aria-label="Toggle heading"
-        aria-pressed={editor.isActive('heading', { level: 2 })}
-        tabIndex={0}
+      <ToolbarSeparator />
+
+      {/* Headings & paragraph */}
+      <ToolbarButton
+        label="Heading 1"
+        isActive={editor.isActive('heading', { level: 1 })}
+        onPress={() => chain().toggleHeading({ level: 1 }).run()}
+      >
+        <Heading1 className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
+      <ToolbarButton
+        label="Heading 2"
+        isActive={editor.isActive('heading', { level: 2 })}
+        onPress={() => chain().toggleHeading({ level: 2 }).run()}
       >
         <Heading2 className="w-4 h-4" aria-hidden="true" />
-      </button>
+      </ToolbarButton>
+      <ToolbarButton
+        label="Heading 3"
+        isActive={editor.isActive('heading', { level: 3 })}
+        onPress={() => chain().toggleHeading({ level: 3 }).run()}
+      >
+        <Heading3 className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
+      <ToolbarButton label="Paragraph" isActive={editor.isActive('paragraph')} onPress={() => chain().setParagraph().run()}>
+        <Pilcrow className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
 
-      {/* Lists */}
-      <button
-        onClick={() => editor.chain().focus().toggleBulletList().run()}
-        className={buttonClass(editor.isActive('bulletList'))}
-        aria-label="Toggle bullet list"
-        aria-pressed={editor.isActive('bulletList')}
-        tabIndex={0}
+      <ToolbarSeparator />
+
+      {/* Lists & blocks */}
+      <ToolbarButton
+        label="Bullet list"
+        isActive={editor.isActive('bulletList')}
+        onPress={() => chain().toggleBulletList().run()}
       >
         <List className="w-4 h-4" aria-hidden="true" />
-      </button>
-
-      <button
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        className={buttonClass(editor.isActive('orderedList'))}
-        aria-label="Toggle ordered list"
-        aria-pressed={editor.isActive('orderedList')}
-        tabIndex={0}
+      </ToolbarButton>
+      <ToolbarButton
+        label="Numbered list"
+        isActive={editor.isActive('orderedList')}
+        onPress={() => chain().toggleOrderedList().run()}
       >
         <ListOrdered className="w-4 h-4" aria-hidden="true" />
-      </button>
+      </ToolbarButton>
+      <ToolbarButton
+        label="Blockquote"
+        isActive={editor.isActive('blockquote')}
+        onPress={() => chain().toggleBlockquote().run()}
+      >
+        <Quote className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
+      <ToolbarButton
+        label="Code block"
+        isActive={editor.isActive('codeBlock')}
+        onPress={() => chain().toggleCodeBlock().run()}
+      >
+        <SquareCode className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
+      <ToolbarButton label="Horizontal rule" onPress={() => chain().setHorizontalRule().run()}>
+        <Minus className="w-4 h-4" aria-hidden="true" />
+      </ToolbarButton>
 
-      {/* Divider */}
-      <div className="w-px h-6 bg-gray-300 mx-1" role="separator" aria-orientation="vertical" />
+      <ToolbarSeparator />
 
       {/* History */}
-      <button
-        onClick={() => editor.chain().focus().undo().run()}
+      <ToolbarButton
+        label="Undo"
         disabled={!editor.can().undo()}
-        className={buttonClass(false) + ' disabled:opacity-50 disabled:cursor-not-allowed'}
-        aria-label="Undo"
-        tabIndex={0}
+        onPress={() => chain().undo().run()}
       >
         <Undo2 className="w-4 h-4" aria-hidden="true" />
-      </button>
-
-      <button
-        onClick={() => editor.chain().focus().redo().run()}
+      </ToolbarButton>
+      <ToolbarButton
+        label="Redo"
         disabled={!editor.can().redo()}
-        className={buttonClass(false) + ' disabled:opacity-50 disabled:cursor-not-allowed'}
-        aria-label="Redo"
-        tabIndex={0}
+        onPress={() => chain().redo().run()}
       >
         <Redo2 className="w-4 h-4" aria-hidden="true" />
-      </button>
+      </ToolbarButton>
 
-      {/* Divider */}
-      <div className="w-px h-6 bg-gray-300 mx-1" role="separator" aria-orientation="vertical" />
+      <ToolbarSeparator />
 
-      {/* Copy All */}
-      <div className="relative">
-        <button
-          onClick={handleCopyAll}
-          className={buttonClass(false)}
-          aria-label="Copy all text"
-          tabIndex={0}
-        >
+      {/* Document actions */}
+      <div className="relative shrink-0">
+        <ToolbarButton label="Copy all text" onPress={handleCopyAll}>
           <Copy className="w-4 h-4" aria-hidden="true" />
-        </button>
+        </ToolbarButton>
         {showCopiedTooltip && (
-          <div className="absolute bottom-full left-0 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap" role="status">
+          <div
+            className="absolute bottom-full left-0 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap z-10"
+            role="status"
+          >
             Copied!
           </div>
         )}
       </div>
-
-      {/* Clear All */}
-      <button
-        onClick={handleClearAll}
-        className={buttonClass(false)}
-        aria-label="Clear all content"
-        tabIndex={0}
-      >
+      <ToolbarButton label="Clear all content" onPress={handleClearAll}>
         <Trash2 className="w-4 h-4" aria-hidden="true" />
-      </button>
+      </ToolbarButton>
 
-      {/* Export Menu */}
       <ExportMenu editor={editor} onToast={onToast} />
     </div>
   );

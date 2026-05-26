@@ -1,3 +1,8 @@
+---
+description: 
+alwaysApply: true
+---
+
 # AI Coding Instructions
 
 Before changing this project, read:
