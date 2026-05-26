@@ -38,6 +38,7 @@ flowchart LR
     Config["backend/app/audio_config.py\nAudio/model/server config"]
     EnvBackend["backend/.env.mac\nbackend/.env.windows\nbackend/.env.uat"]
     Engine["services/transcription_engine.py\nSilero VAD + Faster-Whisper"]
+    Domains["domains/*\nGeneral / Medical adapters"]
     Formatter["services/medical_formatter.py\nMedical text cleanup"]
     Commands["services/command_processor.py\nVoice command parsing"]
     TemplateManager["services/template_manager.py\nTemplate registration/search"]
@@ -66,8 +67,9 @@ flowchart LR
   EnvBackend --> Config
   Handler --> Config
   Handler --> Engine
-  Handler --> Formatter
-  Handler --> Commands
+  Handler --> Domains
+  Domains --> Formatter
+  Domains --> Commands
   Engine --> Config
   TemplateRoutes --> TemplateManager
   TemplateManager --> DBConn
@@ -92,8 +94,7 @@ sequenceDiagram
   participant B as FastAPI /ws/audio
   participant H as AudioStreamHandler
   participant E as TranscriptionEngine
-  participant F as MedicalFormatter
-  participant C as CommandProcessor
+  participant D as DomainAdapter
   participant T as TipTap Editor
 
   U->>P: Click record
@@ -109,11 +110,9 @@ sequenceDiagram
   H-->>H: buffer speech, skip silence
   H->>E: transcribe_audio_bytes(buffer)
   E-->>H: raw text
-  H->>F: format(text)
-  F-->>H: formatted text
-  H->>C: process(text)
-  C-->>H: processed text + commands
-  B-->>W: { type: "transcription", text, commands }
+  H->>D: process_transcript(text)
+  D-->>H: domain text + commands
+  B-->>W: { type: "transcription", text, domain, commands }
   W-->>P: lastTranscription / lastCommands
   P->>T: insert text or run editor command
 ```
@@ -126,20 +125,26 @@ sequenceDiagram
 - Loads database, audio config, Whisper/VAD engine, and template manager during lifespan startup.
 - Exposes REST endpoints `/`, `/health`, `/config`.
 - Exposes WebSocket endpoint `/ws/audio`.
-- Defines `AudioStreamHandler`, which owns per-connection audio buffering and command processing.
-- Registers active SQLite templates on each session command processor so spoken template triggers work over WebSocket.
+- Defines `AudioStreamHandler`, which owns per-connection audio buffering and selected domain processing.
+- Selects domain with `/ws/audio?domain=...`; default is `DEFAULT_TRANSCRIPTION_DOMAIN`, currently `general`.
 - Uses the balanced realtime profile to flush after short natural pauses and includes `processing_time_ms`, `audio_duration_seconds`, and `flush_reason` in transcription responses.
-- Sanitizes streaming boundary text before command processing to remove trailing hyphen fragments, pause fillers, adjacent repeated phrases, and repeated words introduced by audio overlap.
+- Sanitizes streaming boundary text before domain processing to remove trailing hyphen fragments, pause fillers, adjacent repeated phrases, and repeated words introduced by audio overlap.
+
+`backend/app/domains/*`
+
+- `general` is vanilla transcription: raw transcript text, no medical formatter, no command processor.
+- `medical` wraps vanilla transcript output with `MedicalFormatter`, `CommandProcessor`, and SQLite template trigger registration.
+- Future domains, such as legal, should be added here instead of changing the core transcription engine.
 
 `backend/app/services/transcription_engine.py`
 
 - Loads Silero VAD if available.
 - Loads Faster-Whisper model.
-- Uses `TRANSCRIPTION_LANGUAGE` and `AudioConfig.get_initial_prompt()` so accent-aware English medical dictation guidance reaches Whisper.
+- Uses `TRANSCRIPTION_LANGUAGE` and `AudioConfig.get_initial_prompt()` so guidance-only, accent-aware English medical dictation instructions reach Whisper without seeding fake patient facts.
 - Detects speech from PCM bytes; chunks larger than Silero's 512-sample 16kHz model window are framed internally before scoring.
 - Defaults to realtime-friendly Silero frame probability detection; optional `SILERO_REQUIRE_SEGMENT=true` can make VAD stricter in noisy rooms.
 - Transcribes audio bytes.
-- Rejects likely hallucinations using configured no-speech probability and minimum confidence gates without dropping low-confidence text when Whisper reports low no-speech probability.
+- Rejects likely hallucinations using no-speech probability, minimum confidence gates, repeated-sentence detection, boilerplate matching, and prompt-leak detection without hardcoded medical phrase rewrites.
 - Returns structured dicts instead of letting transcription failures crash the WebSocket loop.
 
 `backend/app/services/medical_formatter.py`
@@ -232,7 +237,7 @@ Server to client:
 
 ```json
 { "type": "connected", "message": "...", "config": {} }
-{ "type": "transcription", "text": "...", "commands": [], "is_final": true, "processing_time_ms": 123.4, "audio_duration_seconds": 1.2, "flush_reason": "natural_pause" }
+{ "type": "transcription", "text": "...", "domain": "general", "commands": [], "is_final": true, "processing_time_ms": 123.4, "audio_duration_seconds": 1.2, "flush_reason": "natural_pause" }
 { "type": "control_ack", "action": "flush" }
 { "type": "available_commands", "commands_list": {} }
 { "type": "stats", "data": {} }

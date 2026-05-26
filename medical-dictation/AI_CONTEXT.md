@@ -4,7 +4,7 @@ Use this file first to reduce context and avoid hallucinated architecture.
 
 ## Product
 
-Medical Dictation is a real-time clinical dictation web app. The browser records microphone audio, streams it to a FastAPI backend over WebSocket, receives transcribed/formatted medical text plus command events, and inserts/acts on those results in a TipTap editor.
+Medical Dictation is evolving into a multi-domain real-time transcription platform. The browser records microphone audio, streams it to a FastAPI backend over WebSocket, receives transcribed text plus optional domain command events, and inserts/acts on those results in a TipTap editor.
 
 ## Read These First
 
@@ -20,6 +20,10 @@ Backend entry:
 - `backend/app/main.py`
 - `backend/app/audio_config.py`
 - `backend/app/services/transcription_engine.py`
+- `backend/app/domains/base.py`
+- `backend/app/domains/general.py`
+- `backend/app/domains/medical.py`
+- `backend/app/domains/registry.py`
 - `backend/app/services/medical_formatter.py`
 - `backend/app/services/command_processor.py`
 - `backend/app/services/template_manager.py`
@@ -36,7 +40,9 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Editor: TipTap.
 - Speech engine: Faster-Whisper through `TranscriptionEngine`.
 - Automatic English accent support is enabled by default through `ACCENT_SUPPORT_ENABLED=true`, `TRANSCRIPTION_LANGUAGE=en`, an accent-aware Whisper prompt, and default model `base` when `MODEL_SIZE` is not explicitly set.
+- Whisper initial prompt must be guidance-only, not sample patient content. Do not seed fake diagnoses, medications, vitals, labs, or plans in the prompt.
 - WebSocket endpoint: `/ws/audio`.
+- WebSocket domain selection: `/ws/audio` uses `DEFAULT_TRANSCRIPTION_DOMAIN` (`general` by default); `/ws/audio?domain=medical` enables medical formatting, commands, and template triggers.
 - Template REST API prefix: `/api/templates`.
 - Browser audio format expected by backend: 16-bit PCM, 16kHz, mono.
 - Audio chunks are sent from frontend to backend as WebSocket binary messages.
@@ -44,11 +50,12 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Silero VAD defaults to realtime-friendly frame probability detection; set `SILERO_REQUIRE_SEGMENT=true` only if noise bursts are more problematic than missing short words.
 - Default transcription profile is `balanced_realtime`: roughly 0.6s minimum speech buffer, 0.7s silence pause trigger, 6s max forced buffer, and Whisper beam size 2.
 - WebSocket transcription responses include actual backend `processing_time_ms`, `audio_duration_seconds`, and `flush_reason` for latency diagnosis.
-- Whisper hallucination filtering primarily uses `no_speech_prob`; low-confidence text is only filtered when no-speech probability is also suspicious. Tune with `MIN_TRANSCRIPTION_CONFIDENCE` and `HALLUCINATION_MAX_NO_SPEECH_PROB`.
+- Whisper hallucination filtering uses `no_speech_prob`, repeated-sentence detection, boilerplate matching, and prompt-leak detection. Low-confidence text is only filtered when no-speech probability is also suspicious. Tune with `MIN_TRANSCRIPTION_CONFIDENCE` and `HALLUCINATION_MAX_NO_SPEECH_PROB`.
 - Control messages are sent as WebSocket JSON text messages.
 - Transcription responses are sent from backend to frontend as WebSocket JSON messages.
 - Frontend transcription insertion is event-based: `page.tsx` wraps processed text with an id, `DictationEditor` inserts it once, then clears the pending text.
-- Backend stream text is sanitized before command processing to remove trailing hyphen fragments, standalone pause fillers, adjacent repeated short phrases, and repeated overlap words from chunk boundaries.
+- Backend stream text is sanitized before domain processing to remove trailing hyphen fragments, standalone pause fillers, adjacent repeated short phrases, and repeated overlap words from chunk boundaries.
+- Domain adapters own post-transcription behavior. `general` is vanilla transcription with no medical formatting or commands. `medical` wraps the vanilla transcript with `MedicalFormatter`, `CommandProcessor`, and SQLite template triggers.
 - Sessions, macros, settings, and autosave are primarily browser `localStorage` concerns.
 - Custom templates are backend/SQLite concerns.
 - Each WebSocket `AudioStreamHandler` owns a session `CommandProcessor` and must register active SQLite templates so phrases like `insert assessment` trigger template insertion during dictation.
@@ -66,10 +73,10 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 6. `backend/app/main.py` receives chunks in `websocket_audio_stream`.
 7. `AudioStreamHandler` runs speech detection and buffers useful audio.
 8. On pause/max buffer/flush, `TranscriptionEngine` transcribes audio.
-9. `MedicalFormatter` applies medical text cleanup.
-10. `CommandProcessor` extracts punctuation, editing, formatting, control, custom, and template commands.
-11. Punctuation and template commands produce insertable text; formatting, editing, navigation, and control commands are editor/app actions and should not insert literal marker text.
-12. Backend sends `{ type: "transcription", text, commands }`.
+9. The selected domain adapter processes transcript text.
+10. `general` returns vanilla text with no commands; `medical` applies `MedicalFormatter` and `CommandProcessor`.
+11. In medical mode, punctuation and template commands produce insertable text; formatting, editing, navigation, and control commands are editor/app actions and should not insert literal marker text.
+12. Backend sends `{ type: "transcription", text, domain, commands }`.
 13. Frontend inserts text into the editor and executes supported commands.
 
 ## Common Change Targets
@@ -78,7 +85,8 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Change backend endpoint/protocol: update `backend/app/main.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
 - Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, backend handler expectations, and docs.
 - Change voice commands: update `backend/app/services/command_processor.py`; if frontend action is needed, update command handling in `frontend/src/app/page.tsx`.
-- Change medical formatting: update `backend/app/services/medical_formatter.py`.
+- Change domain behavior: update `backend/app/domains/*`.
+- Change medical formatting: update `backend/app/services/medical_formatter.py` and `backend/app/domains/medical.py`.
 - Change templates: update `backend/app/services/template_manager.py`, `backend/app/api/template_routes.py`, frontend template hooks/components, and docs.
 - Change editor behavior: update `frontend/src/components/Editor/DictationEditor.tsx` and command insertion logic in `frontend/src/app/page.tsx`.
 

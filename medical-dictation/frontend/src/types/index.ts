@@ -129,6 +129,7 @@ export interface TranscriptionMessage {
   message?: string;
   config?: ServerConfig;
   text?: string;
+  domain?: string;
   is_final?: boolean;
   confidence?: number;
   processing_time_ms?: number;
@@ -162,6 +163,8 @@ export interface ServerConfig {
   device: string;
   language?: string;
   accent_support_enabled?: boolean;
+  domain?: string;
+  available_domains?: string[];
   vad_enabled: boolean;
   commands_enabled?: boolean;
   available_commands?: AvailableCommands;

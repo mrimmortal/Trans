@@ -48,6 +48,7 @@ class AudioConfig:
     PORT: int = int(os.getenv("PORT", "8000"))  # Server port
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     CORS_ORIGINS: list[str] = parse_cors_origins(os.getenv("CORS_ORIGINS"))
+    DEFAULT_TRANSCRIPTION_DOMAIN: str = os.getenv("DEFAULT_TRANSCRIPTION_DOMAIN", "general")
 
     # ─── BUFFERING STRATEGY ───
     TRANSCRIPTION_PROFILE: str = os.getenv("TRANSCRIPTION_PROFILE", "balanced_realtime")
@@ -113,18 +114,10 @@ class AudioConfig:
 
     # ─── MEDICAL CONTEXT PROMPT ───
     MEDICAL_CONTEXT_PROMPT: str = (
-        "Patient presents with hypertension, type 2 diabetes mellitus, "
-        "and hyperlipidemia. Current medications include Metformin 500mg "
-        "twice daily, Lisinopril 10mg daily, and Atorvastatin 20mg at bedtime. "
-        "Blood pressure is 130/85 mmHg. Heart rate 72 bpm. SpO2 98%. "
-        "CBC shows WBC 7.2, hemoglobin 14.1, platelets 250. "
-        "CMP within normal limits. HbA1c 7.2%. LDL 110 mg/dL. "
-        "ECG shows normal sinus rhythm. No ST changes. "
-        "Assessment: COPD exacerbation. CHF stable. DVT ruled out. "
-        "Plan: Continue Aspirin 81mg, Omeprazole 20mg, Amlodipine 5mg. "
-        "Prescribe Amoxicillin 500mg TID for 7 days. "
-        "Follow up in 2 weeks. Refer to cardiology for echocardiogram. "
-        "Ibuprofen 400mg PRN for pain. Gabapentin 300mg QHS for neuropathy."
+        "Transcribe only the words spoken by the clinician. Do not invent symptoms, "
+        "diagnoses, medications, doses, lab results, vitals, plans, or follow-up details. "
+        "Prefer silence over guessing when audio is unclear. Preserve medical terminology, "
+        "abbreviations, punctuation commands, and clinical units exactly as dictated."
     )
 
     ACCENT_CONTEXT_PROMPT: str = (

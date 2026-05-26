@@ -25,6 +25,14 @@ class AccentSupportConfigTests(unittest.TestCase):
         self.assertIn("medical dictation", prompt.lower())
         self.assertIn(AudioConfig.MEDICAL_CONTEXT_PROMPT, prompt)
 
+    def test_initial_prompt_does_not_seed_fake_patient_facts(self):
+        prompt = AudioConfig.get_initial_prompt().lower()
+
+        self.assertNotIn("patient presents with hypertension", prompt)
+        self.assertNotIn("metformin 500mg", prompt)
+        self.assertNotIn("hba1c 7.2", prompt)
+        self.assertNotIn("prescribe amoxicillin", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -67,8 +67,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.audio_config import AudioConfig
+from app.domains.registry import get_domain_adapter
 from app.services.transcription_engine import TranscriptionEngine
-from app.services.medical_formatter import MedicalFormatter
 from app.services.command_processor import CommandProcessor, VoiceCommand, CommandType
 from app.models.schemas import (
     TranscriptionResponse,
@@ -101,7 +101,7 @@ class AudioStreamHandler:
     and voice command processing.
     """
 
-    def __init__(self, transcription_engine: TranscriptionEngine, config: AudioConfig):
+    def __init__(self, transcription_engine: TranscriptionEngine, config: AudioConfig, domain: str | None = None):
         """
         Initialize stream handler for a client.
 
@@ -111,9 +111,9 @@ class AudioStreamHandler:
         """
         self.engine = transcription_engine
         self.config = config
-        self.formatter = MedicalFormatter()
-        self.command_processor = CommandProcessor()
-        self._register_template_commands()
+        self.domain_adapter = get_domain_adapter(domain or getattr(config, "DEFAULT_TRANSCRIPTION_DOMAIN", "general"))
+        self.domain = self.domain_adapter.name
+        self.command_processor = self.domain_adapter.command_processor
 
         # Dynamic audio buffers
         self.audio_buffer = bytearray()
@@ -139,38 +139,6 @@ class AudioStreamHandler:
         self.total_words = 0
         self.silence_chunks_skipped = 0
         self.commands_executed = 0
-
-    def _register_template_commands(self):
-        """Register active SQLite templates on this session's command processor."""
-        try:
-            from app.services.template_manager import get_template_manager
-
-            manager = get_template_manager()
-            templates = manager.list_templates()
-
-            for template in templates:
-                trigger_phrases = template.get("trigger_phrases") or []
-                escaped = [
-                    re.escape(phrase.lower().strip())
-                    for phrase in trigger_phrases
-                    if phrase and phrase.strip()
-                ]
-                if not escaped:
-                    continue
-
-                pattern = rf"\b(?:insert |add )?(?:{'|'.join(escaped)})(?: template)?\b"
-                self.command_processor.register_custom_command(
-                    pattern,
-                    VoiceCommand(
-                        command_type=CommandType.TEMPLATE,
-                        action=template["name"],
-                        replacement=template["content"],
-                    ),
-                )
-
-            logger.debug(f"Registered {len(templates)} template command groups for session")
-        except Exception as e:
-            logger.warning(f"Could not register template commands for session: {e}")
 
     def add_audio_chunk(self, audio_bytes: bytes) -> Optional[dict]:
         """
@@ -272,8 +240,7 @@ class AudioStreamHandler:
                 self.has_speech_in_buffer = False
                 return None
 
-            # ── FORMAT TEXT ──
-            text = self.formatter.format(text)
+            # ── CLEAN STREAMING ARTIFACTS ──
             text = self._sanitize_stream_text(text)
             if not text:
                 self.audio_buffer.clear()
@@ -281,8 +248,8 @@ class AudioStreamHandler:
                 self.pending_flush_reason = "unknown"
                 return None
 
-            # ── PROCESS VOICE COMMANDS ──
-            processed_text, commands = self.command_processor.process(text)
+            # ── DOMAIN POST-PROCESSING ──
+            processed_text, commands = self.domain_adapter.process_transcript(text)
             self.commands_executed += len(commands)
 
             # ── SAVE OVERLAP FOR NEXT CHUNK ──
@@ -313,6 +280,7 @@ class AudioStreamHandler:
             # ── RETURN RESULT WITH COMMANDS ──
             return {
                 "text": processed_text,
+                "domain": self.domain,
                 "processing_time_ms": processing_time_ms,
                 "audio_duration_seconds": audio_duration_seconds,
                 "flush_reason": flush_reason,
@@ -371,7 +339,7 @@ class AudioStreamHandler:
         if overlap_count:
             text = " ".join(words[remove_word_count:]).strip()
 
-        return self.formatter.format(text) if text else ""
+        return self._cleanup_stream_text(text) if text else ""
 
     def _remove_adjacent_repeated_phrases(self, text: str) -> str:
         """Remove repeated 1-3 word phrases created around pauses."""
@@ -389,6 +357,12 @@ class AudioStreamHandler:
                     break
 
         return " ".join(output)
+
+    @staticmethod
+    def _cleanup_stream_text(text: str) -> str:
+        text = re.sub(r"\s{2,}", " ", text)
+        text = re.sub(r"\s+([.,;:])", r"\1", text)
+        return text.strip()
 
     def _remember_emitted_text(self, text: str):
         """Keep a short normalized tail to remove duplicate overlap text later."""
@@ -710,6 +684,10 @@ async def get_config():
                 "language": config.TRANSCRIPTION_LANGUAGE,
                 "accent_support_enabled": config.ACCENT_SUPPORT_ENABLED,
             },
+            "domains": {
+                "default": config.DEFAULT_TRANSCRIPTION_DOMAIN,
+                "available": ["general", "medical"],
+            },
             "vad_enabled": app.state.transcription_engine.vad_model is not None,
             "templates": {
                 "total": template_stats["total_templates"],
@@ -730,7 +708,7 @@ async def get_config():
 
 
 @app.websocket("/ws/audio")
-async def websocket_audio_stream(websocket: WebSocket):
+async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = None):
     """
     WebSocket endpoint for real-time audio streaming with VAD and commands.
 
@@ -751,7 +729,7 @@ async def websocket_audio_stream(websocket: WebSocket):
         logger.info(f"[{session_id}] Client connected (total: {app.state.active_connections})")
 
         # ── STEP 2: Create handler ──
-        handler = AudioStreamHandler(app.state.transcription_engine, app.state.config)
+        handler = AudioStreamHandler(app.state.transcription_engine, app.state.config, domain=domain)
 
         # ── STEP 3: Send welcome message ──
         welcome_config = {
@@ -765,8 +743,10 @@ async def websocket_audio_stream(websocket: WebSocket):
             "device": app.state.config.DEVICE,
             "language": app.state.config.TRANSCRIPTION_LANGUAGE,
             "accent_support_enabled": app.state.config.ACCENT_SUPPORT_ENABLED,
+            "domain": handler.domain,
+            "available_domains": ["general", "medical"],
             "vad_enabled": app.state.transcription_engine.vad_model is not None,
-            "commands_enabled": True,
+            "commands_enabled": handler.domain_adapter.commands_enabled,
             "available_commands": handler.command_processor.get_available_commands(),
         }
         
@@ -795,6 +775,7 @@ async def websocket_audio_stream(websocket: WebSocket):
                         response = {
                             "type": "transcription",
                             "text": result["text"],
+                            "domain": result.get("domain", handler.domain),
                             "commands": result.get("commands", []),
                             "is_final": True,
                             "confidence": 0.95,
@@ -863,10 +844,13 @@ async def websocket_audio_stream(websocket: WebSocket):
                             response = {
                                 "type": "transcription",
                                 "text": remaining["text"],
+                                "domain": remaining.get("domain", handler.domain),
                                 "commands": remaining.get("commands", []),
                                 "is_final": True,
                                 "confidence": 0.95,
-                                "processing_time_ms": 100,
+                                "processing_time_ms": remaining.get("processing_time_ms", 0.0),
+                                "audio_duration_seconds": remaining.get("audio_duration_seconds", 0.0),
+                                "flush_reason": remaining.get("flush_reason", "manual_flush"),
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             }
                             await websocket.send_json(response)

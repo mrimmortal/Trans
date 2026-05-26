@@ -51,6 +51,28 @@ class WhisperHallucinationFilterTests(unittest.TestCase):
         self.assertEqual(result["text"], "")
         self.assertEqual(result["confidence"], 0.0)
 
+    def test_filter_hallucinations_ignores_punctuation_on_boilerplate(self):
+        engine = self.make_engine([])
+
+        self.assertEqual(engine._filter_hallucinations("Thank you."), "")
+        self.assertEqual(engine._filter_hallucinations("Thanks for watching."), "")
+
+    def test_filter_hallucinations_rejects_repeated_sentence(self):
+        engine = self.make_engine([])
+
+        self.assertEqual(
+            engine._filter_hallucinations("The patient is stable. The patient is stable."),
+            "",
+        )
+
+    def test_filter_hallucinations_rejects_instruction_leakage(self):
+        engine = self.make_engine([])
+
+        self.assertEqual(
+            engine._filter_hallucinations("Transcribe only the words spoken by the clinician."),
+            "",
+        )
+
     def test_run_whisper_keeps_low_confidence_speech_when_no_speech_is_low(self):
         engine = self.make_engine([
             FakeSegment("No chest pain.", avg_logprob=-2.0, no_speech_prob=0.1)

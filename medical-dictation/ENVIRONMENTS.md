@@ -39,6 +39,14 @@ Backend:  http://127.0.0.1:8000
 WebSocket: ws://127.0.0.1:8000/ws/audio
 ```
 
+Backend transcription domain defaults to vanilla/general:
+
+```text
+DEFAULT_TRANSCRIPTION_DOMAIN=general
+```
+
+Use `ws://127.0.0.1:8000/ws/audio?domain=medical` or set `DEFAULT_TRANSCRIPTION_DOMAIN=medical` to enable medical formatting, commands, and template triggers by default.
+
 ## DEV-WINDOWS
 
 Local Windows development.
@@ -75,6 +83,14 @@ Frontend: http://localhost:3000
 Backend:  http://127.0.0.1:8000
 WebSocket: ws://127.0.0.1:8000/ws/audio
 ```
+
+Backend transcription domain defaults to vanilla/general:
+
+```text
+DEFAULT_TRANSCRIPTION_DOMAIN=general
+```
+
+Use `ws://127.0.0.1:8000/ws/audio?domain=medical` or set `DEFAULT_TRANSCRIPTION_DOMAIN=medical` to enable medical formatting, commands, and template triggers by default.
 
 `backend/requirements.txt` is the Windows dependency file. For CUDA on Windows, edit `backend/.env.windows` after verifying the machine has a working CUDA stack:
 

@@ -738,8 +738,11 @@ class TranscriptionEngine:
 
         text_lower = text.lower().strip()
 
+        hallucination_phrases = getattr(self.config, "HALLUCINATION_PHRASES", config.HALLUCINATION_PHRASES)
+        normalized_text = text_lower.strip(" .,!?:;\"'")
+
         # ── CHECK 1: EXACT MATCH WITH HALLUCINATION PHRASES ──
-        if text_lower in [p.lower() for p in self.config.HALLUCINATION_PHRASES]:
+        if normalized_text in [p.lower().strip(" .,!?:;\"'") for p in hallucination_phrases]:
             logger.debug(f"Filtered hallucination (exact match): '{text}'")
             return ""
 
@@ -751,6 +754,17 @@ class TranscriptionEngine:
                     logger.debug(f"Filtered hallucination (short + phrase): '{text}'")
                     return ""
 
+        # ── CHECK 2B: PROMPT INSTRUCTION LEAKAGE ──
+        instruction_leak_patterns = [
+            "transcribe only the words spoken",
+            "do not invent symptoms",
+            "prefer silence over guessing",
+            "preserve medical terminology",
+        ]
+        if any(pattern in text_lower for pattern in instruction_leak_patterns):
+            logger.debug(f"Filtered hallucination (prompt leakage): '{text}'")
+            return ""
+
         # ── CHECK 3: SINGLE WORD REPETITION ──
         words = text.split()
         if len(words) >= 3:
@@ -760,6 +774,18 @@ class TranscriptionEngine:
                 if count / len(words) > 0.5:
                     logger.debug(f"Filtered hallucination (repetition): '{text}'")
                     return ""
+
+        # ── CHECK 3B: REPEATED SENTENCE ──
+        sentences = [
+            re.sub(r"[^a-z0-9]+", " ", sentence.lower()).strip()
+            for sentence in re.split(r"[.!?]+", text)
+            if sentence.strip()
+        ]
+        if len(sentences) >= 2:
+            sentence_counts = Counter(sentences)
+            if sentence_counts.most_common(1)[0][1] > 1:
+                logger.debug(f"Filtered hallucination (repeated sentence): '{text}'")
+                return ""
 
         # ── CHECK 4: ONLY PUNCTUATION OR TOO SHORT ──
         text_stripped = text.strip().rstrip(".,;:!?")

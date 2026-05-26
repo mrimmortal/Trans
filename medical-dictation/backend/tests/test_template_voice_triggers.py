@@ -36,6 +36,7 @@ class TemplateVoiceTriggerTests(unittest.TestCase):
             handler = AudioStreamHandler(
                 transcription_engine=SimpleNamespace(),
                 config=config,
+                domain="medical",
             )
 
         processed_text, commands = handler.command_processor.process("insert assessment")

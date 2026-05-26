@@ -28,7 +28,7 @@ class AudioStreamHandlerLatencyTests(unittest.TestCase):
     def test_transcribe_buffer_returns_processing_metadata(self):
         with patch("app.services.template_manager.get_template_manager") as get_manager:
             get_manager.return_value.list_templates.return_value = []
-            handler = AudioStreamHandler(FakeEngine(), self.config)
+            handler = AudioStreamHandler(FakeEngine(), self.config, domain="medical")
 
         handler.pending_flush_reason = "natural_pause"
         handler.audio_buffer.extend(b"\x01\x00" * 16000)
@@ -70,7 +70,7 @@ class AudioStreamHandlerLatencyTests(unittest.TestCase):
 
         text = handler._sanitize_stream_text("In the glomerulus, water is filtered.")
 
-        self.assertEqual(text, "Water is filtered.")
+        self.assertEqual(text, "water is filtered.")
 
     def test_sanitize_stream_text_removes_pause_filler_and_repeated_phrase(self):
         with patch("app.services.template_manager.get_template_manager") as get_manager:
@@ -90,7 +90,7 @@ class AudioStreamHandlerLatencyTests(unittest.TestCase):
 
         text = handler._sanitize_stream_text("Alpha brava charlie delta echo.")
 
-        self.assertEqual(text, "Delta echo.")
+        self.assertEqual(text, "delta echo.")
 
     def test_sanitize_stream_text_suppresses_repeated_paragraph_prefix(self):
         with patch("app.services.template_manager.get_template_manager") as get_manager:
@@ -110,7 +110,7 @@ class AudioStreamHandlerLatencyTests(unittest.TestCase):
             "And removal of toxins. Filtration occurs in the glomerulus, one-fifth of the blood volume."
         )
 
-        self.assertEqual(text, "One-fifth of the blood volume.")
+        self.assertEqual(text, "one-fifth of the blood volume.")
 
 
 if __name__ == "__main__":
