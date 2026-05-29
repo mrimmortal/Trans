@@ -1,82 +1,15 @@
 """Production-grade Whisper transcription engine with audio processing and validation"""
 
-# ============================================
-# CUDA PATH FIX FOR VIRTUAL ENVIRONMENT
-# MUST BE AT THE VERY TOP
-# ============================================
+from app.infrastructure.cuda_bootstrap import configure_windows_cuda_paths
+
+configure_windows_cuda_paths()
+
 import os
-import sys
-import glob
-
-if sys.platform == "win32":
-    try:
-        # Get site-packages from virtual environment
-        site_packages_dirs = [p for p in sys.path if 'site-packages' in p.lower()]
-        
-        if not site_packages_dirs:
-            raise ImportError("site-packages not found in sys.path")
-        
-        site_packages = site_packages_dirs[0]
-        nvidia_base = os.path.join(site_packages, 'nvidia')
-        
-        if not os.path.exists(nvidia_base):
-            raise ImportError(f"nvidia directory not found at {nvidia_base}")
-        
-        # Find all directories containing CUDA DLLs
-        cuda_paths = []
-        
-        for subdir in ['cublas', 'cudnn']:
-            base_dir = os.path.join(nvidia_base, subdir)
-            if os.path.exists(base_dir):
-                # Recursively search for directories with DLLs
-                for root, dirs, files in os.walk(base_dir):
-                    dll_files = [f for f in files if f.endswith('.dll')]
-                    if dll_files and root not in cuda_paths:
-                        cuda_paths.append(root)
-        
-        if not cuda_paths:
-            raise ImportError("No CUDA DLL directories found")
-        
-        # Add all found paths to system PATH
-        path_addition = os.pathsep.join(cuda_paths)
-        os.environ['PATH'] = path_addition + os.pathsep + os.environ.get('PATH', '')
-        
-        print(f"✓ Added {len(cuda_paths)} CUDA path(s) to system PATH")
-        for p in cuda_paths:
-            dll_count = len(glob.glob(os.path.join(p, '*.dll')))
-            print(f"  - {os.path.basename(os.path.dirname(p))}/bin ({dll_count} DLLs)")
-            
-    except Exception as e:
-        print(f"⚠ CUDA setup failed: {e}")
-        print("  Falling back to CPU mode...")
-        os.environ['DEVICE'] = 'cpu'
-        os.environ['COMPUTE_TYPE'] = 'int8'
-
-# ============================================
-# NOW import everything else
-# ============================================
 import logging
 import time
 import numpy as np
-import re
-from typing import Optional, List, Dict, Tuple
-from collections import Counter
+from typing import Optional
 from faster_whisper import WhisperModel
-
-# Audio preprocessing
-try:
-    import noisereduce as nr
-    NOISEREDUCE_AVAILABLE = True
-except ImportError:
-    NOISEREDUCE_AVAILABLE = False
-    logging.warning("noisereduce not installed - noise reduction disabled")
-
-try:
-    from scipy import signal
-    SCIPY_AVAILABLE = True
-except ImportError:
-    SCIPY_AVAILABLE = False
-    logging.warning("scipy not installed - high-pass filtering disabled")
 
 # Silero VAD
 try:
@@ -94,6 +27,12 @@ except ImportError:
     logging.warning("torch not installed - Silero VAD disabled")
 
 from app.audio_config import AudioConfig, config
+from app.services.audio_processing import (
+    bytes_to_float32,
+    preprocess_audio,
+    validate_audio,
+)
+from app.services.transcription_text import clean_text, filter_hallucinations
 
 logger = logging.getLogger(__name__)
 
@@ -449,140 +388,16 @@ class TranscriptionEngine:
             }
 
     def _bytes_to_float32(self, audio_bytes: bytes) -> Optional[np.ndarray]:
-        """
-        Convert raw int16 PCM bytes to float32 numpy array.
-
-        Args:
-            audio_bytes: Raw audio data as bytes
-
-        Returns:
-            Float32 numpy array normalized to [-1.0, 1.0], or None on error
-        """
-        try:
-            # Convert int16 bytes to int16 array
-            audio_int16 = np.frombuffer(audio_bytes, dtype=np.int16)
-
-            # Normalize to float32 in range [-1.0, 1.0]
-            audio_float32 = audio_int16.astype(np.float32) / 32768.0
-
-            return audio_float32
-
-        except ValueError:
-            # Bytes length not divisible by 2 (not valid int16)
-            # Truncate to nearest even length
-            try:
-                truncated_bytes = audio_bytes[: (len(audio_bytes) // 2) * 2]
-                audio_int16 = np.frombuffer(truncated_bytes, dtype=np.int16)
-                audio_float32 = audio_int16.astype(np.float32) / 32768.0
-                logger.warning(f"Truncated audio from {len(audio_bytes)} to {len(truncated_bytes)} bytes")
-                return audio_float32
-            except Exception as e:
-                logger.error(f"Failed to convert bytes to float32: {e}")
-                return None
+        """Convert raw int16 PCM bytes to float32 numpy array."""
+        return bytes_to_float32(audio_bytes)
 
     def _validate_audio(self, audio: np.ndarray) -> dict:
-        """
-        Validate audio quality with three checks:
-        1. Length: must be >= MIN_AUDIO_SAMPLES
-        2. Energy: RMS must be >= SILENCE_RMS_THRESHOLD
-        3. Clipping: warn if >5% of samples exceed 0.95 amplitude
-
-        Args:
-            audio: Float32 numpy array [-1.0, 1.0]
-
-        Returns:
-            Dict with is_valid (bool), reason (str), rms (float)
-        """
-        # ── CHECK 1: LENGTH ──
-        if len(audio) < self.config.MIN_AUDIO_SAMPLES:
-            return {
-                "is_valid": False,
-                "reason": f"Audio too short: {len(audio)} < {self.config.MIN_AUDIO_SAMPLES} samples",
-                "rms": 0.0,
-            }
-
-        # ── CHECK 2: ENERGY (RMS) ──
-        rms = np.sqrt(np.mean(audio**2))
-        if rms < self.config.SILENCE_RMS_THRESHOLD:
-            return {
-                "is_valid": False,
-                "reason": f"Audio is silence (RMS {rms:.6f} < {self.config.SILENCE_RMS_THRESHOLD})",
-                "rms": rms,
-            }
-
-        # ── CHECK 3: CLIPPING ──
-        clipping_ratio = np.sum(np.abs(audio) > 0.95) / len(audio)
-        if clipping_ratio > 0.05:
-            logger.warning(
-                f"Audio clipping detected: {clipping_ratio*100:.1f}% of samples exceed 0.95. "
-                "Microphone may be distorting."
-            )
-
-        return {
-            "is_valid": True,
-            "reason": "OK",
-            "rms": float(rms),
-        }
+        """Validate audio quality for transcription."""
+        return validate_audio(audio, self.config)
 
     def _preprocess_audio(self, audio: np.ndarray) -> np.ndarray:
-        """
-        Enhanced preprocessing pipeline:
-        1. DC offset removal
-        2. High-pass filter (remove low-frequency noise)
-        3. Noise reduction (if available)
-        4. Dynamic range compression
-        5. Peak normalization
-
-        Args:
-            audio: Float32 numpy array
-
-        Returns:
-            Preprocessed float32 numpy array
-        """
-        # ── 1. DC OFFSET REMOVAL ──
-        audio = audio - np.mean(audio)
-
-        # ── 2. HIGH-PASS FILTER (remove rumble < 80 Hz) ──
-        if SCIPY_AVAILABLE:
-            try:
-                sos = signal.butter(4, 80, 'hp', fs=self.config.SAMPLE_RATE, output='sos')
-                audio = signal.sosfilt(sos, audio)
-            except Exception as e:
-                logger.warning(f"High-pass filter failed: {e}")
-
-        # ── 3. NOISE REDUCTION ──
-        if NOISEREDUCE_AVAILABLE:
-            try:
-                audio = nr.reduce_noise(
-                    y=audio,
-                    sr=self.config.SAMPLE_RATE,
-                    stationary=True,
-                    prop_decrease=0.8  # Reduce noise by 80%
-                )
-            except Exception as e:
-                logger.warning(f"Noise reduction failed: {e}")
-
-        # ── 4. DYNAMIC RANGE COMPRESSION ──
-        # Boost quiet parts, compress loud parts
-        try:
-            threshold = 0.3
-            ratio = 2.0
-            audio_abs = np.abs(audio)
-            compressed = np.where(
-                audio_abs > threshold,
-                np.sign(audio) * (threshold + (audio_abs - threshold) / ratio),
-                audio
-            )
-            audio = compressed
-        except Exception as e:
-            logger.warning(f"Compression failed: {e}")
-
-        # ── 5. PEAK NORMALIZATION ──
-        peak = np.max(np.abs(audio))
-        if peak > 0.1:
-            audio = audio * (0.8 / peak)  # Target 0.8, leave headroom
-
-        return audio.astype(np.float32)
+        """Preprocess float32 audio for Whisper."""
+        return preprocess_audio(audio, self.config.SAMPLE_RATE)
 
     def _run_whisper(self, audio: np.ndarray) -> dict:
         """
@@ -717,116 +532,12 @@ class TranscriptionEngine:
             }
 
     def _filter_hallucinations(self, text: str) -> str:
-        """
-        IMPROVED: Filter common Whisper hallucinations.
-        
-        Checks:
-        1. Exact match with known hallucination phrases
-        2. Short text (< 15 chars) containing specific hallucination phrases
-        3. Single word repeated >50% of all words
-        4. Only punctuation or very short text
-        5. Single character repetition pattern (a a a)
-
-        Args:
-            text: Transcribed text
-
-        Returns:
-            Filtered text (empty string if hallucination detected)
-        """
-        if not text or len(text.strip()) == 0:
-            return ""
-
-        text_lower = text.lower().strip()
-
-        hallucination_phrases = getattr(self.config, "HALLUCINATION_PHRASES", config.HALLUCINATION_PHRASES)
-        normalized_text = text_lower.strip(" .,!?:;\"'")
-
-        # ── CHECK 1: EXACT MATCH WITH HALLUCINATION PHRASES ──
-        if normalized_text in [p.lower().strip(" .,!?:;\"'") for p in hallucination_phrases]:
-            logger.debug(f"Filtered hallucination (exact match): '{text}'")
-            return ""
-
-        # ── CHECK 2: SHORT TEXT + SPECIFIC PHRASES ──
-        # Only filter very short text with clear hallucinations
-        if len(text) < 15:
-            for phrase in ["thank you", "subscribe", "www.", ".com", "copyright"]:
-                if phrase in text_lower:
-                    logger.debug(f"Filtered hallucination (short + phrase): '{text}'")
-                    return ""
-
-        # ── CHECK 2B: PROMPT INSTRUCTION LEAKAGE ──
-        instruction_leak_patterns = [
-            "transcribe only the words spoken",
-            "do not invent names",
-            "prefer silence over guessing",
-            "preserve dictated wording",
-        ]
-        if any(pattern in text_lower for pattern in instruction_leak_patterns):
-            logger.debug(f"Filtered hallucination (prompt leakage): '{text}'")
-            return ""
-
-        # ── CHECK 3: SINGLE WORD REPETITION ──
-        words = text.split()
-        if len(words) >= 3:
-            word_counts = Counter(w.lower() for w in words if len(w) > 2)
-            if word_counts:
-                most_common_word, count = word_counts.most_common(1)[0]
-                if count / len(words) > 0.5:
-                    logger.debug(f"Filtered hallucination (repetition): '{text}'")
-                    return ""
-
-        # ── CHECK 3B: REPEATED SENTENCE ──
-        sentences = [
-            re.sub(r"[^a-z0-9]+", " ", sentence.lower()).strip()
-            for sentence in re.split(r"[.!?]+", text)
-            if sentence.strip()
-        ]
-        if len(sentences) >= 2:
-            sentence_counts = Counter(sentences)
-            if sentence_counts.most_common(1)[0][1] > 1:
-                logger.debug(f"Filtered hallucination (repeated sentence): '{text}'")
-                return ""
-
-        # ── CHECK 4: ONLY PUNCTUATION OR TOO SHORT ──
-        text_stripped = text.strip().rstrip(".,;:!?")
-        if len(text_stripped) < 2:
-            logger.debug(f"Filtered hallucination (too short): '{text}'")
-            return ""
-        
-        if all(not c.isalnum() for c in text_stripped):
-            logger.debug(f"Filtered hallucination (punctuation only): '{text}'")
-            return ""
-
-        # ── CHECK 5: SINGLE CHARACTER REPETITION PATTERN ──
-        if re.search(r'\b(\w)\s+\1\s+\1\b', text_lower):
-            logger.debug(f"Filtered hallucination (single char repetition): '{text}'")
-            return ""
-
-        return text
+        """Filter common Whisper hallucinations."""
+        return filter_hallucinations(text, self.config)
 
     def _clean_text(self, text: str) -> str:
-        """
-        Clean transcribed text:
-        1. Collapse multiple spaces
-        2. Remove leading punctuation
-        3. Strip whitespace
-
-        Args:
-            text: Raw transcribed text
-
-        Returns:
-            Cleaned text
-        """
-        # Collapse multiple spaces
-        text = re.sub(r"\s+", " ", text)
-
-        # Remove leading punctuation
-        text = re.sub(r"^[,;:]+\s*", "", text)
-
-        # Strip whitespace
-        text = text.strip()
-
-        return text
+        """Clean transcribed text."""
+        return clean_text(text)
 
     def transcribe_file(self, file_path: str) -> dict:
         """
@@ -966,45 +677,3 @@ class TranscriptionEngine:
                 pass
         
         return info
-
-
-# ─────────────────────────────────────────────────────────────────
-# TESTING
-# ─────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    # Setup logging for tests
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-
-    logger.info("=== Transcription Engine Tests ===\n")
-
-    # Initialize engine
-    engine = TranscriptionEngine()
-    
-    # Print device info
-    device_info = engine.get_device_info()
-    logger.info(f"Device Info: {device_info}\n")
-
-    # ── TEST 1: SILENCE ──
-    logger.info("Test 1: Silence (should return empty)")
-    silence_audio = np.zeros(16000, dtype=np.int16)  # 1 second of silence
-    silence_bytes = silence_audio.tobytes()
-    result = engine.transcribe_audio_bytes(silence_bytes)
-    logger.info(f"Result: text='{result['text']}', error={result['error']}\n")
-
-    # ── TEST 2: VAD ──
-    logger.info("Test 2: VAD detection on silence")
-    vad_result = engine.detect_speech(silence_bytes)
-    logger.info(f"VAD: has_speech={vad_result['has_speech']}, prob={vad_result['speech_prob']:.3f}\n")
-
-    # ── TEST 3: TOO SHORT ──
-    logger.info("Test 3: Too short audio (should return empty)")
-    short_audio = np.zeros(100, dtype=np.int16)
-    short_bytes = short_audio.tobytes()
-    result = engine.transcribe_audio_bytes(short_bytes)
-    logger.info(f"Result: text='{result['text']}', error={result['error']}\n")
-
-    logger.info("=== Tests Complete ===")

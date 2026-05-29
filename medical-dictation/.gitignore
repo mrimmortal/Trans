@@ -77,6 +77,9 @@ medical-dictation/frontend/node_modules/
 # Ignore backend Python cache and env
 medical-dictation/backend/__pycache__/
 medical-dictation/backend/.env
+backend/.env
+backend/.env.*
+!backend/.env.example
 medical-dictation/backend/venv/
 medical-dictation/backend/*.pyc
 medical-dictation/backend/*.pyo

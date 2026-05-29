@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import List, Dict, Tuple, Optional, Callable
+from typing import List, Dict, Tuple, Optional
 from enum import Enum
 from dataclasses import dataclass, field
 
@@ -239,8 +239,8 @@ class CommandProcessor:
             Tuple of (processed_text, list_of_commands_executed)
         
         Example:
-            >>> processor.process("Patient has diabetes period new paragraph Next")
-            ("Patient has diabetes.\n\nNext", [VoiceCommand(...), VoiceCommand(...)])
+            >>> processor.process("Project status period new paragraph Next")
+            ("Project status.\n\nNext", [VoiceCommand(...), VoiceCommand(...)])
         """
         if not self.enabled or not text:
             return text, []
@@ -367,8 +367,11 @@ class CommandProcessor:
         Example:
             processor.register_custom_command(
                 r"\bmy signature\b",
-                VoiceCommand(CommandType.TEMPLATE, "signature", 
-                           replacement="\n\nDr. John Smith, MD\nInternal Medicine\n")
+                VoiceCommand(
+                    CommandType.CUSTOM,
+                    "signature",
+                    replacement="\n\nRegards,\nProject Team\n",
+                )
             )
         """
         self.custom_commands[pattern] = command

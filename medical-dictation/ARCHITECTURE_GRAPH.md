@@ -2,6 +2,8 @@
 
 This file is for AI agents and maintainers. It keeps future changes aligned with the vanilla transcription template.
 
+Durable architecture rationale lives in `docs/adr/`; keep this file focused on current runtime flow and protocol facts.
+
 ## System Graph
 
 ```mermaid
@@ -22,9 +24,14 @@ flowchart LR
 
   subgraph Backend["Backend: FastAPI"]
     App["backend/app/main.py\nFastAPI app + /ws/audio"]
-    Handler["AudioStreamHandler\nVAD buffering + flush"]
+    Handler["websocket/audio_stream_handler.py\nVAD buffering + flush"]
+    WSControl["websocket/control_messages.py\nJSON control messages"]
+    WSResponses["websocket/responses.py\nConnection/transcription payloads"]
     Config["backend/app/audio_config.py\nAudio/model/server config"]
     Engine["services/transcription_engine.py\nSilero VAD + Faster-Whisper"]
+    AudioProcessing["services/audio_processing.py\nAudio conversion/preprocessing"]
+    TextProcessing["services/transcription_text.py\nHallucination filtering/text cleanup"]
+    CudaBootstrap["infrastructure/cuda_bootstrap.py\nWindows CUDA path setup"]
     Domains["domains/*\nGeneral adapter + wrapper seam"]
     Commands["services/command_processor.py\nReusable command parser"]
   end
@@ -44,9 +51,15 @@ flowchart LR
   Recorder -- "binary PCM audio chunks" --> WS
   WS -- "ws://.../ws/audio" --> App
   App --> Handler
+  App --> WSControl
+  App --> WSResponses
   Handler --> Config
   Handler --> Engine
   Handler --> Domains
+  WSControl --> Handler
+  Engine --> AudioProcessing
+  Engine --> TextProcessing
+  Engine --> CudaBootstrap
   Domains --> Commands
   Engine --> Config
   App -- "JSON transcription events" --> WS
@@ -83,7 +96,7 @@ sequenceDiagram
   E-->>H: raw text
   H->>D: process_transcript(text)
   D-->>H: vanilla text, no commands
-  B-->>W: { type: "transcription", text, domain, commands }
+  B-->>W: responses.py builds { type: "transcription", text, domain, commands }
   W-->>P: lastTranscription / lastCommands
   P->>T: insert processed text
 ```
@@ -158,6 +171,9 @@ flowchart TD
 
 - Keep `/ws/audio` synchronized across backend, frontend constants, README/docs, and this graph.
 - Keep audio format assumptions synchronized across `useAudioRecorder.ts`, `audio_config.py`, and `AudioStreamHandler`.
+- Keep backend WebSocket buffering in `backend/app/websocket/audio_stream_handler.py`, control message handling in `backend/app/websocket/control_messages.py`, and response payload construction in `backend/app/websocket/responses.py`.
+- Keep Windows CUDA path setup centralized in `backend/app/infrastructure/cuda_bootstrap.py`.
+- Keep audio conversion/preprocessing in `backend/app/services/audio_processing.py` and transcription text cleanup in `backend/app/services/transcription_text.py`.
 - Keep the built-in domain vanilla. Add domain-specific behavior through wrapper adapters rather than editing `TranscriptionEngine`.
 - Keep frontend wrapper branding and feature toggles in `frontend/src/lib/appConfig.ts`.
 - Keep user-local snippets/sessions/settings/autosave in localStorage unless a backend storage change is explicitly requested.
@@ -166,3 +182,5 @@ flowchart TD
 ## Last Updated Notes
 
 - 2026-05-26: Removed built-in domain-specific formatter/template storage and documented the vanilla wrapper-ready runtime.
+- 2026-05-30: Split backend WebSocket audio pipeline internals into focused `backend/app/websocket/` modules while keeping `/ws/audio` in `backend/app/main.py`.
+- 2026-05-30: Centralized backend CUDA bootstrap and split audio/text helper responsibilities out of `TranscriptionEngine`.

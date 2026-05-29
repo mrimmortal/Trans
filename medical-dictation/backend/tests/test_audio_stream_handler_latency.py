@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from app.main import AudioStreamHandler
+from app.websocket.audio_stream_handler import AudioStreamHandler
 
 
 class FakeEngine:

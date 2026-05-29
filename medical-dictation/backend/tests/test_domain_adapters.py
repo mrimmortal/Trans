@@ -15,11 +15,6 @@ class DomainAdapterTests(unittest.TestCase):
         self.assertFalse(adapter.commands_enabled)
         self.assertEqual(adapter.command_processor.get_available_commands(), {})
 
-    def test_registry_falls_back_to_general_for_unknown_domain(self):
-        adapter = get_domain_adapter("unknown")
-
-        self.assertIsInstance(adapter, GeneralDomainAdapter)
-
     def test_registry_treats_unknown_domain_as_vanilla(self):
         adapter = get_domain_adapter("legacy-domain")
 

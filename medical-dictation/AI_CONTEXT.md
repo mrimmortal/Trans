@@ -21,13 +21,20 @@ Backend entry:
 
 - `backend/app/main.py`
 - `backend/app/audio_config.py`
+- `backend/app/infrastructure/cuda_bootstrap.py`
+- `backend/app/services/audio_processing.py`
 - `backend/app/services/transcription_engine.py`
+- `backend/app/services/transcription_text.py`
 - `backend/app/domains/base.py`
 - `backend/app/domains/general.py`
 - `backend/app/domains/registry.py`
 - `backend/app/services/command_processor.py`
 
+For WebSocket/audio changes, read `backend/app/websocket/README.md` first, then the focused files in `backend/app/websocket/`.
+
 For the full map, read `ARCHITECTURE_GRAPH.md`.
+
+For durable architecture rationale, read the relevant records in `docs/adr/`.
 
 For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 
@@ -60,18 +67,19 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 4. Audio is downsampled/converted to 16-bit PCM.
 5. Frontend sends audio chunks as binary WebSocket messages.
 6. `backend/app/main.py` receives chunks in `websocket_audio_stream`.
-7. `AudioStreamHandler` runs speech detection and buffers useful audio.
-8. On pause/max buffer/flush, `TranscriptionEngine` transcribes audio.
+7. `backend/app/websocket/audio_stream_handler.py` runs speech detection and buffers useful audio.
+8. On pause/max buffer/flush, `TranscriptionEngine` transcribes audio using `audio_processing.py` and `transcription_text.py` helpers.
 9. The selected domain adapter processes transcript text; built-in `general` returns text unchanged.
-10. Backend sends `{ type: "transcription", text, domain, commands }`.
+10. `backend/app/websocket/responses.py` builds `{ type: "transcription", text, domain, commands }`.
 11. Frontend processes local snippets/voice commands and inserts text into the editor.
 
 ## Common Change Targets
 
 - Change frontend branding/wrapper toggles: update `frontend/src/lib/appConfig.ts`.
 - Change backend wrapper behavior: update `backend/app/domains/*` and `backend/app/domains/registry.py`.
-- Change backend endpoint/protocol: update `backend/app/main.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
-- Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, backend handler expectations, and docs.
+- Change backend endpoint/protocol: update `backend/app/main.py`, `backend/app/websocket/control_messages.py`, `backend/app/websocket/responses.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
+- Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, `backend/app/websocket/audio_stream_handler.py`, and docs.
+- Change backend runtime env defaults: update `backend/app/audio_config.py`, `backend/.env.example`, setup docs, and tests.
 - Change generic voice commands: update `backend/app/services/command_processor.py` and `frontend/src/hooks/useVoiceCommands.ts`.
 - Change editor insertion behavior: update `frontend/src/app/page.tsx` and `frontend/src/components/Editor/DictationEditor.tsx`.
 
@@ -87,3 +95,5 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 ## Last Updated Notes
 
 - 2026-05-26: Converted the project to a vanilla transcription template. Removed built-in medical formatter/domain/template storage and made UI branding/config wrapper-ready.
+- 2026-05-30: Split backend WebSocket audio pipeline internals out of `backend/app/main.py` into `backend/app/websocket/audio_stream_handler.py`, `control_messages.py`, and `responses.py` while preserving `/ws/audio`.
+- 2026-05-30: Centralized Windows CUDA bootstrap, replaced tracked backend `.env*` files with `backend/.env.example`, pruned stale backend schemas, and split audio/text helpers out of `TranscriptionEngine`.

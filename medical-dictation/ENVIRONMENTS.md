@@ -7,7 +7,7 @@ This project has four supported environments.
 Backend env:
 
 ```text
-backend/.env.mac
+copy backend/.env.example to backend/.env.mac
 ```
 
 Frontend env:
@@ -42,7 +42,7 @@ DEFAULT_TRANSCRIPTION_DOMAIN=general
 Backend env:
 
 ```text
-backend/.env.windows
+copy backend/.env.example to backend/.env.windows
 ```
 
 Frontend env:
@@ -77,7 +77,7 @@ DEFAULT_TRANSCRIPTION_DOMAIN=general
 Backend env:
 
 ```text
-backend/.env.uat
+copy backend/.env.example to backend/.env.uat
 ```
 
 Frontend env:
@@ -106,7 +106,7 @@ cd medical-dictation
 Backend env:
 
 ```text
-backend/.env.prod
+copy backend/.env.example to backend/.env.prod
 ```
 
 Frontend env:
@@ -137,6 +137,7 @@ The workflow filename still uses the original folder naming. Treat the workflow 
 
 ## Rules
 
+- Keep real backend `.env*` files local and untracked. Commit only `backend/.env.example`.
 - Do not hardcode dev tunnel URLs in `frontend/src/lib/constants.ts`.
 - Frontend API/WebSocket URLs must come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - Backend CORS origins must come from `CORS_ORIGINS`.
@@ -145,3 +146,4 @@ The workflow filename still uses the original folder naming. Treat the workflow 
 ## Last Updated Notes
 
 - 2026-05-26: Removed built-in domain-specific environment notes. Vanilla deploys use only `/ws/audio` and the `general` domain.
+- 2026-05-30: Backend real env files are local-only; `backend/.env.example` is the committed template.
