@@ -16,6 +16,10 @@ flowchart LR
     Constants["src/lib/constants.ts\nAPI_URL / WS_URL / audio constants"]
     Recorder["src/hooks/useAudioRecorder.ts\nMicrophone -> PCM chunks"]
     WS["src/hooks/useWebSocket.ts\nWebSocket client"]
+    AssistantHook["src/hooks/useLocalAssistant.ts\nLLM -> TTS orchestration"]
+    AssistantPanel["src/components/Assistant/LocalAssistantPanel.tsx\nResponse + playback UI"]
+    AssistantAPI["src/services/assistantApi.ts\nPOST /llm/respond client"]
+    TTSAPI["src/services/ttsApi.ts\nPOST /tts/synthesize client"]
     VoiceCommands["src/hooks/useVoiceCommands.ts\nLocal commands + snippets"]
     Editor["src/components/Editor/DictationEditor.tsx\nTipTap editor"]
     Sidebar["src/components/Sidebar/*\nSnippets / history"]
@@ -44,6 +48,8 @@ flowchart LR
   Page --> AppConfig
   Page --> Recorder
   Page --> WS
+  Page --> AssistantPanel
+  Page --> AssistantHook
   Page --> VoiceCommands
   Page --> Editor
   Page --> Sidebar
@@ -51,6 +57,13 @@ flowchart LR
   Sidebar --> LocalStorage
   Constants --> Page
   Constants --> WS
+  Constants --> AssistantAPI
+  Constants --> TTSAPI
+  AssistantPanel --> AssistantHook
+  AssistantHook --> AssistantAPI
+  AssistantHook --> TTSAPI
+  AssistantAPI -- "http://.../llm/respond" --> App
+  TTSAPI -- "http://.../tts/synthesize" --> App
 
   Recorder -- "binary PCM audio chunks" --> WS
   WS -- "ws://.../ws/audio" --> App
@@ -110,6 +123,35 @@ sequenceDiagram
   W-->>P: lastTranscription / lastCommands
   P->>T: insert processed text
 ```
+
+## Local Assistant Sequence
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant P as page.tsx
+  participant E as TipTap Editor
+  participant A as useLocalAssistant
+  participant L as assistantApi
+  participant S as ttsApi
+  participant B as FastAPI REST
+  participant Audio as Browser Audio
+
+  U->>P: Click Ask Assistant
+  P->>E: getText()
+  P->>A: runAssistant(transcript)
+  A->>L: requestAssistantResponse(transcript)
+  L->>B: POST /llm/respond
+  B-->>L: { response, model, provider }
+  A-->>P: responseText
+  A->>S: synthesizeSpeech(responseText)
+  S->>B: POST /tts/synthesize
+  B-->>S: audio/wav bytes
+  S-->>A: object URL
+  A->>Audio: play()
+```
+
+The local assistant REST flow is independent of `/ws/audio`.
 
 ## Protocol Facts
 
@@ -193,6 +235,7 @@ flowchart TD
 - Keep the built-in domain vanilla. Add domain-specific behavior through wrapper adapters rather than editing `TranscriptionEngine`.
 - Keep the LM Studio REST integration in `backend/app/api/llm_routes.py` and `backend/app/services/lm_studio_client.py`; do not route it through `/ws/audio`.
 - Keep the Supertonic TTS integration in `backend/app/api/tts_routes.py` and `backend/app/services/supertonic_tts_client.py`; do not route it through `/ws/audio`.
+- Keep frontend assistant API calls in `frontend/src/services/assistantApi.ts` and `frontend/src/services/ttsApi.ts`; do not add REST assistant logic to WebSocket or recorder hooks.
 - Keep frontend wrapper branding and feature toggles in `frontend/src/lib/appConfig.ts`.
 - Keep user-local snippets/sessions/settings/autosave in localStorage unless a backend storage change is explicitly requested.
 - If adding a new cross-boundary message, document its JSON shape here.
@@ -204,3 +247,4 @@ flowchart TD
 - 2026-05-30: Centralized backend CUDA bootstrap and split audio/text helper responsibilities out of `TranscriptionEngine`.
 - 2026-05-30: Added backend-only `POST /llm/respond` for LM Studio responses, separate from the WebSocket transcription flow.
 - 2026-05-30: Added backend-only `POST /tts/synthesize` for Supertonic 3 `audio/wav` synthesis, separate from STT and the WebSocket transcription flow.
+- 2026-05-30: Added frontend Local Assistant flow from editor text to LM Studio response to Supertonic WAV playback.

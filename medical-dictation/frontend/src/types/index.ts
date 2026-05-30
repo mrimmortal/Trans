@@ -140,3 +140,35 @@ export interface CustomCommandRegistration {
   replacement: string;
   action?: string;
 }
+
+// ═══════════════════════════════════════════════════════════════
+// LOCAL ASSISTANT TYPES
+// ═══════════════════════════════════════════════════════════════
+
+export interface LLMRespondRequest {
+  text: string;
+  system_prompt?: string;
+}
+
+export interface LLMRespondResponse {
+  response: string;
+  model: string;
+  provider: string;
+}
+
+export type AssistantApiErrorCode = 'LM_STUDIO_UNAVAILABLE' | 'REQUEST_FAILED';
+
+export interface TTSSynthesizeRequest {
+  text: string;
+  voice?: string;
+  lang?: string;
+}
+
+export type TTSApiErrorCode = 'TTS_UNAVAILABLE' | 'REQUEST_FAILED';
+
+export type LocalAssistantErrorCode =
+  | 'LM_STUDIO_UNAVAILABLE'
+  | 'TTS_UNAVAILABLE'
+  | 'REQUEST_FAILED';
+
+export type AssistantStage = 'idle' | 'generating-response' | 'generating-speech' | 'playing';

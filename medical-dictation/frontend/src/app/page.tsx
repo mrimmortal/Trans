@@ -6,6 +6,7 @@ import { Header } from '@/components/Header/Header';
 import { Toolbar } from '@/components/Editor/Toolbar';
 import { DictationEditor, DictationEditorHandle } from '@/components/Editor/DictationEditor';
 import { Editor } from '@tiptap/react';
+import { LocalAssistantPanel } from '@/components/Assistant/LocalAssistantPanel';
 import { RecordButton } from '@/components/Recorder/RecordButton';
 import { AudioVisualizer } from '@/components/Recorder/AudioVisualizer';
 import { Sidebar } from '@/components/Sidebar/Sidebar';
@@ -14,6 +15,7 @@ import { Session } from '@/components/Sidebar/SessionHistory';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useVoiceCommands } from '@/hooks/useVoiceCommands';
+import { useLocalAssistant } from '@/hooks/useLocalAssistant';
 import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/components/ui/Toast';
 import {
@@ -114,6 +116,7 @@ export default function Page() {
   });
 
   const { processText } = useVoiceCommands();
+  const localAssistant = useLocalAssistant();
   const { settings, updateSettings } = useSettings();
   const { showToast } = useToast();
 
@@ -886,6 +889,11 @@ export default function Page() {
     [showToast]
   );
 
+  const handleRunAssistant = useCallback(() => {
+    const transcript = editorRef.current?.editor?.getText() || '';
+    void localAssistant.runAssistant(transcript);
+  }, [localAssistant]);
+
   // ════════════════════════════════════════════════════════════════
   // LOADING STATE
   // ════════════════════════════════════════════════════════════════
@@ -1194,6 +1202,18 @@ export default function Page() {
             editor={toolbarEditor}
             onToast={handleToast}
             onClearContent={clearPendingTranscript}
+          />
+
+          <LocalAssistantPanel
+            responseText={localAssistant.responseText}
+            error={localAssistant.error}
+            isGeneratingResponse={localAssistant.isGeneratingResponse}
+            isGeneratingSpeech={localAssistant.isGeneratingSpeech}
+            isBusy={localAssistant.isBusy}
+            hasAudio={Boolean(localAssistant.audioUrl)}
+            onRun={handleRunAssistant}
+            onReplay={localAssistant.replayAudio}
+            onClear={localAssistant.clearAssistant}
           />
 
           {/* Editor */}

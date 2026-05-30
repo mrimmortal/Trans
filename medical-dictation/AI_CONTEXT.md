@@ -16,6 +16,10 @@ Frontend entry:
 - `frontend/src/hooks/useAudioRecorder.ts`
 - `frontend/src/hooks/useWebSocket.ts`
 - `frontend/src/hooks/useVoiceCommands.ts`
+- `frontend/src/hooks/useLocalAssistant.ts`
+- `frontend/src/services/assistantApi.ts`
+- `frontend/src/services/ttsApi.ts`
+- `frontend/src/components/Assistant/LocalAssistantPanel.tsx`
 
 Backend entry:
 
@@ -60,6 +64,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Wrapper-ready frontend seam: `frontend/src/lib/appConfig.ts`.
 - Sessions, snippets, settings, and autosave are browser `localStorage` concerns.
 - Frontend URLs come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
+- Frontend local assistant calls `POST /llm/respond`, displays the response, calls `POST /tts/synthesize`, and plays returned WAV audio through a browser object URL.
 - Backend CORS origins come from `CORS_ORIGINS`.
 - `scripts/run.sh mac-dev`, `scripts/run.sh uat-check`, and `scripts/run.sh prod-check` fall back to `backend/.env.example` when local backend env files are absent.
 - Optional local LLM responses use `POST /llm/respond`, backed by LM Studio's OpenAI-compatible `/chat/completions` API.
@@ -84,9 +89,23 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 10. `backend/app/websocket/responses.py` builds `{ type: "transcription", text, domain, commands }`.
 11. Frontend processes local snippets/voice commands and inserts text into the editor.
 
+## Local Assistant Flow
+
+1. User clicks Local Assistant in `frontend/src/components/Assistant/LocalAssistantPanel.tsx`.
+2. `frontend/src/app/page.tsx` reads current TipTap plain text.
+3. `frontend/src/hooks/useLocalAssistant.ts` calls `assistantApi.requestAssistantResponse()`.
+4. `frontend/src/services/assistantApi.ts` sends `POST /llm/respond`.
+5. The assistant response is shown in the panel.
+6. `useLocalAssistant` calls `ttsApi.synthesizeSpeech()` with the response text.
+7. `frontend/src/services/ttsApi.ts` sends `POST /tts/synthesize` and creates an audio object URL.
+8. `useLocalAssistant` plays the returned WAV through browser audio.
+
+This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and the STT insertion path.
+
 ## Common Change Targets
 
 - Change frontend branding/wrapper toggles: update `frontend/src/lib/appConfig.ts`.
+- Change frontend local assistant behavior: update `frontend/src/hooks/useLocalAssistant.ts`, `frontend/src/services/assistantApi.ts`, `frontend/src/services/ttsApi.ts`, `frontend/src/components/Assistant/LocalAssistantPanel.tsx`, and `ARCHITECTURE_GRAPH.md`.
 - Change backend wrapper behavior: update `backend/app/domains/*` and `backend/app/domains/registry.py`.
 - Change backend endpoint/protocol: update `backend/app/main.py`, `backend/app/websocket/control_messages.py`, `backend/app/websocket/responses.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
 - Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, `backend/app/websocket/audio_stream_handler.py`, and docs.
@@ -107,6 +126,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Do not add a second transcription pipeline unless explicitly requested.
 - Do not route LM Studio calls through `/ws/audio`; keep `POST /llm/respond` as a separate REST integration.
 - Do not route TTS through `/ws/audio`; keep `POST /tts/synthesize` as a separate REST integration.
+- Do not mix frontend assistant fetch/audio playback logic into `useWebSocket` or `useAudioRecorder`.
 
 ## Last Updated Notes
 
@@ -117,3 +137,4 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - 2026-05-30: Added backend-only Supertonic 3 TTS integration through `POST /tts/synthesize`; it returns `audio/wav` and is independent of STT, LM Studio, and `/ws/audio`.
 - 2026-05-30: Updated `scripts/run.sh` so macOS dev and local UAT checks fall back to `backend/.env.example` when local backend env files are absent.
 - 2026-05-30: Added macOS/Linux `prod-check` support for local production build validation.
+- 2026-05-30: Added frontend Local Assistant flow that sends editor text to LM Studio, displays the response, synthesizes speech, and plays WAV audio without changing STT or `/ws/audio`.
