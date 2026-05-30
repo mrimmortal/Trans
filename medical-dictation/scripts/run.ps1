@@ -34,7 +34,20 @@ Optional deploy parameters:
 }
 
 function Import-EnvFile {
-    param([string]$Path)
+    param(
+        [string]$Path,
+        [string]$FallbackPath = ""
+    )
+
+    if (-not (Test-Path $Path)) {
+        if (-not [string]::IsNullOrWhiteSpace($FallbackPath) -and (Test-Path $FallbackPath)) {
+            Write-Warning "$Path was not found; using $FallbackPath"
+            $Path = $FallbackPath
+        }
+        else {
+            throw "Environment file not found: $Path"
+        }
+    }
 
     Get-Content $Path | ForEach-Object {
         $Line = $_.Trim()
@@ -143,7 +156,7 @@ function Ensure-BackendVenv {
 }
 
 function Start-WinDev {
-    Import-EnvFile (Join-Path $BackendDir ".env.windows")
+    Import-EnvFile (Join-Path $BackendDir ".env.windows") (Join-Path $BackendDir ".env.example")
 
     Ensure-BackendVenv (Join-Path $BackendDir "requirements.txt")
     $PythonExe = Join-Path $BackendDir "venv\Scripts\python.exe"

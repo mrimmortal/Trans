@@ -1,6 +1,6 @@
 import unittest
 
-from app.audio_config import parse_cors_origins
+from app.audio_config import AudioConfig, parse_cors_origins
 
 
 class ParseCorsOriginsTests(unittest.TestCase):
@@ -22,7 +22,12 @@ class ParseCorsOriginsTests(unittest.TestCase):
             ["https://uat.example.com"],
         )
 
+    def test_tts_defaults_are_supertonic(self):
+        self.assertEqual(AudioConfig.TTS_PROVIDER, "supertonic")
+        self.assertEqual(AudioConfig.SUPERTONIC_VOICE, "M1")
+        self.assertEqual(AudioConfig.SUPERTONIC_LANG, "en")
+        self.assertEqual(AudioConfig.TTS_OUTPUT_DIR, "")
+
 
 if __name__ == "__main__":
     unittest.main()
-

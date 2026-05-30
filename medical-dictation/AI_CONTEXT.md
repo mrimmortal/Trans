@@ -25,6 +25,10 @@ Backend entry:
 - `backend/app/services/audio_processing.py`
 - `backend/app/services/transcription_engine.py`
 - `backend/app/services/transcription_text.py`
+- `backend/app/api/llm_routes.py`
+- `backend/app/services/lm_studio_client.py`
+- `backend/app/api/tts_routes.py`
+- `backend/app/services/supertonic_tts_client.py`
 - `backend/app/domains/base.py`
 - `backend/app/domains/general.py`
 - `backend/app/domains/registry.py`
@@ -57,6 +61,13 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Sessions, snippets, settings, and autosave are browser `localStorage` concerns.
 - Frontend URLs come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - Backend CORS origins come from `CORS_ORIGINS`.
+- `scripts/run.sh mac-dev`, `scripts/run.sh uat-check`, and `scripts/run.sh prod-check` fall back to `backend/.env.example` when local backend env files are absent.
+- Optional local LLM responses use `POST /llm/respond`, backed by LM Studio's OpenAI-compatible `/chat/completions` API.
+- LM Studio config comes from `LM_STUDIO_BASE_URL`, `LM_STUDIO_MODEL`, and `LM_STUDIO_TIMEOUT_SECONDS`.
+- `POST /llm/respond` is independent of `/ws/audio` and does not change transcription behavior.
+- Optional local TTS uses `POST /tts/synthesize`, backed by Supertonic 3 through the Python SDK.
+- TTS config comes from `TTS_PROVIDER`, `SUPERTONIC_VOICE`, `SUPERTONIC_LANG`, and optional `TTS_OUTPUT_DIR`.
+- `POST /tts/synthesize` is independent of `/ws/audio`, STT, and the LM Studio flow.
 - Do not hardcode temporary tunnel URLs in source code.
 
 ## Current Runtime Flow
@@ -80,6 +91,9 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Change backend endpoint/protocol: update `backend/app/main.py`, `backend/app/websocket/control_messages.py`, `backend/app/websocket/responses.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
 - Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, `backend/app/websocket/audio_stream_handler.py`, and docs.
 - Change backend runtime env defaults: update `backend/app/audio_config.py`, `backend/.env.example`, setup docs, and tests.
+- Change shell startup env loading: update `scripts/run.sh`, `ENVIRONMENTS.md`, and script tests.
+- Change local LLM behavior: update `backend/app/api/llm_routes.py`, `backend/app/services/lm_studio_client.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
+- Change local TTS behavior: update `backend/app/api/tts_routes.py`, `backend/app/services/supertonic_tts_client.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
 - Change generic voice commands: update `backend/app/services/command_processor.py` and `frontend/src/hooks/useVoiceCommands.ts`.
 - Change editor insertion behavior: update `frontend/src/app/page.tsx` and `frontend/src/components/Editor/DictationEditor.tsx`.
 
@@ -91,9 +105,15 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Do not assume backend persistence exists. User snippets, sessions, settings, and autosave use `localStorage`.
 - Do not assume template CRUD exists in vanilla. Add it only inside a wrapper-specific change.
 - Do not add a second transcription pipeline unless explicitly requested.
+- Do not route LM Studio calls through `/ws/audio`; keep `POST /llm/respond` as a separate REST integration.
+- Do not route TTS through `/ws/audio`; keep `POST /tts/synthesize` as a separate REST integration.
 
 ## Last Updated Notes
 
 - 2026-05-26: Converted the project to a vanilla transcription template. Removed built-in medical formatter/domain/template storage and made UI branding/config wrapper-ready.
 - 2026-05-30: Split backend WebSocket audio pipeline internals out of `backend/app/main.py` into `backend/app/websocket/audio_stream_handler.py`, `control_messages.py`, and `responses.py` while preserving `/ws/audio`.
 - 2026-05-30: Centralized Windows CUDA bootstrap, replaced tracked backend `.env*` files with `backend/.env.example`, pruned stale backend schemas, and split audio/text helpers out of `TranscriptionEngine`.
+- 2026-05-30: Added backend-only LM Studio integration through `POST /llm/respond` with config in `AudioConfig`; it is independent of `/ws/audio`.
+- 2026-05-30: Added backend-only Supertonic 3 TTS integration through `POST /tts/synthesize`; it returns `audio/wav` and is independent of STT, LM Studio, and `/ws/audio`.
+- 2026-05-30: Updated `scripts/run.sh` so macOS dev and local UAT checks fall back to `backend/.env.example` when local backend env files are absent.
+- 2026-05-30: Added macOS/Linux `prod-check` support for local production build validation.

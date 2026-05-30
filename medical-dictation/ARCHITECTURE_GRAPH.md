@@ -24,6 +24,10 @@ flowchart LR
 
   subgraph Backend["Backend: FastAPI"]
     App["backend/app/main.py\nFastAPI app + /ws/audio"]
+    LLMRoutes["api/llm_routes.py\nPOST /llm/respond"]
+    LMStudio["services/lm_studio_client.py\nLM Studio chat client"]
+    TTSRoutes["api/tts_routes.py\nPOST /tts/synthesize"]
+    SupertonicTTS["services/supertonic_tts_client.py\nSupertonic 3 TTS client"]
     Handler["websocket/audio_stream_handler.py\nVAD buffering + flush"]
     WSControl["websocket/control_messages.py\nJSON control messages"]
     WSResponses["websocket/responses.py\nConnection/transcription payloads"]
@@ -51,6 +55,12 @@ flowchart LR
   Recorder -- "binary PCM audio chunks" --> WS
   WS -- "ws://.../ws/audio" --> App
   App --> Handler
+  App --> LLMRoutes
+  LLMRoutes --> LMStudio
+  LLMRoutes --> Config
+  App --> TTSRoutes
+  TTSRoutes --> SupertonicTTS
+  TTSRoutes --> Config
   App --> WSControl
   App --> WSResponses
   Handler --> Config
@@ -147,7 +157,13 @@ REST endpoints:
 GET /
 GET /health
 GET /config
+POST /llm/respond
+POST /tts/synthesize
 ```
+
+`POST /llm/respond` accepts `{ "text": "...", "system_prompt": "..." }`, calls the configured LM Studio OpenAI-compatible `/chat/completions` endpoint, and returns `{ "response": "...", "model": "...", "provider": "lmstudio" }`. It is independent of `/ws/audio` and does not alter the transcription pipeline.
+
+`POST /tts/synthesize` accepts `{ "text": "...", "voice": "M1", "lang": "en" }`, calls Supertonic 3 through the backend TTS service, and returns playable `audio/wav` bytes. It is independent of `/ws/audio`, STT, and the LM Studio flow.
 
 ## Persistence Graph
 
@@ -175,6 +191,8 @@ flowchart TD
 - Keep Windows CUDA path setup centralized in `backend/app/infrastructure/cuda_bootstrap.py`.
 - Keep audio conversion/preprocessing in `backend/app/services/audio_processing.py` and transcription text cleanup in `backend/app/services/transcription_text.py`.
 - Keep the built-in domain vanilla. Add domain-specific behavior through wrapper adapters rather than editing `TranscriptionEngine`.
+- Keep the LM Studio REST integration in `backend/app/api/llm_routes.py` and `backend/app/services/lm_studio_client.py`; do not route it through `/ws/audio`.
+- Keep the Supertonic TTS integration in `backend/app/api/tts_routes.py` and `backend/app/services/supertonic_tts_client.py`; do not route it through `/ws/audio`.
 - Keep frontend wrapper branding and feature toggles in `frontend/src/lib/appConfig.ts`.
 - Keep user-local snippets/sessions/settings/autosave in localStorage unless a backend storage change is explicitly requested.
 - If adding a new cross-boundary message, document its JSON shape here.
@@ -184,3 +202,5 @@ flowchart TD
 - 2026-05-26: Removed built-in domain-specific formatter/template storage and documented the vanilla wrapper-ready runtime.
 - 2026-05-30: Split backend WebSocket audio pipeline internals into focused `backend/app/websocket/` modules while keeping `/ws/audio` in `backend/app/main.py`.
 - 2026-05-30: Centralized backend CUDA bootstrap and split audio/text helper responsibilities out of `TranscriptionEngine`.
+- 2026-05-30: Added backend-only `POST /llm/respond` for LM Studio responses, separate from the WebSocket transcription flow.
+- 2026-05-30: Added backend-only `POST /tts/synthesize` for Supertonic 3 `audio/wav` synthesis, separate from STT and the WebSocket transcription flow.

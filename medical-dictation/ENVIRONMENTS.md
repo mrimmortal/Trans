@@ -7,8 +7,10 @@ This project has four supported environments.
 Backend env:
 
 ```text
-copy backend/.env.example to backend/.env.mac
+optional: copy backend/.env.example to backend/.env.mac for local overrides
 ```
+
+If `backend/.env.mac` is absent, `./scripts/run.sh mac-dev` uses `backend/.env.example`.
 
 Frontend env:
 
@@ -80,6 +82,8 @@ Backend env:
 copy backend/.env.example to backend/.env.uat
 ```
 
+For local `uat-check` validation only, `./scripts/run.sh uat-check` falls back to `backend/.env.example` when `backend/.env.uat` is absent.
+
 Frontend env:
 
 ```text
@@ -125,6 +129,13 @@ frontend/.env.prod: NEXT_PUBLIC_WS_URL=wss://api.example.com/ws/audio
 
 Production deploys only run from a manual workflow dispatch targeting `prod-win` or a pushed version tag matching `v*`.
 
+Local production validation on macOS/Linux:
+
+```bash
+cd medical-dictation
+./scripts/run.sh prod-check
+```
+
 ## Pipeline
 
 GitHub Actions workflow:
@@ -138,6 +149,7 @@ The workflow filename still uses the original folder naming. Treat the workflow 
 ## Rules
 
 - Keep real backend `.env*` files local and untracked. Commit only `backend/.env.example`.
+- Local macOS, UAT, and production shell validation helpers may fall back to `backend/.env.example` when local backend `.env*` files are absent.
 - Do not hardcode dev tunnel URLs in `frontend/src/lib/constants.ts`.
 - Frontend API/WebSocket URLs must come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - Backend CORS origins must come from `CORS_ORIGINS`.
@@ -147,3 +159,5 @@ The workflow filename still uses the original folder naming. Treat the workflow 
 
 - 2026-05-26: Removed built-in domain-specific environment notes. Vanilla deploys use only `/ws/audio` and the `general` domain.
 - 2026-05-30: Backend real env files are local-only; `backend/.env.example` is the committed template.
+- 2026-05-30: `scripts/run.sh` now falls back to `backend/.env.example` for missing local backend env files during macOS dev and local UAT checks.
+- 2026-05-30: Added `scripts/run.sh prod-check` for local production build validation.

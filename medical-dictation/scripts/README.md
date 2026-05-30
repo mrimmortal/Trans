@@ -31,6 +31,12 @@ Validate UAT build locally:
 ./scripts/run.sh uat-check
 ```
 
+Validate production build locally:
+
+```bash
+./scripts/run.sh prod-check
+```
+
 Deploy UAT on the Windows UAT host:
 
 ```powershell

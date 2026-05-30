@@ -13,6 +13,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.llm_routes import router as llm_router
+from app.api.tts_routes import router as tts_router
 from app.audio_config import AudioConfig
 from app.services.transcription_engine import TranscriptionEngine
 from app.models.schemas import (
@@ -125,6 +127,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(llm_router)
+app.include_router(tts_router)
 
 
 # ─────────────────────────────────────────────────────────────────

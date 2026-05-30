@@ -11,13 +11,27 @@ usage() {
 Usage:
   ./scripts/run.sh mac-dev     Start backend + frontend for macOS development
   ./scripts/run.sh uat-check   Compile backend and build frontend with UAT env
+  ./scripts/run.sh prod-check  Compile backend and build frontend with production env
 EOF
 }
 
 load_env() {
+  local env_file="$1"
+  local fallback_file="${2:-}"
+
+  if [[ ! -f "$env_file" ]]; then
+    if [[ -n "$fallback_file" && -f "$fallback_file" ]]; then
+      echo "Warning: $env_file not found; using $fallback_file" >&2
+      env_file="$fallback_file"
+    else
+      echo "Environment file not found: $env_file" >&2
+      exit 1
+    fi
+  fi
+
   set -a
   # shellcheck disable=SC1090
-  source "$1"
+  source "$env_file"
   set +a
 }
 
@@ -87,7 +101,7 @@ mac_dev() {
   trap cleanup EXIT INT TERM
 
   cd "$BACKEND_DIR"
-  load_env "$BACKEND_DIR/.env.mac"
+  load_env "$BACKEND_DIR/.env.mac" "$BACKEND_DIR/.env.example"
   ensure_backend_venv "$BACKEND_DIR/requirements-mac.txt"
 
   python run.py &
@@ -103,11 +117,21 @@ mac_dev() {
 
 uat_check() {
   cd "$BACKEND_DIR"
-  load_env "$BACKEND_DIR/.env.uat"
+  load_env "$BACKEND_DIR/.env.uat" "$BACKEND_DIR/.env.example"
   "$(python_bin)" -m compileall app
 
   cd "$FRONTEND_DIR"
   load_env "$FRONTEND_DIR/.env.uat"
+  node_run build
+}
+
+prod_check() {
+  cd "$BACKEND_DIR"
+  load_env "$BACKEND_DIR/.env.prod" "$BACKEND_DIR/.env.example"
+  "$(python_bin)" -m compileall app
+
+  cd "$FRONTEND_DIR"
+  load_env "$FRONTEND_DIR/.env.prod"
   node_run build
 }
 
@@ -117,6 +141,9 @@ case "${1:-}" in
     ;;
   uat-check)
     uat_check
+    ;;
+  prod-check)
+    prod_check
     ;;
   -h|--help|help|"")
     usage

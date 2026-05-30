@@ -38,11 +38,14 @@ class BackendArchitectureRulesTests(unittest.TestCase):
 
         self.assertEqual(real_env_files, [])
 
-    def test_schema_file_exposes_only_used_websocket_models(self):
+    def test_schema_file_exposes_only_used_api_models(self):
         source = self.read_source("app/models/schemas.py")
 
         self.assertIn("class ConnectionResponse", source)
         self.assertIn("class ErrorResponse", source)
+        self.assertIn("class LLMRespondRequest", source)
+        self.assertIn("class LLMRespondResponse", source)
+        self.assertIn("class TTSSynthesizeRequest", source)
         self.assertNotIn("class DictationNote", source)
         self.assertNotIn("class TranscriptionRequest", source)
         self.assertNotIn("class SessionStart", source)

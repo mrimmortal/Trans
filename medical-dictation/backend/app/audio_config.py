@@ -49,6 +49,13 @@ class AudioConfig:
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     CORS_ORIGINS: list[str] = parse_cors_origins(os.getenv("CORS_ORIGINS"))
     DEFAULT_TRANSCRIPTION_DOMAIN: str = os.getenv("DEFAULT_TRANSCRIPTION_DOMAIN", "general")
+    LM_STUDIO_BASE_URL: str = os.getenv("LM_STUDIO_BASE_URL", "")
+    LM_STUDIO_MODEL: str = os.getenv("LM_STUDIO_MODEL", "")
+    LM_STUDIO_TIMEOUT_SECONDS: float = env_float("LM_STUDIO_TIMEOUT_SECONDS", 30.0)
+    TTS_PROVIDER: str = os.getenv("TTS_PROVIDER", "supertonic")
+    SUPERTONIC_VOICE: str = os.getenv("SUPERTONIC_VOICE", "M1")
+    SUPERTONIC_LANG: str = os.getenv("SUPERTONIC_LANG", "en")
+    TTS_OUTPUT_DIR: str = os.getenv("TTS_OUTPUT_DIR", "")
 
     # ─── BUFFERING STRATEGY ───
     TRANSCRIPTION_PROFILE: str = os.getenv("TRANSCRIPTION_PROFILE", "balanced_realtime")
