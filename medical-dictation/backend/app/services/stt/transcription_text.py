@@ -1,4 +1,4 @@
-"""Text cleanup and hallucination filtering for transcription output."""
+"""Text cleanup and hallucination filtering for STT output."""
 
 import logging
 import re

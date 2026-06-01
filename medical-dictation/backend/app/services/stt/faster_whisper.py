@@ -4,7 +4,6 @@ from app.infrastructure.cuda_bootstrap import configure_windows_cuda_paths
 
 configure_windows_cuda_paths()
 
-import os
 import logging
 import time
 import numpy as np
@@ -27,14 +26,14 @@ except ImportError:
     logging.warning("torch not installed - Silero VAD disabled")
 
 from app.audio_config import AudioConfig, config
-from app.services.audio_processing import (
+from app.services.stt.audio_processing import (
     bytes_to_float32,
     preprocess_audio,
     validate_audio,
 )
 from app.services.stt.config import get_faster_whisper_settings
 from app.services.stt.base import SpeechDetectionResult, TranscriptionResult
-from app.services.transcription_text import clean_text, filter_hallucinations
+from app.services.stt.transcription_text import clean_text, filter_hallucinations
 
 logger = logging.getLogger(__name__)
 
@@ -541,111 +540,6 @@ class FasterWhisperSTTProvider:
     def _clean_text(self, text: str) -> str:
         """Clean transcribed text."""
         return clean_text(text)
-
-    def transcribe_file(self, file_path: str) -> dict:
-        """
-        Transcribe an audio file with full context.
-
-        Uses condition_on_previous_text=True (file has full context).
-        Same processing pipeline as transcribe_audio_bytes.
-
-        Args:
-            file_path: Path to audio file (wav, mp3, flac, etc.)
-
-        Returns:
-            Dict with transcription result and error (if any)
-        """
-        start_time = time.time()
-
-        try:
-            if not self.model:
-                return {
-                    "text": "",
-                    "is_final": False,
-                    "confidence": 0.0,
-                    "processing_time_ms": 0.0,
-                    "error": "Model not loaded",
-                }
-
-            if not os.path.exists(file_path):
-                return {
-                    "text": "",
-                    "is_final": False,
-                    "confidence": 0.0,
-                    "processing_time_ms": 0.0,
-                    "error": f"File not found: {file_path}",
-                }
-
-            logger.info(f"Transcribing file: {file_path}")
-
-            # Run transcription with full context
-            segments, info = self.model.transcribe(
-                file_path,
-                language=self._get_transcription_language(),
-                beam_size=self.config.BEAM_SIZE,
-                patience=self.config.PATIENCE,
-                best_of=self.config.BEST_OF,
-                temperature=self.config.TEMPERATURE,
-                initial_prompt=self._get_initial_prompt(),
-                compression_ratio_threshold=self.config.COMPRESSION_RATIO_THRESHOLD,
-                log_prob_threshold=self.config.LOG_PROB_THRESHOLD,
-                no_speech_threshold=self.config.NO_SPEECH_THRESHOLD,
-                vad_filter=self.config.VAD_FILTER,
-                vad_parameters=self.config.VAD_PARAMETERS,
-                condition_on_previous_text=True,  # Full context for file transcription
-                word_timestamps=False,
-            )
-
-            # Iterate segments
-            text_parts = []
-            log_probs = []
-
-            for segment in segments:
-                # Handle both dict and object segment formats
-                if hasattr(segment, "text"):
-                    text_parts.append(segment.text)
-                    if hasattr(segment, "avg_logprob"):
-                        log_probs.append(segment.avg_logprob)
-                elif isinstance(segment, dict):
-                    if "text" in segment:
-                        text_parts.append(segment["text"])
-                    if "avg_logprob" in segment:
-                        log_probs.append(segment["avg_logprob"])
-
-            # Combine text
-            text = " ".join(text_parts).strip()
-
-            # Calculate confidence
-            if log_probs:
-                avg_log_prob = np.mean(log_probs)
-                confidence = float(np.clip(np.exp(avg_log_prob), 0.0, 1.0))
-            else:
-                confidence = 1.0 if text else 0.0
-
-            # Filter hallucinations and clean
-            text = self._filter_hallucinations(text)
-            text = self._clean_text(text)
-
-            logger.info(f"Transcribed {len(text)} characters from {os.path.basename(file_path)}")
-
-            return {
-                "text": text,
-                "is_final": True,
-                "confidence": confidence,
-                "processing_time_ms": (time.time() - start_time) * 1000,
-                "language": "en",
-                "error": None,
-            }
-
-        except Exception as e:
-            logger.error(f"File transcription failed: {e}", exc_info=True)
-            return {
-                "text": "",
-                "is_final": False,
-                "confidence": 0.0,
-                "processing_time_ms": (time.time() - start_time) * 1000,
-                "error": f"File transcription failed: {str(e)}",
-            }
 
     def _get_transcription_language(self) -> str:
         """Return configured transcription language with backward-compatible default."""

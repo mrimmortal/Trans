@@ -2,7 +2,7 @@
 
 from typing import List, Tuple
 
-from app.services.command_processor import VoiceCommand
+from app.services.commands import VoiceCommand
 
 
 class NoopCommandProcessor:

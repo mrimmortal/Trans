@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import WebSocket
 
 from app.models.schemas import ErrorResponse
-from app.services.command_processor import CommandType, VoiceCommand
+from app.services.commands import CommandType, VoiceCommand
 from app.websocket.audio_stream_handler import AudioStreamHandler
 
 logger = logging.getLogger(__name__)

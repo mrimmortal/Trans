@@ -29,6 +29,7 @@ flowchart LR
   subgraph Backend["Backend: FastAPI"]
     App["backend/app/main.py\nFastAPI app + /ws/audio"]
     Dependencies["backend/app/dependencies.py\nService composition"]
+    SystemRoutes["api/system_routes.py\nGET / /health /config"]
     LLMRoutes["api/llm_routes.py\nPOST /llm/respond"]
     LLMService["services/llm/service.py\nGeneric LLM service boundary"]
     LMStudio["services/llm/lm_studio.py\nLM Studio provider"]
@@ -42,11 +43,11 @@ flowchart LR
     Config["backend/app/audio_config.py\nAudio/model/server config"]
     STTService["services/stt/service.py\nGeneric STT service boundary"]
     FasterWhisper["services/stt/faster_whisper.py\nFaster-Whisper + Silero provider"]
-    AudioProcessing["services/audio_processing.py\nAudio conversion/preprocessing"]
-    TextProcessing["services/transcription_text.py\nHallucination filtering/text cleanup"]
+    AudioProcessing["services/stt/audio_processing.py\nAudio conversion/preprocessing"]
+    TextProcessing["services/stt/transcription_text.py\nHallucination filtering/text cleanup"]
     CudaBootstrap["infrastructure/cuda_bootstrap.py\nWindows CUDA path setup"]
     Domains["domains/*\nRegistry + adapter seam"]
-    Commands["services/command_processor.py\nReusable command parser"]
+    Commands["services/commands/processor.py\nReusable command parser"]
   end
 
   User --> Page
@@ -74,6 +75,9 @@ flowchart LR
   WS -- "ws://.../ws/audio" --> App
   App --> Handler
   App --> Dependencies
+  App --> SystemRoutes
+  SystemRoutes --> Config
+  SystemRoutes --> Domains
   App --> LLMRoutes
   LLMRoutes --> Dependencies
   LLMRoutes --> LLMService
@@ -256,8 +260,10 @@ flowchart TD
 - Keep backend WebSocket buffering in `backend/app/websocket/audio_stream_handler.py`, control message handling in `backend/app/websocket/control_messages.py`, and response payload construction in `backend/app/websocket/responses.py`.
 - Keep streaming overlap text cleanup in `backend/app/websocket/stream_text.py`; `AudioStreamHandler` should coordinate it rather than own the cleanup internals.
 - Keep Windows CUDA path setup centralized in `backend/app/infrastructure/cuda_bootstrap.py`.
-- Keep audio conversion/preprocessing in `backend/app/services/audio_processing.py` and transcription text cleanup in `backend/app/services/transcription_text.py`.
+- Keep system REST routes in `backend/app/api/system_routes.py`; `backend/app/main.py` should stay focused on app setup, lifespan, router registration, and `/ws/audio`.
+- Keep audio conversion/preprocessing in `backend/app/services/stt/audio_processing.py` and transcription text cleanup in `backend/app/services/stt/transcription_text.py`.
 - Keep STT orchestration in `backend/app/services/stt/service.py`, service construction in `backend/app/dependencies.py`, and Faster-Whisper/Silero provider logic in `backend/app/services/stt/faster_whisper.py`.
+- Keep generic command parsing in `backend/app/services/commands/processor.py`.
 - Keep the built-in domain vanilla. Add domain-specific behavior through registered wrapper adapters rather than editing STT provider logic.
 - Keep the LM Studio REST integration in `backend/app/api/llm_routes.py`, `backend/app/dependencies.py`, `backend/app/services/llm/service.py`, and `backend/app/services/llm/lm_studio.py`; do not route it through `/ws/audio`.
 - Keep the Supertonic TTS integration in `backend/app/api/tts_routes.py`, `backend/app/dependencies.py`, `backend/app/services/tts/service.py`, and `backend/app/services/tts/supertonic.py`; do not route it through `/ws/audio`.
@@ -277,3 +283,4 @@ flowchart TD
 - 2026-05-31: Refactored backend LM Studio and Supertonic integrations into reusable LLM/TTS service/provider boundaries without changing REST endpoint behavior.
 - 2026-06-01: Refactored backend STT into a reusable service/provider boundary with Faster-Whisper/Silero as the provider, preserving `/ws/audio` behavior.
 - 2026-06-01: Added centralized backend service composition, map-based domain registration for available-domain metadata, typed STT result contracts, and focused streaming text cleanup helpers without changing public endpoint or WebSocket contracts.
+- 2026-06-02: Moved STT helpers and command parsing into focused service subpackages and extracted system REST routes from `main.py` into `api/system_routes.py` without changing public endpoint behavior.

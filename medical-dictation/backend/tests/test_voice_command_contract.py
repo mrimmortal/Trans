@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.command_processor import CommandProcessor
+from app.services.commands import CommandProcessor
 
 
 class VoiceCommandContractTests(unittest.TestCase):

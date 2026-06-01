@@ -1,9 +1,9 @@
 """Services module initialization"""
 
-from .command_processor import CommandProcessor, VoiceCommand, CommandType
+from app.services.commands import CommandProcessor, CommandType, VoiceCommand
 
 __all__ = [
     "CommandProcessor",
-    "VoiceCommand",
     "CommandType",
+    "VoiceCommand",
 ]

@@ -27,10 +27,11 @@ The main rule is simple: keep the core transcription pipeline stable and put ext
 5. `backend/app/websocket/audio_stream_handler.py` handles buffering, VAD decisions, flush timing, and domain post-processing.
 6. `backend/app/services/stt/service.py` delegates speech detection and transcription to the configured STT provider.
 7. `backend/app/services/stt/faster_whisper.py` implements the Faster-Whisper/Silero provider.
-8. `backend/app/websocket/stream_text.py` cleans overlap artifacts from streaming text.
-9. `backend/app/domains/registry.py` selects a domain adapter.
-10. `backend/app/websocket/responses.py` builds the JSON response sent back to the browser.
-11. The frontend processes local voice commands/snippets and inserts text into TipTap.
+8. `backend/app/services/stt/audio_processing.py` and `backend/app/services/stt/transcription_text.py` handle STT-specific audio and text helpers.
+9. `backend/app/websocket/stream_text.py` cleans overlap artifacts from streaming text.
+10. `backend/app/domains/registry.py` selects a domain adapter.
+11. `backend/app/websocket/responses.py` builds the JSON response sent back to the browser.
+12. The frontend processes local voice commands/snippets and inserts text into TipTap.
 
 ### Backend Layers
 
@@ -42,6 +43,8 @@ The main rule is simple: keep the core transcription pipeline stable and put ext
 - WebSocket internals: `backend/app/websocket/*`.
 - Config: `backend/app/audio_config.py` and service-specific config helpers.
 - Schemas: `backend/app/models/schemas.py`.
+
+System REST routes live in `backend/app/api/system_routes.py`; LLM/TTS REST routes live in their focused API modules. `backend/app/main.py` should stay focused on FastAPI setup, lifespan, router registration, and `WS /ws/audio`.
 
 Routes should stay thin. Business behavior belongs in services, providers, domain adapters, or focused WebSocket modules.
 

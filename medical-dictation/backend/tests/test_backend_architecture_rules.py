@@ -20,13 +20,13 @@ class BackendArchitectureRulesTests(unittest.TestCase):
         self.assertIn("configure_windows_cuda_paths", engine_source)
 
     def test_faster_whisper_provider_delegates_audio_and_text_helpers(self):
-        self.assertTrue((BACKEND_ROOT / "app/services/audio_processing.py").exists())
-        self.assertTrue((BACKEND_ROOT / "app/services/transcription_text.py").exists())
+        self.assertTrue((BACKEND_ROOT / "app/services/stt/audio_processing.py").exists())
+        self.assertTrue((BACKEND_ROOT / "app/services/stt/transcription_text.py").exists())
 
         engine_source = self.read_source("app/services/stt/faster_whisper.py")
 
-        self.assertIn("from app.services.audio_processing import", engine_source)
-        self.assertIn("from app.services.transcription_text import", engine_source)
+        self.assertIn("from app.services.stt.audio_processing import", engine_source)
+        self.assertIn("from app.services.stt.transcription_text import", engine_source)
         self.assertNotIn("if __name__ == \"__main__\"", engine_source)
 
     def test_real_env_files_are_not_present_in_backend_tree(self):
@@ -61,6 +61,7 @@ class BackendArchitectureRulesTests(unittest.TestCase):
             "app/services/tts/config.py",
             "app/services/tts/service.py",
             "app/services/tts/supertonic.py",
+            "app/services/commands/processor.py",
             "app/services/stt/base.py",
             "app/services/stt/config.py",
             "app/services/stt/service.py",
@@ -73,9 +74,11 @@ class BackendArchitectureRulesTests(unittest.TestCase):
         self.assertFalse((BACKEND_ROOT / "app/services/lm_studio_client.py").exists())
         self.assertFalse((BACKEND_ROOT / "app/services/supertonic_tts_client.py").exists())
         self.assertFalse((BACKEND_ROOT / "app/services/transcription_engine.py").exists())
+        self.assertFalse((BACKEND_ROOT / "app/services/command_processor.py").exists())
 
         llm_route_source = self.read_source("app/api/llm_routes.py")
         tts_route_source = self.read_source("app/api/tts_routes.py")
+        system_route_source = self.read_source("app/api/system_routes.py")
         dependencies_source = self.read_source("app/dependencies.py")
         main_source = self.read_source("app/main.py")
         handler_source = self.read_source("app/websocket/audio_stream_handler.py")
@@ -83,6 +86,7 @@ class BackendArchitectureRulesTests(unittest.TestCase):
         self.assertIn("create_llm_service", llm_route_source)
         self.assertIn("create_tts_service", tts_route_source)
         self.assertIn("create_stt_service", main_source)
+        self.assertIn("def get_config", system_route_source)
         self.assertIn("LLMService", dependencies_source)
         self.assertIn("LMStudioProvider", dependencies_source)
         self.assertIn("TTSService", dependencies_source)
@@ -93,20 +97,32 @@ class BackendArchitectureRulesTests(unittest.TestCase):
 
     def test_domain_registry_exposes_extension_api(self):
         registry_source = self.read_source("app/domains/registry.py")
-        main_source = self.read_source("app/main.py")
+        system_route_source = self.read_source("app/api/system_routes.py")
         response_source = self.read_source("app/websocket/responses.py")
 
         self.assertIn("def register_domain", registry_source)
         self.assertIn("def get_available_domains", registry_source)
-        self.assertNotIn('"available": ["general"]', main_source)
+        self.assertNotIn('"available": ["general"]', system_route_source)
         self.assertNotIn('"available_domains": ["general"]', response_source)
 
     def test_command_processor_comments_stay_domain_neutral(self):
-        source = self.read_source("app/services/command_processor.py").lower()
+        source = self.read_source("app/services/commands/processor.py").lower()
 
         self.assertNotIn("patient", source)
         self.assertNotIn("diabetes", source)
         self.assertNotIn("dr. john smith", source)
+
+    def test_system_routes_are_split_from_main(self):
+        main_source = self.read_source("app/main.py")
+        system_route_source = self.read_source("app/api/system_routes.py")
+
+        self.assertIn("system_router", main_source)
+        self.assertNotIn("@app.get(\"/\")", main_source)
+        self.assertNotIn("@app.get(\"/health\")", main_source)
+        self.assertNotIn("@app.get(\"/config\")", main_source)
+        self.assertIn("@router.get(\"/\")", system_route_source)
+        self.assertIn("@router.get(\"/health\")", system_route_source)
+        self.assertIn("@router.get(\"/config\")", system_route_source)
 
 
 if __name__ == "__main__":

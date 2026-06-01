@@ -26,9 +26,11 @@ This package contains the backend internals for the `/ws/audio` transcription st
 
 - `../main.py`
   - FastAPI app setup.
-  - REST routes.
   - Public `/ws/audio` route orchestration.
   - Connection accept, receive loop, disconnect cleanup, and active connection count.
+
+- `../api/system_routes.py`
+  - `GET /`, `GET /health`, and `GET /config`.
 
 ## Contract Rules
 

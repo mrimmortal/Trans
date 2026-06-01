@@ -1,4 +1,4 @@
-"""Voice command processing for dictation control"""
+"""Voice command processing for dictation control."""
 
 import logging
 import re
@@ -444,47 +444,3 @@ class CommandProcessor:
     def clear_history(self):
         """Clear command history"""
         self.command_history.clear()
-
-
-# ─────────────────────────────────────────────────────────────────
-# GLOBAL INSTANCE
-# ─────────────────────────────────────────────────────────────────
-
-# Global command processor instance
-command_processor: CommandProcessor = CommandProcessor()
-
-
-def get_command_processor() -> CommandProcessor:
-    """Get the global command processor instance"""
-    return command_processor
-
-
-# ─────────────────────────────────────────────────────────────────
-# TESTING
-# ─────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import logging
-    logging.basicConfig(level=logging.DEBUG)
-    
-    processor = CommandProcessor()
-    
-    # Test cases
-    test_cases = [
-            "Project status period new paragraph Next section",
-            "The next milestone is Friday comma blockers are resolved period",
-            "Bold this is important",
-            "Delete last word",
-            "Budget is 120 over 80 comma confidence is high period",
-        ]
-    
-    print("=" * 60)
-    print("COMMAND PROCESSOR TEST")
-    print("=" * 60)
-    
-    for test in test_cases:
-        print(f"\nInput:  '{test}'")
-        result, commands = processor.process(test)
-        print(f"Output: '{result}'")
-        print(f"Commands: {[c.action for c in commands]}")
-        print("-" * 60)

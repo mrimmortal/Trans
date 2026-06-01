@@ -27,10 +27,11 @@ Backend entry:
 - `backend/app/dependencies.py`
 - `backend/app/audio_config.py`
 - `backend/app/infrastructure/cuda_bootstrap.py`
-- `backend/app/services/audio_processing.py`
+- `backend/app/api/system_routes.py`
+- `backend/app/services/stt/audio_processing.py`
 - `backend/app/services/stt/service.py`
 - `backend/app/services/stt/faster_whisper.py`
-- `backend/app/services/transcription_text.py`
+- `backend/app/services/stt/transcription_text.py`
 - `backend/app/websocket/stream_text.py`
 - `backend/app/api/llm_routes.py`
 - `backend/app/services/llm/service.py`
@@ -41,7 +42,7 @@ Backend entry:
 - `backend/app/domains/base.py`
 - `backend/app/domains/general.py`
 - `backend/app/domains/registry.py`
-- `backend/app/services/command_processor.py`
+- `backend/app/services/commands/processor.py`
 
 For WebSocket/audio changes, read `backend/app/websocket/README.md` first, then the focused files in `backend/app/websocket/`.
 
@@ -83,6 +84,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - `POST /tts/synthesize` is independent of `/ws/audio`, STT, and the LM Studio flow.
 - Backend TTS code is split between generic service/provider boundaries in `backend/app/services/tts/`, centralized service construction in `backend/app/dependencies.py`, and the Supertonic provider implementation.
 - Backend STT code is split between the generic service/provider boundary in `backend/app/services/stt/`, centralized service construction in `backend/app/dependencies.py`, and the Faster-Whisper/Silero provider implementation.
+- System REST routes for `GET /`, `GET /health`, and `GET /config` live in `backend/app/api/system_routes.py`; `backend/app/main.py` owns app setup, router registration, lifespan, and `/ws/audio`.
 - Streaming transcript overlap cleanup lives in `backend/app/websocket/stream_text.py`; `AudioStreamHandler` coordinates buffering and flush decisions.
 - Do not hardcode temporary tunnel URLs in source code.
 
@@ -95,7 +97,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 5. Frontend sends audio chunks as binary WebSocket messages.
 6. `backend/app/main.py` receives chunks in `websocket_audio_stream`.
 7. `backend/app/websocket/audio_stream_handler.py` calls the STT service for speech detection and buffers useful audio.
-8. On pause/max buffer/flush, the STT service delegates to the Faster-Whisper/Silero provider, which transcribes audio using `audio_processing.py` and `transcription_text.py` helpers.
+8. On pause/max buffer/flush, the STT service delegates to the Faster-Whisper/Silero provider, which transcribes audio using `services/stt/audio_processing.py` and `services/stt/transcription_text.py` helpers.
 9. `AudioStreamHandler` uses `websocket/stream_text.py` to remove overlap artifacts before domain processing.
 10. The selected domain adapter processes transcript text; built-in `general` returns text unchanged.
 11. `backend/app/websocket/responses.py` builds `{ type: "transcription", text, domain, commands }`.
@@ -122,12 +124,13 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - Change backend endpoint/protocol: update `backend/app/main.py`, `backend/app/websocket/control_messages.py`, `backend/app/websocket/responses.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
 - Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, `backend/app/websocket/audio_stream_handler.py`, and docs.
 - Change backend service construction: update `backend/app/dependencies.py` and focused route/service tests.
-- Change backend STT behavior: update `backend/app/dependencies.py`, `backend/app/services/stt/service.py`, `backend/app/services/stt/faster_whisper.py`, `backend/app/services/audio_processing.py`, `backend/app/services/transcription_text.py`, `backend/app/audio_config.py`, focused STT/WebSocket tests, and `ARCHITECTURE_GRAPH.md`.
+- Change backend STT behavior: update `backend/app/dependencies.py`, `backend/app/services/stt/service.py`, `backend/app/services/stt/faster_whisper.py`, `backend/app/services/stt/audio_processing.py`, `backend/app/services/stt/transcription_text.py`, `backend/app/audio_config.py`, focused STT/WebSocket tests, and `ARCHITECTURE_GRAPH.md`.
+- Change system REST route behavior: update `backend/app/api/system_routes.py`, related route tests, and `ARCHITECTURE_GRAPH.md`.
 - Change backend runtime env defaults: update `backend/app/audio_config.py`, `backend/.env.example`, setup docs, and tests.
 - Change shell startup env loading: update `scripts/run.sh`, `ENVIRONMENTS.md`, and script tests.
 - Change local LLM behavior: update `backend/app/dependencies.py`, `backend/app/api/llm_routes.py`, `backend/app/services/llm/service.py`, `backend/app/services/llm/lm_studio.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
 - Change local TTS behavior: update `backend/app/dependencies.py`, `backend/app/api/tts_routes.py`, `backend/app/services/tts/service.py`, `backend/app/services/tts/supertonic.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
-- Change generic voice commands: update `backend/app/services/command_processor.py` and `frontend/src/hooks/useVoiceCommands.ts`.
+- Change generic voice commands: update `backend/app/services/commands/processor.py` and `frontend/src/hooks/useVoiceCommands.ts`.
 - Change editor insertion behavior: update `frontend/src/app/page.tsx` and `frontend/src/components/Editor/DictationEditor.tsx`.
 
 ## Hallucination Guards
@@ -155,3 +158,4 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - 2026-05-31: Refactored backend LM Studio and Supertonic integrations into generic LLM/TTS service/provider boundaries while preserving `POST /llm/respond` and `POST /tts/synthesize` behavior.
 - 2026-06-01: Refactored backend STT into generic service/provider boundaries with Faster-Whisper/Silero as the provider while preserving `/ws/audio` behavior.
 - 2026-06-01: Added centralized backend service construction in `backend/app/dependencies.py`, map-based domain registration, typed STT result contracts, and `websocket/stream_text.py` overlap cleanup while preserving public endpoints and `/ws/audio` message shapes.
+- 2026-06-02: Moved STT helpers into `backend/app/services/stt/`, moved command parsing into `backend/app/services/commands/`, and extracted system REST routes into `backend/app/api/system_routes.py` without changing endpoint behavior.

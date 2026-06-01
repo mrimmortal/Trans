@@ -1,4 +1,4 @@
-"""Audio conversion, validation, and preprocessing helpers."""
+"""Audio conversion, validation, and preprocessing helpers for STT providers."""
 
 import logging
 from typing import Optional

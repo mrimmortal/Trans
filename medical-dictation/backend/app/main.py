@@ -11,13 +11,12 @@ from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
 from app.api.llm_routes import router as llm_router
+from app.api.system_routes import router as system_router
 from app.api.tts_routes import router as tts_router
 from app.audio_config import AudioConfig
 from app.dependencies import create_stt_service
-from app.domains.registry import get_available_domains
 from app.models.schemas import (
     ConnectionResponse,
     ErrorResponse,
@@ -129,93 +128,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(system_router)
 app.include_router(llm_router)
 app.include_router(tts_router)
-
-
-# ─────────────────────────────────────────────────────────────────
-# REST ENDPOINTS
-# ─────────────────────────────────────────────────────────────────
-
-
-@app.get("/")
-async def root():
-    """Root endpoint with API overview"""
-    return {
-        "status": "online",
-        "service": "Transcription Template API",
-        "version": "1.0.0",
-        "active_connections": app.state.active_connections,
-        "endpoints": {
-            "docs": "/docs",
-            "health": "/health",
-            "config": "/config",
-            "websocket": "/ws/audio"
-        }
-    }
-
-
-@app.get("/health")
-async def health():
-    """Detailed health check with model status."""
-    try:
-        stt_service = app.state.stt_service
-        config = app.state.config
-        vad_status = "enabled" if stt_service.vad_model is not None else "disabled (fallback to RMS)"
-
-        return JSONResponse(
-            content={
-                "status": "healthy",
-                "model": {
-                    "loaded": stt_service.model is not None,
-                    "size": config.MODEL_SIZE,
-                    "device": config.DEVICE,
-                },
-                "vad_status": vad_status,
-                "active_connections": app.state.active_connections,
-            },
-            status_code=200,
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return JSONResponse(
-            content={"status": "unhealthy", "error": str(e)},
-            status_code=503,
-        )
-
-
-@app.get("/config")
-async def get_config():
-    """Get current audio and system configuration"""
-    try:
-        config = app.state.config
-        return {
-            "audio": {
-                "sample_rate": config.SAMPLE_RATE,
-                "channels": config.CHANNELS,
-                "sample_width": config.SAMPLE_WIDTH,
-                "min_chunk_bytes": config.MIN_CHUNK_SIZE_BYTES,
-                "max_chunk_bytes": config.MAX_CHUNK_SIZE_BYTES,
-                "overlap_bytes": config.OVERLAP_SIZE_BYTES,
-            },
-            "model": {
-                "size": config.MODEL_SIZE,
-                "device": config.DEVICE,
-                "language": config.TRANSCRIPTION_LANGUAGE,
-                "accent_support_enabled": config.ACCENT_SUPPORT_ENABLED,
-            },
-            "domains": {
-                "default": config.DEFAULT_TRANSCRIPTION_DOMAIN,
-                "available": get_available_domains(),
-            },
-            "vad_enabled": app.state.stt_service.vad_model is not None,
-        }
-    except Exception as e:
-        logger.error(f"Get config failed: {e}")
-        return JSONResponse(
-            content={"error": str(e)},
-            status_code=500,
-        )
 
 
 # ─────────────────────────────────────────────────────────────────
