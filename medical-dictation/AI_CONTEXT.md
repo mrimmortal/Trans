@@ -27,7 +27,8 @@ Backend entry:
 - `backend/app/audio_config.py`
 - `backend/app/infrastructure/cuda_bootstrap.py`
 - `backend/app/services/audio_processing.py`
-- `backend/app/services/transcription_engine.py`
+- `backend/app/services/stt/service.py`
+- `backend/app/services/stt/faster_whisper.py`
 - `backend/app/services/transcription_text.py`
 - `backend/app/api/llm_routes.py`
 - `backend/app/services/llm/service.py`
@@ -53,7 +54,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Backend framework: FastAPI.
 - Frontend framework: Next.js/React.
 - Editor: TipTap.
-- Speech engine: Faster-Whisper through `TranscriptionEngine`.
+- Speech engine: Faster-Whisper through the backend STT service/provider boundary.
 - WebSocket endpoint: `/ws/audio`.
 - Browser audio format expected by backend: 16-bit PCM, 16 kHz, mono.
 - Audio chunks are sent from frontend to backend as WebSocket binary messages.
@@ -77,6 +78,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - TTS config comes from `TTS_PROVIDER`, `SUPERTONIC_VOICE`, `SUPERTONIC_LANG`, and optional `TTS_OUTPUT_DIR`.
 - `POST /tts/synthesize` is independent of `/ws/audio`, STT, and the LM Studio flow.
 - Backend TTS code is split between generic service/provider boundaries in `backend/app/services/tts/` and the Supertonic provider implementation.
+- Backend STT code is split between the generic service/provider boundary in `backend/app/services/stt/` and the Faster-Whisper/Silero provider implementation.
 - Do not hardcode temporary tunnel URLs in source code.
 
 ## Current Runtime Flow
@@ -87,8 +89,8 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 4. Audio is downsampled/converted to 16-bit PCM.
 5. Frontend sends audio chunks as binary WebSocket messages.
 6. `backend/app/main.py` receives chunks in `websocket_audio_stream`.
-7. `backend/app/websocket/audio_stream_handler.py` runs speech detection and buffers useful audio.
-8. On pause/max buffer/flush, `TranscriptionEngine` transcribes audio using `audio_processing.py` and `transcription_text.py` helpers.
+7. `backend/app/websocket/audio_stream_handler.py` calls the STT service for speech detection and buffers useful audio.
+8. On pause/max buffer/flush, the STT service delegates to the Faster-Whisper/Silero provider, which transcribes audio using `audio_processing.py` and `transcription_text.py` helpers.
 9. The selected domain adapter processes transcript text; built-in `general` returns text unchanged.
 10. `backend/app/websocket/responses.py` builds `{ type: "transcription", text, domain, commands }`.
 11. Frontend processes local snippets/voice commands and inserts text into the editor.
@@ -113,6 +115,7 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - Change backend wrapper behavior: update `backend/app/domains/*` and `backend/app/domains/registry.py`.
 - Change backend endpoint/protocol: update `backend/app/main.py`, `backend/app/websocket/control_messages.py`, `backend/app/websocket/responses.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
 - Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, `backend/app/websocket/audio_stream_handler.py`, and docs.
+- Change backend STT behavior: update `backend/app/services/stt/service.py`, `backend/app/services/stt/faster_whisper.py`, `backend/app/services/audio_processing.py`, `backend/app/services/transcription_text.py`, `backend/app/audio_config.py`, focused STT/WebSocket tests, and `ARCHITECTURE_GRAPH.md`.
 - Change backend runtime env defaults: update `backend/app/audio_config.py`, `backend/.env.example`, setup docs, and tests.
 - Change shell startup env loading: update `scripts/run.sh`, `ENVIRONMENTS.md`, and script tests.
 - Change local LLM behavior: update `backend/app/api/llm_routes.py`, `backend/app/services/llm/service.py`, `backend/app/services/llm/lm_studio.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
@@ -136,10 +139,11 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 
 - 2026-05-26: Converted the project to a vanilla transcription template. Removed built-in medical formatter/domain/template storage and made UI branding/config wrapper-ready.
 - 2026-05-30: Split backend WebSocket audio pipeline internals out of `backend/app/main.py` into `backend/app/websocket/audio_stream_handler.py`, `control_messages.py`, and `responses.py` while preserving `/ws/audio`.
-- 2026-05-30: Centralized Windows CUDA bootstrap, replaced tracked backend `.env*` files with `backend/.env.example`, pruned stale backend schemas, and split audio/text helpers out of `TranscriptionEngine`.
+- 2026-05-30: Centralized Windows CUDA bootstrap, replaced tracked backend `.env*` files with `backend/.env.example`, pruned stale backend schemas, and split audio/text helpers out of the STT implementation.
 - 2026-05-30: Added backend-only LM Studio integration through `POST /llm/respond` with config in `AudioConfig`; it is independent of `/ws/audio`.
 - 2026-05-30: Added backend-only Supertonic 3 TTS integration through `POST /tts/synthesize`; it returns `audio/wav` and is independent of STT, LM Studio, and `/ws/audio`.
 - 2026-05-30: Updated `scripts/run.sh` so macOS dev and local UAT checks fall back to `backend/.env.example` when local backend env files are absent.
 - 2026-05-30: Added macOS/Linux `prod-check` support for local production build validation.
 - 2026-05-30: Added frontend Local Assistant flow that sends editor text to LM Studio, displays the response, synthesizes speech, and plays WAV audio without changing STT or `/ws/audio`.
 - 2026-05-31: Refactored backend LM Studio and Supertonic integrations into generic LLM/TTS service/provider boundaries while preserving `POST /llm/respond` and `POST /tts/synthesize` behavior.
+- 2026-06-01: Refactored backend STT into generic service/provider boundaries with Faster-Whisper/Silero as the provider while preserving `/ws/audio` behavior.

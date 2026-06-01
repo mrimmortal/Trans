@@ -7,7 +7,7 @@ from typing import Optional
 
 from app.audio_config import AudioConfig
 from app.domains.registry import get_domain_adapter
-from app.services.transcription_engine import TranscriptionEngine
+from app.services.stt.base import STTProvider
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class AudioStreamHandler:
 
     def __init__(
         self,
-        transcription_engine: TranscriptionEngine,
+        stt_service: STTProvider,
         config: AudioConfig,
         domain: str | None = None,
     ):
@@ -28,11 +28,11 @@ class AudioStreamHandler:
         Initialize stream handler for a client.
 
         Args:
-            transcription_engine: Shared transcription engine with VAD.
+            stt_service: Shared speech-to-text service with VAD.
             config: Audio configuration.
             domain: Optional domain adapter name.
         """
-        self.engine = transcription_engine
+        self.engine = stt_service
         self.config = config
         self.domain_adapter = get_domain_adapter(
             domain or getattr(config, "DEFAULT_TRANSCRIPTION_DOMAIN", "general")

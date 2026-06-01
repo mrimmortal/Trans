@@ -16,7 +16,8 @@ from fastapi.responses import JSONResponse
 from app.api.llm_routes import router as llm_router
 from app.api.tts_routes import router as tts_router
 from app.audio_config import AudioConfig
-from app.services.transcription_engine import TranscriptionEngine
+from app.services.stt.faster_whisper import FasterWhisperSTTProvider
+from app.services.stt.service import STTService
 from app.models.schemas import (
     ConnectionResponse,
     ErrorResponse,
@@ -59,12 +60,13 @@ async def lifespan(app: FastAPI):
 
         # ── Step 2: Load Whisper Model ──
         logger.info("Loading Whisper model and VAD (this may take 30-60 seconds)...")
-        engine = TranscriptionEngine(config)
+        provider = FasterWhisperSTTProvider(config)
+        stt_service = STTService(provider)
         logger.info("✓ Whisper model loaded successfully")
 
         # ── Store in app state ──
         app.state.config = config
-        app.state.transcription_engine = engine
+        app.state.stt_service = stt_service
         app.state.active_connections = 0
 
         logger.info("=" * 80)
@@ -158,15 +160,15 @@ async def root():
 async def health():
     """Detailed health check with model status."""
     try:
-        engine = app.state.transcription_engine
+        stt_service = app.state.stt_service
         config = app.state.config
-        vad_status = "enabled" if engine.vad_model is not None else "disabled (fallback to RMS)"
+        vad_status = "enabled" if stt_service.vad_model is not None else "disabled (fallback to RMS)"
 
         return JSONResponse(
             content={
                 "status": "healthy",
                 "model": {
-                    "loaded": engine.model is not None,
+                    "loaded": stt_service.model is not None,
                     "size": config.MODEL_SIZE,
                     "device": config.DEVICE,
                 },
@@ -207,7 +209,7 @@ async def get_config():
                 "default": config.DEFAULT_TRANSCRIPTION_DOMAIN,
                 "available": ["general"],
             },
-            "vad_enabled": app.state.transcription_engine.vad_model is not None,
+            "vad_enabled": app.state.stt_service.vad_model is not None,
         }
     except Exception as e:
         logger.error(f"Get config failed: {e}")
@@ -244,12 +246,12 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
         logger.info(f"[{session_id}] Client connected (total: {app.state.active_connections})")
 
         # ── STEP 2: Create handler ──
-        handler = AudioStreamHandler(app.state.transcription_engine, app.state.config, domain=domain)
+        handler = AudioStreamHandler(app.state.stt_service, app.state.config, domain=domain)
 
         # ── STEP 3: Send welcome message ──
         welcome_config = build_welcome_config(
             app.state.config,
-            app.state.transcription_engine,
+            app.state.stt_service,
             handler,
         )
         

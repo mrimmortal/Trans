@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from app.services.transcription_engine import TranscriptionEngine
+from app.services.stt.faster_whisper import FasterWhisperSTTProvider
 
 
 class FakeSegment:
@@ -21,9 +21,9 @@ class FakeWhisperModel:
         return self.segments, SimpleNamespace(language="en", language_probability=1.0)
 
 
-class WhisperHallucinationFilterTests(unittest.TestCase):
+class FasterWhisperSTTHallucinationFilterTests(unittest.TestCase):
     def make_engine(self, segments):
-        engine = TranscriptionEngine.__new__(TranscriptionEngine)
+        engine = FasterWhisperSTTProvider.__new__(FasterWhisperSTTProvider)
         engine.model = FakeWhisperModel(segments)
         engine.config = SimpleNamespace(
             BEAM_SIZE=2,

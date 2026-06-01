@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from app.services.transcription_engine import TranscriptionEngine
+from app.services.stt.faster_whisper import FasterWhisperSTTProvider
 
 
 class CapturingWhisperModel:
@@ -15,10 +15,10 @@ class CapturingWhisperModel:
         return [], SimpleNamespace(language="en", language_probability=1.0)
 
 
-class TranscriptionEngineAccentSupportTests(unittest.TestCase):
+class FasterWhisperSTTAccentSupportTests(unittest.TestCase):
     def test_run_whisper_uses_configured_language_and_composed_prompt(self):
         model = CapturingWhisperModel()
-        engine = TranscriptionEngine.__new__(TranscriptionEngine)
+        engine = FasterWhisperSTTProvider.__new__(FasterWhisperSTTProvider)
         engine.model = model
         engine.config = SimpleNamespace(
             TRANSCRIPTION_LANGUAGE="en",

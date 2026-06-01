@@ -13,17 +13,17 @@ class BackendArchitectureRulesTests(unittest.TestCase):
         self.assertTrue((BACKEND_ROOT / "app/infrastructure/cuda_bootstrap.py").exists())
 
         main_source = self.read_source("app/main.py")
-        engine_source = self.read_source("app/services/transcription_engine.py")
+        engine_source = self.read_source("app/services/stt/faster_whisper.py")
 
         self.assertNotIn("nvidia_base", main_source)
         self.assertNotIn("nvidia_base", engine_source)
         self.assertIn("configure_windows_cuda_paths", engine_source)
 
-    def test_transcription_engine_delegates_audio_and_text_helpers(self):
+    def test_faster_whisper_provider_delegates_audio_and_text_helpers(self):
         self.assertTrue((BACKEND_ROOT / "app/services/audio_processing.py").exists())
         self.assertTrue((BACKEND_ROOT / "app/services/transcription_text.py").exists())
 
-        engine_source = self.read_source("app/services/transcription_engine.py")
+        engine_source = self.read_source("app/services/stt/faster_whisper.py")
 
         self.assertIn("from app.services.audio_processing import", engine_source)
         self.assertIn("from app.services.transcription_text import", engine_source)
@@ -60,6 +60,10 @@ class BackendArchitectureRulesTests(unittest.TestCase):
             "app/services/tts/config.py",
             "app/services/tts/service.py",
             "app/services/tts/supertonic.py",
+            "app/services/stt/base.py",
+            "app/services/stt/config.py",
+            "app/services/stt/service.py",
+            "app/services/stt/faster_whisper.py",
         ]
 
         for relative_path in expected_paths:
@@ -67,14 +71,20 @@ class BackendArchitectureRulesTests(unittest.TestCase):
 
         self.assertFalse((BACKEND_ROOT / "app/services/lm_studio_client.py").exists())
         self.assertFalse((BACKEND_ROOT / "app/services/supertonic_tts_client.py").exists())
+        self.assertFalse((BACKEND_ROOT / "app/services/transcription_engine.py").exists())
 
         llm_route_source = self.read_source("app/api/llm_routes.py")
         tts_route_source = self.read_source("app/api/tts_routes.py")
+        main_source = self.read_source("app/main.py")
+        handler_source = self.read_source("app/websocket/audio_stream_handler.py")
 
         self.assertIn("LLMService", llm_route_source)
         self.assertIn("LMStudioProvider", llm_route_source)
         self.assertIn("TTSService", tts_route_source)
         self.assertIn("SupertonicProvider", tts_route_source)
+        self.assertIn("STTService", main_source)
+        self.assertIn("FasterWhisperSTTProvider", main_source)
+        self.assertIn("STTProvider", handler_source)
 
     def test_command_processor_comments_stay_domain_neutral(self):
         source = self.read_source("app/services/command_processor.py").lower()

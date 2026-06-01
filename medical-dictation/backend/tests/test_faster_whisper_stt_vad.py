@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from app.services.transcription_engine import TranscriptionEngine
+from app.services.stt.faster_whisper import FasterWhisperSTTProvider
 
 
 class FakeVadModel:
@@ -18,9 +18,9 @@ class FakeVadModel:
         return SimpleNamespace(item=lambda: 0.75)
 
 
-class SileroVadFrameTests(unittest.TestCase):
+class FasterWhisperSTTVadTests(unittest.TestCase):
     def test_detect_speech_scores_large_chunks_in_silero_frame_sizes(self):
-        engine = TranscriptionEngine.__new__(TranscriptionEngine)
+        engine = FasterWhisperSTTProvider.__new__(FasterWhisperSTTProvider)
         engine.config = SimpleNamespace(
             SAMPLE_RATE=16000,
             SILERO_VAD_THRESHOLD=0.5,
@@ -42,7 +42,7 @@ class SileroVadFrameTests(unittest.TestCase):
         self.assertEqual(engine.vad_model.frame_lengths, [512] * 8)
 
     def test_detect_speech_keeps_high_prob_realtime_chunks_without_segments_by_default(self):
-        engine = TranscriptionEngine.__new__(TranscriptionEngine)
+        engine = FasterWhisperSTTProvider.__new__(FasterWhisperSTTProvider)
         engine.config = SimpleNamespace(
             SAMPLE_RATE=16000,
             SILERO_VAD_THRESHOLD=0.5,
@@ -64,7 +64,7 @@ class SileroVadFrameTests(unittest.TestCase):
         self.assertEqual(result["speech_segments"], [])
 
     def test_detect_speech_can_require_segments_when_noise_gate_is_enabled(self):
-        engine = TranscriptionEngine.__new__(TranscriptionEngine)
+        engine = FasterWhisperSTTProvider.__new__(FasterWhisperSTTProvider)
         engine.config = SimpleNamespace(
             SAMPLE_RATE=16000,
             SILERO_VAD_THRESHOLD=0.5,

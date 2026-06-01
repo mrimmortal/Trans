@@ -1,4 +1,4 @@
-"""Production-grade Whisper transcription engine with audio processing and validation"""
+"""Faster-Whisper STT provider with audio processing and validation."""
 
 from app.infrastructure.cuda_bootstrap import configure_windows_cuda_paths
 
@@ -32,14 +32,15 @@ from app.services.audio_processing import (
     preprocess_audio,
     validate_audio,
 )
+from app.services.stt.config import get_faster_whisper_settings
 from app.services.transcription_text import clean_text, filter_hallucinations
 
 logger = logging.getLogger(__name__)
 
 
-class TranscriptionEngine:
+class FasterWhisperSTTProvider:
     """
-    Production-grade transcription engine using Faster-Whisper with Silero VAD.
+    Production-grade STT provider using Faster-Whisper with Silero VAD.
     Handles audio validation, preprocessing, VAD, Whisper inference, and post-processing.
     All errors are caught and returned as dict with error key (never raises).
     """
@@ -49,9 +50,10 @@ class TranscriptionEngine:
         Initialize the transcription engine.
 
         Args:
-            config_instance: AudioConfig instance (defaults to global config)
+            config_instance: AudioConfig instance (defaults to global config).
         """
         self.config = config_instance or config
+        self.settings = get_faster_whisper_settings(self.config)
         self.model: Optional[WhisperModel] = None
         
         # Silero VAD components
