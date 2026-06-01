@@ -33,6 +33,7 @@ from app.services.audio_processing import (
     validate_audio,
 )
 from app.services.stt.config import get_faster_whisper_settings
+from app.services.stt.base import SpeechDetectionResult, TranscriptionResult
 from app.services.transcription_text import clean_text, filter_hallucinations
 
 logger = logging.getLogger(__name__)
@@ -182,7 +183,7 @@ class FasterWhisperSTTProvider:
             # Non-critical, just log warning
             logger.warning(f"Model warmup encountered issue (non-critical): {e}")
 
-    def detect_speech(self, audio_bytes: bytes) -> dict:
+    def detect_speech(self, audio_bytes: bytes) -> SpeechDetectionResult:
         """
         Detect speech in audio chunk using Silero VAD.
         
@@ -264,7 +265,7 @@ class FasterWhisperSTTProvider:
 
         return max(frame_scores) if frame_scores else 0.0
     
-    def _detect_speech_rms(self, audio_bytes: bytes) -> dict:
+    def _detect_speech_rms(self, audio_bytes: bytes) -> SpeechDetectionResult:
         """
         Fallback speech detection using RMS energy.
         
@@ -287,7 +288,7 @@ class FasterWhisperSTTProvider:
             'speech_segments': []  # RMS doesn't provide segments
         }
 
-    def transcribe_audio_bytes(self, audio_bytes: bytes) -> dict:
+    def transcribe_audio_bytes(self, audio_bytes: bytes) -> TranscriptionResult:
         """
         Transcribe audio bytes to text with full processing pipeline.
 

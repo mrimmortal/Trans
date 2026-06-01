@@ -1,6 +1,6 @@
 import unittest
 
-from app.services.stt.base import STTConfigError, STTProviderError
+from app.services.stt.base import SpeechDetectionResult, STTConfigError, STTProviderError, TranscriptionResult
 from app.services.stt.service import STTService
 
 
@@ -9,7 +9,7 @@ class FakeSTTProvider:
         self.detect_calls = []
         self.transcribe_calls = []
 
-    def detect_speech(self, audio_bytes):
+    def detect_speech(self, audio_bytes) -> SpeechDetectionResult:
         self.detect_calls.append(audio_bytes)
         return {
             "has_speech": True,
@@ -17,7 +17,7 @@ class FakeSTTProvider:
             "speech_segments": [{"start": 0, "end": 512}],
         }
 
-    def transcribe_audio_bytes(self, audio_bytes):
+    def transcribe_audio_bytes(self, audio_bytes) -> TranscriptionResult:
         self.transcribe_calls.append(audio_bytes)
         return {
             "text": "project is stable",
@@ -48,6 +48,18 @@ class STTServiceTests(unittest.TestCase):
         self.assertEqual(provider.transcribe_calls, [b"audio"])
         self.assertEqual(result["text"], "project is stable")
         self.assertIsNone(result["error"])
+
+    def test_fake_provider_satisfies_typed_result_contracts(self):
+        provider = FakeSTTProvider()
+        service = STTService(provider)
+
+        speech_result: SpeechDetectionResult = service.detect_speech(b"audio")
+        transcription_result: TranscriptionResult = service.transcribe_audio_bytes(b"audio")
+
+        self.assertEqual(set(speech_result), {"has_speech", "speech_prob", "speech_segments"})
+        self.assertIn("text", transcription_result)
+        self.assertIn("processing_time_ms", transcription_result)
+        self.assertIn("error", transcription_result)
 
     def test_provider_config_error_propagates(self):
         class BrokenProvider(FakeSTTProvider):

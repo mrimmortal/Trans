@@ -8,8 +8,11 @@ This package contains the backend internals for the `/ws/audio` transcription st
   - Per-client audio buffer state.
   - VAD-triggered buffering and silence handling.
   - Manual, pause, and max-buffer transcription flushes.
-  - Audio overlap cleanup and repeated text suppression.
   - Domain adapter post-processing and session stats.
+
+- `stream_text.py`
+  - Streaming transcript overlap cleanup.
+  - Repeated boundary text suppression.
 
 - `control_messages.py`
   - JSON control messages received over `/ws/audio`.
@@ -38,7 +41,8 @@ This package contains the backend internals for the `/ws/audio` transcription st
 
 ## Change Rules
 
-- Put buffering, VAD, overlap, flush, and stats changes in `audio_stream_handler.py`.
+- Put buffering, VAD, flush, and stats changes in `audio_stream_handler.py`.
+- Put streaming overlap text cleanup changes in `stream_text.py`.
 - Put JSON control message behavior in `control_messages.py`.
 - Put WebSocket response shape construction in `responses.py`.
 - Keep `main.py` thin; it should coordinate modules rather than own their internals.

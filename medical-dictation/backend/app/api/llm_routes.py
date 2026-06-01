@@ -2,15 +2,12 @@
 
 from fastapi import APIRouter, HTTPException
 
-from app.audio_config import AudioConfig
+from app.dependencies import create_llm_service
 from app.models.schemas import LLMRespondRequest, LLMRespondResponse
-from app.services.llm.config import get_lm_studio_settings
 from app.services.llm.lm_studio import (
-    LMStudioProvider,
     LMStudioConfigError,
     LMStudioUnavailableError,
 )
-from app.services.llm.service import LLMService
 
 
 router = APIRouter(prefix="/llm", tags=["llm"])
@@ -19,8 +16,7 @@ router = APIRouter(prefix="/llm", tags=["llm"])
 @router.post("/respond", response_model=LLMRespondResponse)
 def respond_to_llm(request: LLMRespondRequest) -> LLMRespondResponse:
     """Generate a response using the configured LM Studio server."""
-    provider = LMStudioProvider(get_lm_studio_settings(AudioConfig()))
-    service = LLMService(provider)
+    service = create_llm_service()
 
     try:
         return service.respond(request.text, system_prompt=request.system_prompt)

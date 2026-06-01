@@ -18,8 +18,8 @@ class LLMRoutesTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     def test_missing_config_returns_503(self):
-        with patch("app.api.llm_routes.LLMService") as service_class:
-            service_class.return_value.respond.side_effect = LMStudioConfigError("missing config")
+        with patch("app.api.llm_routes.create_llm_service") as create_service:
+            create_service.return_value.respond.side_effect = LMStudioConfigError("missing config")
 
             response = self.client.post("/llm/respond", json={"text": "hello"})
 
@@ -30,8 +30,8 @@ class LLMRoutesTests(unittest.TestCase):
         )
 
     def test_unavailable_client_returns_502(self):
-        with patch("app.api.llm_routes.LLMService") as service_class:
-            service_class.return_value.respond.side_effect = LMStudioUnavailableError("offline")
+        with patch("app.api.llm_routes.create_llm_service") as create_service:
+            create_service.return_value.respond.side_effect = LMStudioUnavailableError("offline")
 
             response = self.client.post("/llm/respond", json={"text": "hello"})
 
@@ -42,8 +42,8 @@ class LLMRoutesTests(unittest.TestCase):
         )
 
     def test_successful_call_returns_lmstudio_response(self):
-        with patch("app.api.llm_routes.LLMService") as service_class:
-            service_class.return_value.respond.return_value = LLMRespondResponse(
+        with patch("app.api.llm_routes.create_llm_service") as create_service:
+            create_service.return_value.respond.return_value = LLMRespondResponse(
                 response="Hello back.",
                 model="local-model",
             )
@@ -62,7 +62,7 @@ class LLMRoutesTests(unittest.TestCase):
                 "provider": "lmstudio",
             },
         )
-        service_class.return_value.respond.assert_called_once_with(
+        create_service.return_value.respond.assert_called_once_with(
             "hello",
             system_prompt="Be concise.",
         )

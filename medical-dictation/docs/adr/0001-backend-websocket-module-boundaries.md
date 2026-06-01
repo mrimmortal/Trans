@@ -15,7 +15,8 @@ The project is a vanilla, wrapper-ready transcription template. Domain-specific 
 Keep the public WebSocket endpoint in `backend/app/main.py`, but keep the implementation responsibilities in focused backend WebSocket modules:
 
 - `backend/app/main.py` owns FastAPI app setup, REST routes, and `/ws/audio` orchestration.
-- `backend/app/websocket/audio_stream_handler.py` owns per-client buffering, VAD decisions, transcription flushing, domain adapter calls, overlap cleanup, and session stats.
+- `backend/app/websocket/audio_stream_handler.py` owns per-client buffering, VAD decisions, transcription flushing, domain adapter calls, and session stats.
+- `backend/app/websocket/stream_text.py` owns streaming overlap text cleanup and repeated boundary text suppression.
 - `backend/app/websocket/control_messages.py` owns JSON control message handling for reset, flush, stats, ping, and command-related controls.
 - `backend/app/websocket/responses.py` owns connection and transcription response payload construction.
 
@@ -30,6 +31,7 @@ Keep the public WebSocket endpoint in `backend/app/main.py`, but keep the implem
 ## Consequences
 
 - Future audio buffering or VAD changes should start in `audio_stream_handler.py`.
+- Future streaming text overlap cleanup changes should start in `stream_text.py`.
 - Future control message changes should start in `control_messages.py`.
 - Future WebSocket payload shape changes should start in `responses.py` and must update `ARCHITECTURE_GRAPH.md`.
 - `main.py` should stay thin and should not regain transcription, buffering, or control-message internals.

@@ -28,6 +28,7 @@ flowchart LR
 
   subgraph Backend["Backend: FastAPI"]
     App["backend/app/main.py\nFastAPI app + /ws/audio"]
+    Dependencies["backend/app/dependencies.py\nService composition"]
     LLMRoutes["api/llm_routes.py\nPOST /llm/respond"]
     LLMService["services/llm/service.py\nGeneric LLM service boundary"]
     LMStudio["services/llm/lm_studio.py\nLM Studio provider"]
@@ -37,13 +38,14 @@ flowchart LR
     Handler["websocket/audio_stream_handler.py\nVAD buffering + flush"]
     WSControl["websocket/control_messages.py\nJSON control messages"]
     WSResponses["websocket/responses.py\nConnection/transcription payloads"]
+    StreamText["websocket/stream_text.py\nOverlap text cleanup"]
     Config["backend/app/audio_config.py\nAudio/model/server config"]
     STTService["services/stt/service.py\nGeneric STT service boundary"]
     FasterWhisper["services/stt/faster_whisper.py\nFaster-Whisper + Silero provider"]
     AudioProcessing["services/audio_processing.py\nAudio conversion/preprocessing"]
     TextProcessing["services/transcription_text.py\nHallucination filtering/text cleanup"]
     CudaBootstrap["infrastructure/cuda_bootstrap.py\nWindows CUDA path setup"]
-    Domains["domains/*\nGeneral adapter + wrapper seam"]
+    Domains["domains/*\nRegistry + adapter seam"]
     Commands["services/command_processor.py\nReusable command parser"]
   end
 
@@ -71,11 +73,14 @@ flowchart LR
   Recorder -- "binary PCM audio chunks" --> WS
   WS -- "ws://.../ws/audio" --> App
   App --> Handler
+  App --> Dependencies
   App --> LLMRoutes
+  LLMRoutes --> Dependencies
   LLMRoutes --> LLMService
   LLMService --> LMStudio
   LLMRoutes --> Config
   App --> TTSRoutes
+  TTSRoutes --> Dependencies
   TTSRoutes --> TTSService
   TTSService --> SupertonicTTS
   TTSRoutes --> Config
@@ -83,13 +88,18 @@ flowchart LR
   App --> WSResponses
   Handler --> Config
   Handler --> STTService
+  Handler --> StreamText
   Handler --> Domains
   WSControl --> Handler
   STTService --> FasterWhisper
+  Dependencies --> STTService
+  Dependencies --> LLMService
+  Dependencies --> TTSService
   FasterWhisper --> AudioProcessing
   FasterWhisper --> TextProcessing
   FasterWhisper --> CudaBootstrap
   Domains --> Commands
+  WSResponses --> Domains
   FasterWhisper --> Config
   App -- "JSON transcription events" --> WS
   WS --> Page
@@ -107,6 +117,7 @@ sequenceDiagram
   participant W as useWebSocket
   participant B as FastAPI /ws/audio
   participant H as AudioStreamHandler
+  participant X as stream_text.py
   participant E as STTService
   participant F as FasterWhisperSTTProvider
   participant D as DomainAdapter
@@ -128,6 +139,8 @@ sequenceDiagram
   E->>F: transcribe_audio_bytes(buffer)
   F-->>E: raw text result
   E-->>H: raw text
+  H->>X: sanitize overlap artifacts
+  X-->>H: cleaned stream text
   H->>D: process_transcript(text)
   D-->>H: vanilla text, no commands
   B-->>W: responses.py builds { type: "transcription", text, domain, commands }
@@ -241,12 +254,13 @@ flowchart TD
 - Keep `/ws/audio` synchronized across backend, frontend constants, README/docs, and this graph.
 - Keep audio format assumptions synchronized across `useAudioRecorder.ts`, `audio_config.py`, and `AudioStreamHandler`.
 - Keep backend WebSocket buffering in `backend/app/websocket/audio_stream_handler.py`, control message handling in `backend/app/websocket/control_messages.py`, and response payload construction in `backend/app/websocket/responses.py`.
+- Keep streaming overlap text cleanup in `backend/app/websocket/stream_text.py`; `AudioStreamHandler` should coordinate it rather than own the cleanup internals.
 - Keep Windows CUDA path setup centralized in `backend/app/infrastructure/cuda_bootstrap.py`.
 - Keep audio conversion/preprocessing in `backend/app/services/audio_processing.py` and transcription text cleanup in `backend/app/services/transcription_text.py`.
-- Keep STT orchestration in `backend/app/services/stt/service.py` and Faster-Whisper/Silero provider logic in `backend/app/services/stt/faster_whisper.py`.
-- Keep the built-in domain vanilla. Add domain-specific behavior through wrapper adapters rather than editing STT provider logic.
-- Keep the LM Studio REST integration in `backend/app/api/llm_routes.py`, `backend/app/services/llm/service.py`, and `backend/app/services/llm/lm_studio.py`; do not route it through `/ws/audio`.
-- Keep the Supertonic TTS integration in `backend/app/api/tts_routes.py`, `backend/app/services/tts/service.py`, and `backend/app/services/tts/supertonic.py`; do not route it through `/ws/audio`.
+- Keep STT orchestration in `backend/app/services/stt/service.py`, service construction in `backend/app/dependencies.py`, and Faster-Whisper/Silero provider logic in `backend/app/services/stt/faster_whisper.py`.
+- Keep the built-in domain vanilla. Add domain-specific behavior through registered wrapper adapters rather than editing STT provider logic.
+- Keep the LM Studio REST integration in `backend/app/api/llm_routes.py`, `backend/app/dependencies.py`, `backend/app/services/llm/service.py`, and `backend/app/services/llm/lm_studio.py`; do not route it through `/ws/audio`.
+- Keep the Supertonic TTS integration in `backend/app/api/tts_routes.py`, `backend/app/dependencies.py`, `backend/app/services/tts/service.py`, and `backend/app/services/tts/supertonic.py`; do not route it through `/ws/audio`.
 - Keep frontend assistant API calls in `frontend/src/services/assistantApi.ts` and `frontend/src/services/ttsApi.ts`; do not add REST assistant logic to WebSocket or recorder hooks.
 - Keep frontend wrapper branding and feature toggles in `frontend/src/lib/appConfig.ts`.
 - Keep user-local snippets/sessions/settings/autosave in localStorage unless a backend storage change is explicitly requested.
@@ -262,3 +276,4 @@ flowchart TD
 - 2026-05-30: Added frontend Local Assistant flow from editor text to LM Studio response to Supertonic WAV playback.
 - 2026-05-31: Refactored backend LM Studio and Supertonic integrations into reusable LLM/TTS service/provider boundaries without changing REST endpoint behavior.
 - 2026-06-01: Refactored backend STT into a reusable service/provider boundary with Faster-Whisper/Silero as the provider, preserving `/ws/audio` behavior.
+- 2026-06-01: Added centralized backend service composition, map-based domain registration for available-domain metadata, typed STT result contracts, and focused streaming text cleanup helpers without changing public endpoint or WebSocket contracts.

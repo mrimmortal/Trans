@@ -16,8 +16,8 @@ from fastapi.responses import JSONResponse
 from app.api.llm_routes import router as llm_router
 from app.api.tts_routes import router as tts_router
 from app.audio_config import AudioConfig
-from app.services.stt.faster_whisper import FasterWhisperSTTProvider
-from app.services.stt.service import STTService
+from app.dependencies import create_stt_service
+from app.domains.registry import get_available_domains
 from app.models.schemas import (
     ConnectionResponse,
     ErrorResponse,
@@ -60,8 +60,7 @@ async def lifespan(app: FastAPI):
 
         # ── Step 2: Load Whisper Model ──
         logger.info("Loading Whisper model and VAD (this may take 30-60 seconds)...")
-        provider = FasterWhisperSTTProvider(config)
-        stt_service = STTService(provider)
+        stt_service = create_stt_service(config)
         logger.info("✓ Whisper model loaded successfully")
 
         # ── Store in app state ──
@@ -207,7 +206,7 @@ async def get_config():
             },
             "domains": {
                 "default": config.DEFAULT_TRANSCRIPTION_DOMAIN,
-                "available": ["general"],
+                "available": get_available_domains(),
             },
             "vad_enabled": app.state.stt_service.vad_model is not None,
         }

@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 from typing import Any
 
+from app.domains.registry import get_available_domains
+
 
 def build_welcome_config(config: Any, engine: Any, handler: Any) -> dict:
     """Build the connection config sent immediately after WebSocket accept."""
@@ -18,7 +20,7 @@ def build_welcome_config(config: Any, engine: Any, handler: Any) -> dict:
         "language": config.TRANSCRIPTION_LANGUAGE,
         "accent_support_enabled": config.ACCENT_SUPPORT_ENABLED,
         "domain": handler.domain,
-        "available_domains": ["general"],
+        "available_domains": get_available_domains(),
         "vad_enabled": engine.vad_model is not None,
         "commands_enabled": handler.domain_adapter.commands_enabled,
         "available_commands": handler.command_processor.get_available_commands(),

@@ -1,6 +1,6 @@
 """Application service for speech-to-text operations."""
 
-from app.services.stt.base import STTProvider
+from app.services.stt.base import SpeechDetectionResult, STTProvider, TranscriptionResult
 
 
 class STTService:
@@ -9,10 +9,10 @@ class STTService:
     def __init__(self, provider: STTProvider):
         self._provider = provider
 
-    def detect_speech(self, audio_bytes: bytes) -> dict:
+    def detect_speech(self, audio_bytes: bytes) -> SpeechDetectionResult:
         return self._provider.detect_speech(audio_bytes)
 
-    def transcribe_audio_bytes(self, audio_bytes: bytes) -> dict:
+    def transcribe_audio_bytes(self, audio_bytes: bytes) -> TranscriptionResult:
         return self._provider.transcribe_audio_bytes(audio_bytes)
 
     @property

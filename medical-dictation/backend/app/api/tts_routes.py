@@ -2,12 +2,9 @@
 
 from fastapi import APIRouter, HTTPException, Response
 
-from app.audio_config import AudioConfig
+from app.dependencies import create_tts_service
 from app.models.schemas import TTSSynthesizeRequest
-from app.services.tts.config import get_supertonic_settings
-from app.services.tts.service import TTSService
 from app.services.tts.supertonic import (
-    SupertonicProvider,
     SupertonicConfigError,
     SupertonicSynthesisError,
 )
@@ -19,8 +16,7 @@ router = APIRouter(prefix="/tts", tags=["tts"])
 @router.post("/synthesize")
 def synthesize_tts(request: TTSSynthesizeRequest) -> Response:
     """Synthesize speech using the configured local TTS provider."""
-    provider = SupertonicProvider(get_supertonic_settings(AudioConfig()))
-    service = TTSService(provider)
+    service = create_tts_service()
 
     try:
         audio = service.synthesize(request.text, voice=request.voice, lang=request.lang)

@@ -52,6 +52,7 @@ class BackendArchitectureRulesTests(unittest.TestCase):
 
     def test_local_ai_integrations_use_service_provider_boundaries(self):
         expected_paths = [
+            "app/dependencies.py",
             "app/services/llm/base.py",
             "app/services/llm/config.py",
             "app/services/llm/lm_studio.py",
@@ -75,16 +76,30 @@ class BackendArchitectureRulesTests(unittest.TestCase):
 
         llm_route_source = self.read_source("app/api/llm_routes.py")
         tts_route_source = self.read_source("app/api/tts_routes.py")
+        dependencies_source = self.read_source("app/dependencies.py")
         main_source = self.read_source("app/main.py")
         handler_source = self.read_source("app/websocket/audio_stream_handler.py")
 
-        self.assertIn("LLMService", llm_route_source)
-        self.assertIn("LMStudioProvider", llm_route_source)
-        self.assertIn("TTSService", tts_route_source)
-        self.assertIn("SupertonicProvider", tts_route_source)
-        self.assertIn("STTService", main_source)
-        self.assertIn("FasterWhisperSTTProvider", main_source)
+        self.assertIn("create_llm_service", llm_route_source)
+        self.assertIn("create_tts_service", tts_route_source)
+        self.assertIn("create_stt_service", main_source)
+        self.assertIn("LLMService", dependencies_source)
+        self.assertIn("LMStudioProvider", dependencies_source)
+        self.assertIn("TTSService", dependencies_source)
+        self.assertIn("SupertonicProvider", dependencies_source)
+        self.assertIn("STTService", dependencies_source)
+        self.assertIn("FasterWhisperSTTProvider", dependencies_source)
         self.assertIn("STTProvider", handler_source)
+
+    def test_domain_registry_exposes_extension_api(self):
+        registry_source = self.read_source("app/domains/registry.py")
+        main_source = self.read_source("app/main.py")
+        response_source = self.read_source("app/websocket/responses.py")
+
+        self.assertIn("def register_domain", registry_source)
+        self.assertIn("def get_available_domains", registry_source)
+        self.assertNotIn('"available": ["general"]', main_source)
+        self.assertNotIn('"available_domains": ["general"]', response_source)
 
     def test_command_processor_comments_stay_domain_neutral(self):
         source = self.read_source("app/services/command_processor.py").lower()
