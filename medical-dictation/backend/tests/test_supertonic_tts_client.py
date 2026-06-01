@@ -1,17 +1,19 @@
 import unittest
 from pathlib import Path
 
-from app.services.supertonic_tts_client import (
+from app.services.tts.config import SupertonicSettings
+from app.services.tts.supertonic import (
     SupertonicConfigError,
     SupertonicSynthesisError,
-    SupertonicTTSClient,
+    SupertonicProvider,
 )
 
 
 class StubConfig:
-    TTS_PROVIDER = "supertonic"
-    SUPERTONIC_VOICE = "M1"
-    SUPERTONIC_LANG = "en"
+    provider = "supertonic"
+    voice = "M1"
+    lang = "en"
+    output_dir = ""
 
 
 class FakeSupertonicTTS:
@@ -32,39 +34,47 @@ class FakeSupertonicTTS:
         Path(output_path).write_bytes(b"RIFFfake-wav-bytes")
 
 
-class SupertonicTTSClientTests(unittest.TestCase):
+class SupertonicProviderTests(unittest.TestCase):
+    def settings(self, config=StubConfig):
+        return SupertonicSettings(
+            provider=config.provider,
+            voice=config.voice,
+            lang=config.lang,
+            output_dir=config.output_dir,
+        )
+
     def test_unsupported_provider_raises_config_error(self):
         class UnsupportedProvider(StubConfig):
-            TTS_PROVIDER = "other"
+            provider = "other"
 
-        client = SupertonicTTSClient(UnsupportedProvider(), tts_factory=FakeSupertonicTTS)
+        provider = SupertonicProvider(self.settings(UnsupportedProvider), tts_factory=FakeSupertonicTTS)
 
         with self.assertRaises(SupertonicConfigError):
-            client.synthesize("hello")
+            provider.synthesize("hello")
 
     def test_blank_text_raises_value_error(self):
-        client = SupertonicTTSClient(StubConfig(), tts_factory=FakeSupertonicTTS)
+        provider = SupertonicProvider(self.settings(), tts_factory=FakeSupertonicTTS)
 
         with self.assertRaises(ValueError):
-            client.synthesize("   ")
+            provider.synthesize("   ")
 
     def test_missing_dependency_raises_config_error(self):
         def missing_dependency_factory(auto_download):
             raise ImportError("No module named supertonic")
 
-        client = SupertonicTTSClient(StubConfig(), tts_factory=missing_dependency_factory)
+        provider = SupertonicProvider(self.settings(), tts_factory=missing_dependency_factory)
 
         with self.assertRaises(SupertonicConfigError):
-            client.synthesize("hello")
+            provider.synthesize("hello")
 
     def test_model_load_error_raises_synthesis_error(self):
         def failing_factory(auto_download):
             raise RuntimeError("download failed")
 
-        client = SupertonicTTSClient(StubConfig(), tts_factory=failing_factory)
+        provider = SupertonicProvider(self.settings(), tts_factory=failing_factory)
 
         with self.assertRaises(SupertonicSynthesisError):
-            client.synthesize("hello")
+            provider.synthesize("hello")
 
     def test_successful_synthesis_returns_wav_bytes_with_defaults(self):
         created = []
@@ -74,9 +84,9 @@ class SupertonicTTSClientTests(unittest.TestCase):
             created.append(instance)
             return instance
 
-        client = SupertonicTTSClient(StubConfig(), tts_factory=factory)
+        provider = SupertonicProvider(self.settings(), tts_factory=factory)
 
-        audio = client.synthesize("  hello  ")
+        audio = provider.synthesize("  hello  ")
 
         self.assertEqual(audio, b"RIFFfake-wav-bytes")
         self.assertTrue(created[0].auto_download)
@@ -99,9 +109,9 @@ class SupertonicTTSClientTests(unittest.TestCase):
             created.append(instance)
             return instance
 
-        client = SupertonicTTSClient(StubConfig(), tts_factory=factory)
+        provider = SupertonicProvider(self.settings(), tts_factory=factory)
 
-        client.synthesize("hello", voice="F1", lang="es")
+        provider.synthesize("hello", voice="F1", lang="es")
 
         self.assertEqual(created[0].voice_name, "F1")
         self.assertEqual(created[0].synthesize_kwargs["lang"], "es")
@@ -111,10 +121,10 @@ class SupertonicTTSClientTests(unittest.TestCase):
             def save_audio(self, wav, output_path):
                 Path(output_path).write_bytes(b"")
 
-        client = SupertonicTTSClient(StubConfig(), tts_factory=EmptyAudioTTS)
+        provider = SupertonicProvider(self.settings(), tts_factory=EmptyAudioTTS)
 
         with self.assertRaises(SupertonicSynthesisError):
-            client.synthesize("hello")
+            provider.synthesize("hello")
 
     def test_temp_file_is_removed_after_synthesis(self):
         output_paths = []
@@ -124,9 +134,9 @@ class SupertonicTTSClientTests(unittest.TestCase):
                 output_paths.append(Path(output_path))
                 super().save_audio(wav, output_path)
 
-        client = SupertonicTTSClient(StubConfig(), tts_factory=TrackingTTS)
+        provider = SupertonicProvider(self.settings(), tts_factory=TrackingTTS)
 
-        client.synthesize("hello")
+        provider.synthesize("hello")
 
         self.assertEqual(len(output_paths), 1)
         self.assertFalse(output_paths[0].exists())

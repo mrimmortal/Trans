@@ -50,6 +50,32 @@ class BackendArchitectureRulesTests(unittest.TestCase):
         self.assertNotIn("class TranscriptionRequest", source)
         self.assertNotIn("class SessionStart", source)
 
+    def test_local_ai_integrations_use_service_provider_boundaries(self):
+        expected_paths = [
+            "app/services/llm/base.py",
+            "app/services/llm/config.py",
+            "app/services/llm/lm_studio.py",
+            "app/services/llm/service.py",
+            "app/services/tts/base.py",
+            "app/services/tts/config.py",
+            "app/services/tts/service.py",
+            "app/services/tts/supertonic.py",
+        ]
+
+        for relative_path in expected_paths:
+            self.assertTrue((BACKEND_ROOT / relative_path).exists(), relative_path)
+
+        self.assertFalse((BACKEND_ROOT / "app/services/lm_studio_client.py").exists())
+        self.assertFalse((BACKEND_ROOT / "app/services/supertonic_tts_client.py").exists())
+
+        llm_route_source = self.read_source("app/api/llm_routes.py")
+        tts_route_source = self.read_source("app/api/tts_routes.py")
+
+        self.assertIn("LLMService", llm_route_source)
+        self.assertIn("LMStudioProvider", llm_route_source)
+        self.assertIn("TTSService", tts_route_source)
+        self.assertIn("SupertonicProvider", tts_route_source)
+
     def test_command_processor_comments_stay_domain_neutral(self):
         source = self.read_source("app/services/command_processor.py").lower()
 

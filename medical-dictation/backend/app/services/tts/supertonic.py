@@ -1,23 +1,26 @@
-"""Supertonic 3 text-to-speech client."""
+"""Supertonic 3 text-to-speech provider."""
 
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Callable
 
+from app.services.tts.base import TTSConfigError, TTSProviderError
+from app.services.tts.config import SupertonicSettings
 
-class SupertonicConfigError(Exception):
-    """Raised when TTS provider configuration or dependency setup is invalid."""
+
+class SupertonicConfigError(TTSConfigError):
+    """Raised when Supertonic configuration or dependency setup is invalid."""
 
 
-class SupertonicSynthesisError(Exception):
+class SupertonicSynthesisError(TTSProviderError):
     """Raised when Supertonic cannot synthesize usable audio."""
 
 
-class SupertonicTTSClient:
-    """Small adapter around the Supertonic Python SDK."""
+class SupertonicProvider:
+    """Provider adapter around the Supertonic Python SDK."""
 
-    def __init__(self, config: Any, tts_factory: Callable[..., Any] | None = None):
-        self._config = config
+    def __init__(self, settings: SupertonicSettings, tts_factory: Callable[..., Any] | None = None):
+        self._settings = settings
         self._tts_factory = tts_factory
         self._tts = None
 
@@ -28,8 +31,8 @@ class SupertonicTTSClient:
         if not clean_text:
             raise ValueError("text must not be empty")
 
-        voice_name = self._clean_optional_value(voice) or self._config.SUPERTONIC_VOICE
-        lang_code = self._clean_optional_value(lang) or self._config.SUPERTONIC_LANG
+        voice_name = self._clean_optional_value(voice) or self._settings.voice
+        lang_code = self._clean_optional_value(lang) or self._settings.lang
 
         tts = self._get_tts()
         output_path = self._create_temp_wav_path()
@@ -57,9 +60,8 @@ class SupertonicTTSClient:
         return audio_bytes
 
     def _ensure_supertonic_provider(self) -> None:
-        provider = getattr(self._config, "TTS_PROVIDER", "")
-        if provider.strip().lower() != "supertonic":
-            raise SupertonicConfigError(f"Unsupported TTS_PROVIDER: {provider}")
+        if self._settings.provider.strip().lower() != "supertonic":
+            raise SupertonicConfigError(f"Unsupported TTS_PROVIDER: {self._settings.provider}")
 
     def _get_tts(self) -> Any:
         if self._tts is not None:
