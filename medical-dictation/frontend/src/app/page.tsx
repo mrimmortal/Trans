@@ -1294,6 +1294,7 @@ export default function Page() {
         onClose={() => setShowSettingsModal(false)}
         settings={settings}
         onUpdateSettings={updateSettings}
+        diagnostics={diagnostics.diagnostics}
       />
     </div>
   );

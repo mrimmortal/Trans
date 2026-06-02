@@ -42,6 +42,16 @@ DEFAULT_TRANSCRIPTION_DOMAIN=general
 Recommended Mac CPU backend profile:
 
 ```text
+TRANSCRIPTION_PROFILE=balanced
+MODEL_SIZE=base
+DEVICE=cpu
+COMPUTE_TYPE=int8
+```
+
+Low-latency CPU profile:
+
+```text
+TRANSCRIPTION_PROFILE=low_latency
 MODEL_SIZE=base
 DEVICE=cpu
 COMPUTE_TYPE=int8
@@ -85,6 +95,7 @@ DEFAULT_TRANSCRIPTION_DOMAIN=general
 Recommended Windows CPU backend profile:
 
 ```text
+TRANSCRIPTION_PROFILE=balanced
 MODEL_SIZE=base
 DEVICE=cpu
 COMPUTE_TYPE=int8
@@ -93,9 +104,9 @@ COMPUTE_TYPE=int8
 Recommended Windows GPU backend profile:
 
 ```text
-MODEL_SIZE=base
-DEVICE=cuda
-COMPUTE_TYPE=float16
+TRANSCRIPTION_PROFILE=gpu
+# Optional accuracy override when hardware has enough VRAM:
+# MODEL_SIZE=medium
 ```
 
 ## RASPBERRY-PI CPU
@@ -103,10 +114,25 @@ COMPUTE_TYPE=float16
 Use the same backend env pattern as local development, with smaller model settings:
 
 ```text
-MODEL_SIZE=tiny
-DEVICE=cpu
-COMPUTE_TYPE=int8
+TRANSCRIPTION_PROFILE=pi_cpu
 ```
+
+## Transcription Profiles
+
+Supported profile names:
+
+```text
+balanced_realtime
+balanced
+low_latency
+high_accuracy
+pi_cpu
+gpu
+```
+
+`balanced_realtime` is the default and remains supported as a backward-compatible alias for `balanced` behavior. Profile values are engineering defaults for this app, not official Whisper or Faster-Whisper standards. Explicit env vars such as `MODEL_SIZE`, `DEVICE`, `COMPUTE_TYPE`, `BEAM_SIZE`, chunk durations, VAD thresholds, and hallucination thresholds override profile defaults.
+
+`hallucination_silence_threshold` is intentionally not enabled because the streaming path currently runs Faster-Whisper with `word_timestamps=False`; enabling it would change inference cost and behavior.
 
 ## UAT
 

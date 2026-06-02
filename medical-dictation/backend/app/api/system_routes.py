@@ -40,10 +40,16 @@ async def health(request: Request):
             content={
                 "status": "healthy",
                 "model": {
-                    "loaded": stt_service.model is not None,
-                    "size": config.MODEL_SIZE,
-                    "device": config.DEVICE,
-                },
+                "loaded": stt_service.model is not None,
+                "size": config.MODEL_SIZE,
+                "device": config.DEVICE,
+                "compute_type": getattr(config, "COMPUTE_TYPE", "unknown"),
+                "transcription_profile": getattr(
+                    config,
+                    "TRANSCRIPTION_PROFILE",
+                    "balanced_realtime",
+                ),
+            },
                 "vad_status": vad_status,
                 "active_connections": getattr(request.app.state, "active_connections", 0),
             },
@@ -67,6 +73,21 @@ async def get_config(request: Request):
                 "sample_rate": config.SAMPLE_RATE,
                 "channels": config.CHANNELS,
                 "sample_width": config.SAMPLE_WIDTH,
+                "min_chunk_duration_seconds": getattr(
+                    config,
+                    "MIN_CHUNK_DURATION_SECONDS",
+                    0.0,
+                ),
+                "max_chunk_duration_seconds": getattr(
+                    config,
+                    "MAX_CHUNK_DURATION_SECONDS",
+                    0.0,
+                ),
+                "overlap_duration_seconds": getattr(
+                    config,
+                    "OVERLAP_DURATION_SECONDS",
+                    0.0,
+                ),
                 "min_chunk_bytes": config.MIN_CHUNK_SIZE_BYTES,
                 "max_chunk_bytes": config.MAX_CHUNK_SIZE_BYTES,
                 "overlap_bytes": config.OVERLAP_SIZE_BYTES,
@@ -74,9 +95,11 @@ async def get_config(request: Request):
             "model": {
                 "size": config.MODEL_SIZE,
                 "device": config.DEVICE,
+                "compute_type": getattr(config, "COMPUTE_TYPE", "unknown"),
                 "language": config.TRANSCRIPTION_LANGUAGE,
                 "accent_support_enabled": config.ACCENT_SUPPORT_ENABLED,
             },
+            "stt": config.safe_stt_settings() if hasattr(config, "safe_stt_settings") else {},
             "domains": {
                 "default": config.DEFAULT_TRANSCRIPTION_DOMAIN,
                 "available": get_available_domains(),

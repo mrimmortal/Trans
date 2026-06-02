@@ -43,6 +43,7 @@ class STTMetricsTests(unittest.TestCase):
 
         snapshot = metrics.snapshot()
         self.assertEqual(result["text"], "project is stable")
+        self.assertEqual(result["real_time_factor"], 0.25)
         self.assertEqual(snapshot["model_size"], "base")
         self.assertEqual(snapshot["device"], "cpu")
         self.assertEqual(snapshot["compute_type"], "int8")

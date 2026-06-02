@@ -164,6 +164,9 @@ class AudioStreamHandler:
 
             result: TranscriptionResult = self.engine.transcribe_audio_bytes(audio_with_overlap)
             processing_time_ms = float(result.get("processing_time_ms") or 0.0)
+            real_time_factor = 0.0
+            if audio_duration_seconds > 0:
+                real_time_factor = processing_time_ms / (audio_duration_seconds * 1000)
 
             if result.get("error"):
                 logger.warning("Transcription error: %s", safe_error_message(result["error"]))
@@ -224,6 +227,7 @@ class AudioStreamHandler:
                 "domain": self.domain,
                 "processing_time_ms": processing_time_ms,
                 "audio_duration_seconds": audio_duration_seconds,
+                "real_time_factor": round(real_time_factor, 3),
                 "flush_reason": flush_reason,
                 "commands": [
                     {

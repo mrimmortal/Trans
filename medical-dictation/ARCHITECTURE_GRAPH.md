@@ -19,8 +19,10 @@ flowchart LR
     AssistantHook["src/hooks/useLocalAssistant.ts\nLLM -> TTS orchestration"]
     AssistantPanel["src/components/Assistant/LocalAssistantPanel.tsx\nResponse + playback UI"]
     DiagnosticsPanel["src/components/Diagnostics/DeveloperDiagnosticsPanel.tsx\nCollapsed debug status"]
+    SettingsModal["src/components/Settings/SettingsModal.tsx\nLocal settings + guided STT config"]
     AssistantAPI["src/services/assistantApi.ts\nPOST /llm/respond client"]
     TTSAPI["src/services/ttsApi.ts\nPOST /tts/synthesize client"]
+    ConfigAPI["src/services/configApi.ts\nGET /config client"]
     DiagnosticsAPI["src/services/diagnosticsApi.ts\nGET /diagnostics client"]
     VoiceCommands["src/hooks/useVoiceCommands.ts\nLocal commands + snippets"]
     Editor["src/components/Editor/DictationEditor.tsx\nTipTap editor"]
@@ -45,7 +47,7 @@ flowchart LR
     WSControl["websocket/control_messages.py\nJSON control messages"]
     WSResponses["websocket/responses.py\nConnection/transcription payloads"]
     StreamText["websocket/stream_text.py\nOverlap text cleanup"]
-    Config["backend/app/audio_config.py\nAudio/model/server config"]
+    Config["backend/app/audio_config.py\nAudio/model/profile/server config"]
     STTService["services/stt/service.py\nGeneric STT service boundary"]
     FasterWhisper["services/stt/faster_whisper.py\nFaster-Whisper + Silero provider"]
     AudioProcessing["services/stt/audio_processing.py\nAudio conversion/preprocessing"]
@@ -61,6 +63,7 @@ flowchart LR
   Page --> WS
   Page --> AssistantPanel
   Page --> DiagnosticsPanel
+  Page --> SettingsModal
   Page --> AssistantHook
   Page --> VoiceCommands
   Page --> Editor
@@ -77,6 +80,8 @@ flowchart LR
   AssistantHook --> TTSAPI
   AssistantAPI -- "http://.../llm/respond + x-request-id" --> App
   TTSAPI -- "http://.../tts/synthesize + x-request-id" --> App
+  SettingsModal --> ConfigAPI
+  ConfigAPI -- "http://.../config" --> App
   DiagnosticsPanel --> DiagnosticsAPI
   DiagnosticsAPI -- "http://.../diagnostics + x-request-id" --> App
 
@@ -230,7 +235,7 @@ Server to client:
 
 ```json
 { "type": "connected", "message": "...", "config": {} }
-{ "type": "transcription", "text": "...", "domain": "general", "commands": [], "is_final": true, "processing_time_ms": 123.4, "audio_duration_seconds": 1.2, "flush_reason": "natural_pause" }
+{ "type": "transcription", "text": "...", "domain": "general", "commands": [], "is_final": true, "processing_time_ms": 123.4, "audio_duration_seconds": 1.2, "real_time_factor": 0.103, "flush_reason": "natural_pause" }
 { "type": "control_ack", "action": "flush" }
 { "type": "available_commands", "commands_list": {} }
 { "type": "stats", "data": {} }
@@ -257,6 +262,8 @@ GET /diagnostics/tts
 `POST /tts/synthesize` accepts `{ "text": "...", "voice": "M1", "lang": "en" }`, delegates through the backend TTS service boundary to the configured Supertonic provider, and returns playable `audio/wav` bytes. It is independent of `/ws/audio`, STT, and the LM Studio flow.
 
 Diagnostics endpoints return safe backend/STT/LLM/TTS health, config presence, provider availability, request IDs, and process-local metrics. They do not expose secrets, full prompts, transcript text, AI responses, audio bytes, stack traces, provider URLs, or local filesystem paths.
+
+`backend/app/audio_config.py` resolves config-based transcription profiles. Supported values are `balanced_realtime`, `balanced`, `low_latency`, `high_accuracy`, `pi_cpu`, and `gpu`; explicit env vars override profile defaults. `hallucination_silence_threshold` is intentionally not enabled while Faster-Whisper runs with `word_timestamps=False`.
 
 ## Persistence Graph
 

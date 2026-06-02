@@ -237,6 +237,7 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
                             text_length=len(result.get("text", "")),
                             commands_count=cmd_count,
                             flush_reason=result.get("flush_reason"),
+                            real_time_factor=result.get("real_time_factor"),
                         )
 
                 # Text control message

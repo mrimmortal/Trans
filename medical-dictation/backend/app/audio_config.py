@@ -1,6 +1,7 @@
 """Audio configuration and constants"""
 
 import os
+from typing import Any
 
 
 def parse_cors_origins(value: str | None) -> list[str]:
@@ -36,6 +37,89 @@ def env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+TRANSCRIPTION_PROFILE_DEFAULT = "balanced_realtime"
+BALANCED_PROFILE_DEFAULTS: dict[str, Any] = {
+    "min_chunk_duration_seconds": 0.6,
+    "max_chunk_duration_seconds": 6.0,
+    "overlap_duration_seconds": 0.5,
+    "silence_timeout_seconds": 0.7,
+    "silero_vad_threshold": 0.5,
+    "silero_min_speech_ms": 200,
+    "silero_min_silence_ms": 300,
+    "silero_speech_pad_ms": 200,
+    "beam_size": 2,
+    "model_size": None,
+    "device": "cpu",
+    "compute_type": "int8",
+}
+TRANSCRIPTION_PROFILES: dict[str, dict[str, Any]] = {
+    "balanced": BALANCED_PROFILE_DEFAULTS,
+    "balanced_realtime": BALANCED_PROFILE_DEFAULTS,
+    "low_latency": {
+        **BALANCED_PROFILE_DEFAULTS,
+        "min_chunk_duration_seconds": 0.5,
+        "max_chunk_duration_seconds": 5.0,
+        "overlap_duration_seconds": 0.4,
+        "silence_timeout_seconds": 0.5,
+        "beam_size": 1,
+    },
+    "high_accuracy": {
+        **BALANCED_PROFILE_DEFAULTS,
+        "max_chunk_duration_seconds": 8.0,
+        "overlap_duration_seconds": 0.7,
+        "silence_timeout_seconds": 0.9,
+        "beam_size": 5,
+    },
+    "pi_cpu": {
+        **BALANCED_PROFILE_DEFAULTS,
+        "model_size": "tiny",
+        "device": "cpu",
+        "compute_type": "int8",
+        "min_chunk_duration_seconds": 0.5,
+        "max_chunk_duration_seconds": 5.0,
+        "overlap_duration_seconds": 0.4,
+        "silence_timeout_seconds": 0.5,
+        "beam_size": 1,
+    },
+    "gpu": {
+        **BALANCED_PROFILE_DEFAULTS,
+        "model_size": "small",
+        "device": "cuda",
+        "compute_type": "float16",
+    },
+}
+
+
+def resolve_transcription_profile(value: str | None) -> str:
+    """Return a supported transcription profile, falling back to balanced behavior."""
+    profile = (value or TRANSCRIPTION_PROFILE_DEFAULT).strip().lower()
+    if profile in TRANSCRIPTION_PROFILES:
+        return profile
+    return TRANSCRIPTION_PROFILE_DEFAULT
+
+
+def get_transcription_profile_defaults(profile: str | None) -> dict[str, Any]:
+    """Return profile defaults without exposing mutable shared state."""
+    resolved_profile = resolve_transcription_profile(profile)
+    return dict(TRANSCRIPTION_PROFILES[resolved_profile])
+
+
+def env_temperature(name: str, default: float) -> tuple[float, ...]:
+    """Read a Whisper temperature override as the tuple Faster-Whisper expects."""
+    value = os.getenv(name)
+    if value is None:
+        return (default,)
+    try:
+        temperatures = tuple(
+            float(part.strip())
+            for part in value.split(",")
+            if part.strip()
+        )
+    except ValueError:
+        return (default,)
+    return temperatures or (default,)
+
+
 class AudioConfig:
     """Audio pipeline configuration tuned for real-time transcription."""
 
@@ -58,20 +142,32 @@ class AudioConfig:
     TTS_OUTPUT_DIR: str = os.getenv("TTS_OUTPUT_DIR", "")
 
     # ─── BUFFERING STRATEGY ───
-    TRANSCRIPTION_PROFILE: str = os.getenv("TRANSCRIPTION_PROFILE", "balanced_realtime")
+    TRANSCRIPTION_PROFILE: str = resolve_transcription_profile(os.getenv("TRANSCRIPTION_PROFILE"))
+    TRANSCRIPTION_PROFILE_DEFAULTS: dict[str, Any] = get_transcription_profile_defaults(
+        TRANSCRIPTION_PROFILE
+    )
 
     # Dynamic buffering based on speech detection (VAD-driven)
     # These are now MAXIMUM thresholds, actual transcription happens on pauses
-    MIN_CHUNK_DURATION_SECONDS: float = env_float("MIN_CHUNK_DURATION_SECONDS", 0.6)
-    MAX_CHUNK_DURATION_SECONDS: float = env_float("MAX_CHUNK_DURATION_SECONDS", 6.0)
+    MIN_CHUNK_DURATION_SECONDS: float = env_float(
+        "MIN_CHUNK_DURATION_SECONDS",
+        TRANSCRIPTION_PROFILE_DEFAULTS["min_chunk_duration_seconds"],
+    )
+    MAX_CHUNK_DURATION_SECONDS: float = env_float(
+        "MAX_CHUNK_DURATION_SECONDS",
+        TRANSCRIPTION_PROFILE_DEFAULTS["max_chunk_duration_seconds"],
+    )
     
     MIN_CHUNK_SIZE_BYTES: int = int(SAMPLE_RATE * SAMPLE_WIDTH * MIN_CHUNK_DURATION_SECONDS)
     MAX_CHUNK_SIZE_BYTES: int = int(SAMPLE_RATE * SAMPLE_WIDTH * MAX_CHUNK_DURATION_SECONDS)
 
     # Overlap: Keep the last 0.5s of previous chunk and prepend to next chunk.
     # Prevents words at chunk boundaries from being cut in half.
-    OVERLAP_DURATION_SECONDS: float = 0.5
-    OVERLAP_SIZE_BYTES: int = int(16000 * 2 * 0.5)  # 16,000 bytes
+    OVERLAP_DURATION_SECONDS: float = env_float(
+        "OVERLAP_DURATION_SECONDS",
+        TRANSCRIPTION_PROFILE_DEFAULTS["overlap_duration_seconds"],
+    )
+    OVERLAP_SIZE_BYTES: int = int(SAMPLE_RATE * SAMPLE_WIDTH * OVERLAP_DURATION_SECONDS)
 
     # ─── SILENCE / VOICE ACTIVITY DETECTION ───
     SILENCE_RMS_THRESHOLD: float = 0.003  # Below this = silence
@@ -79,44 +175,59 @@ class AudioConfig:
     MIN_AUDIO_SAMPLES: int = int(16000 * 0.5)
     
     # Pause-based transcription trigger
-    SILENCE_TIMEOUT_SECONDS: float = env_float("SILENCE_TIMEOUT_SECONDS", 0.7)
+    SILENCE_TIMEOUT_SECONDS: float = env_float(
+        "SILENCE_TIMEOUT_SECONDS",
+        TRANSCRIPTION_PROFILE_DEFAULTS["silence_timeout_seconds"],
+    )
     
     # Silero VAD settings (real-time speech detection)
-    SILERO_VAD_THRESHOLD: float = 0.5  # 0.0-1.0, lower = more sensitive
+    SILERO_VAD_THRESHOLD: float = env_float(
+        "SILERO_VAD_THRESHOLD",
+        TRANSCRIPTION_PROFILE_DEFAULTS["silero_vad_threshold"],
+    )
     SILERO_REQUIRE_SEGMENT: bool = os.getenv("SILERO_REQUIRE_SEGMENT", "false").lower() == "true"
-    SILERO_MIN_SPEECH_MS: int = 200  # Minimum speech duration (catch short words)
-    SILERO_MIN_SILENCE_MS: int = 300  # Minimum silence to split segments
-    SILERO_SPEECH_PAD_MS: int = 200  # Padding around speech segments
+    SILERO_MIN_SPEECH_MS: int = env_int(
+        "SILERO_MIN_SPEECH_MS",
+        TRANSCRIPTION_PROFILE_DEFAULTS["silero_min_speech_ms"],
+    )
+    SILERO_MIN_SILENCE_MS: int = env_int(
+        "SILERO_MIN_SILENCE_MS",
+        TRANSCRIPTION_PROFILE_DEFAULTS["silero_min_silence_ms"],
+    )
+    SILERO_SPEECH_PAD_MS: int = env_int(
+        "SILERO_SPEECH_PAD_MS",
+        TRANSCRIPTION_PROFILE_DEFAULTS["silero_speech_pad_ms"],
+    )
 
     # ─── WHISPER MODEL SETTINGS ───
     ACCENT_SUPPORT_ENABLED: bool = env_bool("ACCENT_SUPPORT_ENABLED", True)
     DEFAULT_ACCENT_MODEL_SIZE: str = os.getenv("DEFAULT_ACCENT_MODEL_SIZE", "base")
     DEFAULT_STANDARD_MODEL_SIZE: str = os.getenv("DEFAULT_STANDARD_MODEL_SIZE", "base.en")
-    MODEL_SIZE: str = os.getenv(
-        "MODEL_SIZE",
-        DEFAULT_ACCENT_MODEL_SIZE if ACCENT_SUPPORT_ENABLED else DEFAULT_STANDARD_MODEL_SIZE,
+    PROFILE_MODEL_SIZE: str | None = TRANSCRIPTION_PROFILE_DEFAULTS["model_size"]
+    MODEL_SIZE: str = os.getenv("MODEL_SIZE") or PROFILE_MODEL_SIZE or (
+        DEFAULT_ACCENT_MODEL_SIZE if ACCENT_SUPPORT_ENABLED else DEFAULT_STANDARD_MODEL_SIZE
     )
     TRANSCRIPTION_LANGUAGE: str = os.getenv("TRANSCRIPTION_LANGUAGE", "en")
-    DEVICE: str = os.getenv("DEVICE", "cpu")
-    COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", "int8")
-    BEAM_SIZE: int = env_int("BEAM_SIZE", 2)
-    TEMPERATURE: tuple = (0.0,)  # Single temp for accuracy
+    DEVICE: str = os.getenv("DEVICE", TRANSCRIPTION_PROFILE_DEFAULTS["device"])
+    COMPUTE_TYPE: str = os.getenv("COMPUTE_TYPE", TRANSCRIPTION_PROFILE_DEFAULTS["compute_type"])
+    BEAM_SIZE: int = env_int("BEAM_SIZE", TRANSCRIPTION_PROFILE_DEFAULTS["beam_size"])
+    TEMPERATURE: tuple = env_temperature("TEMPERATURE", 0.0)
     BEST_OF: int = 1
     PATIENCE: float = 1.0
-    COMPRESSION_RATIO_THRESHOLD: float = 2.2
-    LOG_PROB_THRESHOLD: float = -0.7
-    NO_SPEECH_THRESHOLD: float = 0.75
+    COMPRESSION_RATIO_THRESHOLD: float = env_float("COMPRESSION_RATIO_THRESHOLD", 2.2)
+    LOG_PROB_THRESHOLD: float = env_float("LOG_PROB_THRESHOLD", -0.7)
+    NO_SPEECH_THRESHOLD: float = env_float("NO_SPEECH_THRESHOLD", 0.75)
     MIN_TRANSCRIPTION_CONFIDENCE: float = env_float("MIN_TRANSCRIPTION_CONFIDENCE", 0.10)
     HALLUCINATION_MAX_NO_SPEECH_PROB: float = env_float("HALLUCINATION_MAX_NO_SPEECH_PROB", 0.65)
 
     # ─── VAD SETTINGS (for Whisper internal VAD) ───
-    VAD_FILTER: bool = True
+    VAD_FILTER: bool = env_bool("VAD_FILTER", True)
     VAD_PARAMETERS: dict = {
-        "threshold": 0.5,  # FIXED: Reduced from 0.65 (less aggressive)
-        "min_speech_duration_ms": 200,  # FIXED: Reduced from 350 (catch short words)
+        "threshold": SILERO_VAD_THRESHOLD,
+        "min_speech_duration_ms": SILERO_MIN_SPEECH_MS,
         "max_speech_duration_s": 30,
-        "min_silence_duration_ms": 300,  # FIXED: Reduced from 700 (natural pauses)
-        "speech_pad_ms": 200,  # FIXED: Increased from 100 (more context)
+        "min_silence_duration_ms": SILERO_MIN_SILENCE_MS,
+        "speech_pad_ms": SILERO_SPEECH_PAD_MS,
     }
 
     # ─── TRANSCRIPTION CONTEXT PROMPT ───
@@ -139,6 +250,31 @@ class AudioConfig:
         if cls.ACCENT_SUPPORT_ENABLED:
             return f"{cls.ACCENT_CONTEXT_PROMPT} {cls.TRANSCRIPTION_CONTEXT_PROMPT}"
         return cls.TRANSCRIPTION_CONTEXT_PROMPT
+
+    def safe_stt_settings(self) -> dict:
+        """Return safe STT configuration metadata for diagnostics and config APIs."""
+        return {
+            "transcription_profile": self.TRANSCRIPTION_PROFILE,
+            "model_size": self.MODEL_SIZE,
+            "device": self.DEVICE,
+            "compute_type": self.COMPUTE_TYPE,
+            "language": self.TRANSCRIPTION_LANGUAGE,
+            "sample_rate": self.SAMPLE_RATE,
+            "channels": self.CHANNELS,
+            "sample_width": self.SAMPLE_WIDTH,
+            "min_chunk_duration_seconds": self.MIN_CHUNK_DURATION_SECONDS,
+            "max_chunk_duration_seconds": self.MAX_CHUNK_DURATION_SECONDS,
+            "overlap_duration_seconds": self.OVERLAP_DURATION_SECONDS,
+            "silence_timeout_seconds": self.SILENCE_TIMEOUT_SECONDS,
+            "beam_size": self.BEAM_SIZE,
+            "temperature": list(self.TEMPERATURE),
+            "compression_ratio_threshold": self.COMPRESSION_RATIO_THRESHOLD,
+            "log_prob_threshold": self.LOG_PROB_THRESHOLD,
+            "no_speech_threshold": self.NO_SPEECH_THRESHOLD,
+            "vad_filter": self.VAD_FILTER,
+            "vad_parameters": dict(self.VAD_PARAMETERS),
+            "hallucination_silence_threshold_enabled": False,
+        }
 
     # ─── HALLUCINATION FILTER ───
     # FIXED: Removed common words like "the", "a", "um", "uh" - these are legitimate!

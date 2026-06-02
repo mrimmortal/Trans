@@ -203,6 +203,7 @@ export function useAudioRecorder(options: AudioRecorderOptions = {}): AudioRecor
         audio: {
           channelCount: channelCount,
           sampleRate: { ideal: sampleRate },
+          sampleSize: 16,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,

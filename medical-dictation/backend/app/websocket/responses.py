@@ -49,6 +49,7 @@ def build_transcription_message(
         "confidence": 0.95,
         "processing_time_ms": result.get("processing_time_ms", 0.0),
         "audio_duration_seconds": result.get("audio_duration_seconds", 0.0),
+        "real_time_factor": result.get("real_time_factor", 0.0),
         "flush_reason": result.get("flush_reason", "unknown"),
         "timestamp": timestamp_value,
     }

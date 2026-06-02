@@ -79,6 +79,7 @@ export interface TranscriptionMessage {
   confidence?: number;
   processing_time_ms?: number;
   audio_duration_seconds?: number;
+  real_time_factor?: number;
   flush_reason?: string;
   timestamp?: number | string;
   commands?: VoiceCommand[];
@@ -179,6 +180,84 @@ export type LocalAssistantErrorCode =
 
 export type AssistantStage = 'idle' | 'generating-response' | 'generating-speech' | 'playing';
 
+export interface SttMetrics {
+  model_size?: string;
+  device?: string;
+  compute_type?: string;
+  vad_enabled?: boolean;
+  sample_rate?: number;
+  channels?: number;
+  chunks_received?: number;
+  silence_chunks_skipped?: number;
+  silence_skipped_percent?: number;
+  transcriptions_count?: number;
+  empty_transcription_count?: number;
+  last_audio_duration_seconds?: number;
+  last_processing_time_ms?: number;
+  last_real_time_factor?: number;
+  last_flush_reason?: string;
+  average_processing_time_ms?: number;
+  average_real_time_factor?: number;
+}
+
+export interface SafeSttSettings {
+  transcription_profile?: string;
+  model_size?: string;
+  device?: string;
+  compute_type?: string;
+  language?: string;
+  sample_rate?: number;
+  channels?: number;
+  sample_width?: number;
+  min_chunk_duration_seconds?: number;
+  max_chunk_duration_seconds?: number;
+  overlap_duration_seconds?: number;
+  silence_timeout_seconds?: number;
+  beam_size?: number;
+  temperature?: number[];
+  compression_ratio_threshold?: number;
+  log_prob_threshold?: number;
+  no_speech_threshold?: number;
+  min_transcription_confidence?: number;
+  hallucination_max_no_speech_prob?: number;
+  vad_filter?: boolean;
+  vad_parameters?: {
+    threshold?: number;
+    min_speech_duration_ms?: number;
+    max_speech_duration_s?: number;
+    min_silence_duration_ms?: number;
+    speech_pad_ms?: number;
+  };
+  hallucination_silence_threshold_enabled?: boolean;
+}
+
+export interface BackendConfigResponse {
+  audio?: {
+    sample_rate?: number;
+    channels?: number;
+    sample_width?: number;
+    min_chunk_duration_seconds?: number;
+    max_chunk_duration_seconds?: number;
+    overlap_duration_seconds?: number;
+    min_chunk_bytes?: number;
+    max_chunk_bytes?: number;
+    overlap_bytes?: number;
+  };
+  model?: {
+    size?: string;
+    device?: string;
+    compute_type?: string;
+    language?: string;
+    accent_support_enabled?: boolean;
+  };
+  stt?: SafeSttSettings;
+  domains?: {
+    default?: string;
+    available?: string[];
+  };
+  vad_enabled?: boolean;
+}
+
 export interface ProviderDiagnostics {
   status: 'healthy' | 'degraded' | 'unhealthy';
   provider?: string;
@@ -190,9 +269,11 @@ export interface ProviderDiagnostics {
   model_size?: string;
   device?: string;
   compute_type?: string;
+  transcription_profile?: string;
   vad_enabled?: boolean;
   last_error?: string | null;
-  metrics?: Record<string, unknown>;
+  settings?: SafeSttSettings;
+  metrics?: SttMetrics;
 }
 
 export interface DiagnosticsResponse {

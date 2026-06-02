@@ -2,27 +2,46 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { X, Sliders } from 'lucide-react';
-import { AppSettings } from '@/types';
+import { AppSettings, BackendConfigResponse, DiagnosticsResponse, SafeSttSettings } from '@/types';
 import { APP_CONFIG } from '@/lib/appConfig';
+import { getBackendConfig } from '@/services/configApi';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
   onUpdateSettings: (partial: Partial<AppSettings>) => void;
+  diagnostics?: DiagnosticsResponse | null;
 }
 
-type Tab = 'audio' | 'transcription' | 'editor' | 'about';
+type Tab = 'audio' | 'transcription' | 'stt' | 'editor' | 'about';
 
 export function SettingsModal({
   isOpen,
   onClose,
   settings,
   onUpdateSettings,
+  diagnostics,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<Tab>('audio');
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [backendConfig, setBackendConfig] = useState<BackendConfigResponse | null>(null);
+  const [isConfigLoading, setIsConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  const loadBackendConfig = async () => {
+    setIsConfigLoading(true);
+    setConfigError(null);
+    try {
+      const config = await getBackendConfig();
+      setBackendConfig(config);
+    } catch {
+      setConfigError('Backend config is unavailable.');
+    } finally {
+      setIsConfigLoading(false);
+    }
+  };
 
   // Enumerate audio devices
   useEffect(() => {
@@ -76,14 +95,24 @@ export function SettingsModal({
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (isOpen) {
+      void loadBackendConfig();
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const tabs: { id: Tab; label: string }[] = [
     { id: 'audio', label: 'Audio' },
     { id: 'transcription', label: 'Transcription' },
+    { id: 'stt', label: 'STT' },
     { id: 'editor', label: 'Editor' },
     { id: 'about', label: 'About' },
   ];
+
+  const sttSettings = mergeSttSettings(backendConfig);
+  const sttMetrics = diagnostics?.stt?.metrics;
 
   return (
     <div
@@ -331,6 +360,114 @@ export function SettingsModal({
               </div>
             )}
 
+            {/* STT Section */}
+            {activeTab === 'stt' && (
+              <div className="space-y-5" role="tabpanel" id="settings-panel-stt" aria-labelledby="settings-tab-stt">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Transcription Engine
+                    </h3>
+                    <p className="text-xs text-gray-600 mt-1">
+                      Read-only backend configuration. Runtime editing needs a dedicated backend settings API.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void loadBackendConfig()}
+                    disabled={isConfigLoading}
+                    className="px-3 py-1.5 rounded border border-gray-300 text-xs font-medium text-gray-700 disabled:opacity-50"
+                  >
+                    {isConfigLoading ? 'Refreshing...' : 'Refresh backend config'}
+                  </button>
+                </div>
+
+                {configError && (
+                  <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {configError} Values below may be stale or unknown.
+                  </div>
+                )}
+
+                <ReadonlySection
+                  title="Audio Contract"
+                  note="Fixed protocol values expected by backend and frontend."
+                  rows={[
+                    settingRow('Sample rate', hz(sttSettings.sample_rate), 'Whisper-style pipelines expect 16 kHz audio.'),
+                    settingRow('Channels', channels(sttSettings.channels), 'Mono keeps the browser and backend audio contract simple.'),
+                    settingRow('Format', sampleFormat(sttSettings.sample_width), 'The browser converts captured audio to little-endian int16 PCM before streaming.'),
+                  ]}
+                />
+
+                <ReadonlySection
+                  title="Profile"
+                  note="Profiles are presets; current app behavior is controlled by backend env config."
+                  rows={[
+                    settingRow('Active profile', sttSettings.transcription_profile || 'unknown', profileGuide(sttSettings.transcription_profile)),
+                  ]}
+                />
+
+                <ReadonlySection
+                  title="Model / Runtime"
+                  rows={[
+                    settingRow('Model size', sttSettings.model_size || 'unknown', 'Larger models may improve accuracy but need more memory and time.'),
+                    settingRow('Device', sttSettings.device || 'unknown', 'CPU is broadly compatible; CUDA needs a supported NVIDIA GPU.'),
+                    settingRow('Compute type', sttSettings.compute_type || 'unknown', 'CPU usually uses int8; CUDA usually uses float16.'),
+                    settingRow('Language', sttSettings.language || 'unknown', 'Language is supplied to Faster-Whisper for transcription.'),
+                    settingRow('Beam size', formatValue(sttSettings.beam_size), 'Lower is faster; higher may improve accuracy with more latency.'),
+                    settingRow('Temperature', formatTemperature(sttSettings.temperature), '0.0 keeps decoding deterministic for realtime dictation.'),
+                  ]}
+                />
+
+                <ReadonlySection
+                  title="Realtime Buffering"
+                  note="Shorter chunks respond faster; longer chunks give more context."
+                  rows={[
+                    settingRow('Min chunk', seconds(sttSettings.min_chunk_duration_seconds), 'Lower values can respond sooner but may reduce text stability.'),
+                    settingRow('Max chunk', seconds(sttSettings.max_chunk_duration_seconds), 'Higher values give more context but increase latency.'),
+                    settingRow('Overlap', seconds(sttSettings.overlap_duration_seconds), 'Helps avoid clipped boundary words; too much can repeat text.'),
+                    settingRow('Silence timeout', seconds(sttSettings.silence_timeout_seconds), 'Lower triggers sooner; higher waits for more complete phrases.'),
+                  ]}
+                />
+
+                <ReadonlySection
+                  title="VAD"
+                  rows={[
+                    settingRow('VAD filter', booleanLabel(sttSettings.vad_filter), 'Faster-Whisper/Silero VAD skips silence before transcription.'),
+                    settingRow('VAD threshold', formatValue(sttSettings.vad_parameters?.threshold), 'Higher is stricter; lower catches quieter speech but may include noise.'),
+                    settingRow('Min speech', ms(sttSettings.vad_parameters?.min_speech_duration_ms), 'Speech/silence/pad values tune short-word capture and phrase splitting.'),
+                    settingRow('Min silence', ms(sttSettings.vad_parameters?.min_silence_duration_ms), 'Shorter values split phrases sooner; longer values keep phrases together.'),
+                    settingRow('Speech pad', ms(sttSettings.vad_parameters?.speech_pad_ms), 'Adds context around detected speech so words are not clipped.'),
+                  ]}
+                />
+
+                <ReadonlySection
+                  title="Hallucination / Silence Filtering"
+                  note="More aggressive values reduce silence/repetition artifacts but can drop valid speech."
+                  rows={[
+                    settingRow('Compression ratio threshold', formatValue(sttSettings.compression_ratio_threshold), 'Lower values filter repetitive output more aggressively.'),
+                    settingRow('Log probability threshold', formatValue(sttSettings.log_prob_threshold), 'Stricter values filter uncertain decoding.'),
+                    settingRow('No-speech threshold', formatValue(sttSettings.no_speech_threshold), 'Higher values filter more silence-like output.'),
+                    settingRow('Min confidence', formatValue(sttSettings.min_transcription_confidence), 'Filters very low-confidence text when configured.'),
+                    settingRow('Max no-speech probability', formatValue(sttSettings.hallucination_max_no_speech_prob), 'Drops text when Whisper thinks the segment was likely silence.'),
+                    settingRow('Hallucination silence threshold', disabledLabel(sttSettings.hallucination_silence_threshold_enabled), 'Not enabled because word timestamps are disabled.'),
+                  ]}
+                />
+
+                <ReadonlySection
+                  title="Diagnostics Summary"
+                  note="RTF below 1.0 is faster than realtime; below 0.5 is better for responsive dictation."
+                  rows={[
+                    settingRow('Last RTF', formatValue(sttMetrics?.last_real_time_factor), 'Most recent transcription speed relative to audio duration.'),
+                    settingRow('Average RTF', formatValue(sttMetrics?.average_real_time_factor), 'Average processing speed across completed transcriptions.'),
+                    settingRow('Last processing time', ms(sttMetrics?.last_processing_time_ms), 'Backend time spent processing the latest transcription.'),
+                    settingRow('Last audio duration', seconds(sttMetrics?.last_audio_duration_seconds), 'Audio duration of the latest transcription buffer.'),
+                    settingRow('Flush reason', sttMetrics?.last_flush_reason || 'unknown', 'Why the stream flushed: pause, max buffer, manual flush, or unknown.'),
+                    settingRow('Silence skipped', percent(sttMetrics?.silence_skipped_percent), 'High values mean VAD is saving backend work.'),
+                  ]}
+                />
+              </div>
+            )}
+
             {/* Editor Section */}
             {activeTab === 'editor' && (
               <div className="space-y-6" role="tabpanel" id="settings-panel-editor" aria-labelledby="settings-tab-editor">
@@ -460,4 +597,131 @@ export function SettingsModal({
       </div>
     </div>
   );
+}
+
+interface SettingRow {
+  label: string;
+  value: string;
+  guide: string;
+}
+
+function ReadonlySection({
+  title,
+  note,
+  rows,
+}: {
+  title: string;
+  note?: string;
+  rows: SettingRow[];
+}) {
+  return (
+    <section className="space-y-2">
+      <div>
+        <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
+        {note && <p className="text-xs text-gray-600 mt-0.5">{note}</p>}
+      </div>
+      <div className="divide-y divide-gray-100 rounded border border-gray-200 bg-gray-50">
+        {rows.map((row) => (
+          <div key={`${title}-${row.label}`} className="grid gap-1 px-3 py-2 sm:grid-cols-[150px_1fr]">
+            <div className="text-xs font-medium text-gray-700">{row.label}</div>
+            <div>
+              <div className="inline-flex rounded bg-white px-2 py-0.5 text-xs font-semibold text-gray-900 ring-1 ring-gray-200">
+                {row.value}
+              </div>
+              <p className="mt-1 text-xs text-gray-600">{row.guide}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function settingRow(label: string, value: string, guide: string): SettingRow {
+  return { label, value, guide };
+}
+
+function mergeSttSettings(config: BackendConfigResponse | null): SafeSttSettings {
+  return {
+    sample_rate: config?.stt?.sample_rate ?? config?.audio?.sample_rate,
+    channels: config?.stt?.channels ?? config?.audio?.channels,
+    sample_width: config?.stt?.sample_width ?? config?.audio?.sample_width,
+    model_size: config?.stt?.model_size ?? config?.model?.size,
+    device: config?.stt?.device ?? config?.model?.device,
+    compute_type: config?.stt?.compute_type ?? config?.model?.compute_type,
+    language: config?.stt?.language ?? config?.model?.language,
+    min_chunk_duration_seconds:
+      config?.stt?.min_chunk_duration_seconds ?? config?.audio?.min_chunk_duration_seconds,
+    max_chunk_duration_seconds:
+      config?.stt?.max_chunk_duration_seconds ?? config?.audio?.max_chunk_duration_seconds,
+    overlap_duration_seconds:
+      config?.stt?.overlap_duration_seconds ?? config?.audio?.overlap_duration_seconds,
+    ...config?.stt,
+  };
+}
+
+function formatValue(value: string | number | boolean | null | undefined): string {
+  if (value === null || value === undefined || value === '') return 'unknown';
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+  return String(value);
+}
+
+function hz(value: number | undefined): string {
+  return value ? `${value} Hz` : 'unknown';
+}
+
+function channels(value: number | undefined): string {
+  if (value === 1) return 'mono';
+  if (value) return `${value} channels`;
+  return 'unknown';
+}
+
+function sampleFormat(sampleWidth: number | undefined): string {
+  if (sampleWidth === 2) return '16-bit PCM / int16';
+  if (sampleWidth) return `${sampleWidth * 8}-bit PCM`;
+  return 'unknown';
+}
+
+function seconds(value: number | undefined): string {
+  return value === undefined ? 'unknown' : `${formatValue(value)} sec`;
+}
+
+function ms(value: number | undefined): string {
+  return value === undefined ? 'unknown' : `${formatValue(value)} ms`;
+}
+
+function percent(value: number | undefined): string {
+  return value === undefined ? 'unknown' : `${formatValue(value)}%`;
+}
+
+function booleanLabel(value: boolean | undefined): string {
+  if (value === undefined) return 'unknown';
+  return value ? 'enabled' : 'disabled';
+}
+
+function disabledLabel(value: boolean | undefined): string {
+  return value ? 'enabled' : 'not enabled';
+}
+
+function formatTemperature(value: number[] | undefined): string {
+  if (!value || value.length === 0) return 'unknown';
+  return value.map((item) => formatValue(item)).join(', ');
+}
+
+function profileGuide(profile: string | undefined): string {
+  switch (profile) {
+    case 'low_latency':
+      return 'Faster responses with a higher chance of less stable text.';
+    case 'high_accuracy':
+      return 'More context and stronger decoding with higher latency.';
+    case 'pi_cpu':
+      return 'Small model and CPU-friendly defaults for weak hardware.';
+    case 'gpu':
+      return 'CUDA and float16 defaults for machines with supported GPUs.';
+    case 'balanced':
+    case 'balanced_realtime':
+      return 'Default realtime behavior and the best first choice.';
+    default:
+      return 'Profile details are unavailable until backend config loads.';
+  }
 }

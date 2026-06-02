@@ -19,6 +19,7 @@ class DiagnosticsRoutesTests(unittest.TestCase):
             MODEL_SIZE="base",
             DEVICE="cpu",
             COMPUTE_TYPE="int8",
+            TRANSCRIPTION_PROFILE="balanced_realtime",
             SAMPLE_RATE=16000,
             CHANNELS=1,
             LM_STUDIO_BASE_URL="http://127.0.0.1:1234/v1",
@@ -28,6 +29,13 @@ class DiagnosticsRoutesTests(unittest.TestCase):
             SUPERTONIC_VOICE="M1",
             SUPERTONIC_LANG="en",
             TTS_OUTPUT_DIR="",
+            safe_stt_settings=lambda: {
+                "transcription_profile": "balanced_realtime",
+                "model_size": "base",
+                "device": "cpu",
+                "compute_type": "int8",
+                "hallucination_silence_threshold_enabled": False,
+            },
         )
         app.state.stt_service = FakeSTTService()
         app.state.stt_metrics = None
@@ -47,7 +55,10 @@ class DiagnosticsRoutesTests(unittest.TestCase):
         self.assertEqual(body["request_id"], "diag-1")
         self.assertEqual(body["status"], "healthy")
         self.assertEqual(body["stt"]["provider"], "faster_whisper")
+        self.assertEqual(body["stt"]["transcription_profile"], "balanced_realtime")
         self.assertEqual(body["stt"]["model_size"], "base")
+        self.assertEqual(body["stt"]["settings"]["compute_type"], "int8")
+        self.assertFalse(body["stt"]["settings"]["hallucination_silence_threshold_enabled"])
         self.assertTrue(body["stt"]["loaded"])
         self.assertEqual(body["llm"]["provider"], "lmstudio")
         self.assertTrue(body["llm"]["configured"])

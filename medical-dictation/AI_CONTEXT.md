@@ -18,9 +18,11 @@ Frontend entry:
 - `frontend/src/hooks/useVoiceCommands.ts`
 - `frontend/src/hooks/useLocalAssistant.ts`
 - `frontend/src/hooks/useDiagnostics.ts`
+- `frontend/src/services/configApi.ts`
 - `frontend/src/services/assistantApi.ts`
 - `frontend/src/services/ttsApi.ts`
 - `frontend/src/services/diagnosticsApi.ts`
+- `frontend/src/components/Settings/SettingsModal.tsx`
 - `frontend/src/components/Assistant/LocalAssistantPanel.tsx`
 - `frontend/src/components/Diagnostics/DeveloperDiagnosticsPanel.tsx`
 
@@ -79,7 +81,11 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Sessions, snippets, settings, and autosave are browser `localStorage` concerns.
 - Frontend URLs come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - Frontend local assistant calls `POST /llm/respond`, displays the response, calls `POST /tts/synthesize`, and plays returned WAV audio through a browser object URL.
+- Frontend Settings includes a read-only guided STT tab backed by `GET /config`; it explains active backend audio/STT settings but does not edit backend runtime config.
 - Backend CORS origins come from `CORS_ORIGINS`.
+- Backend transcription profiles are resolved in `backend/app/audio_config.py`.
+- Supported `TRANSCRIPTION_PROFILE` values are `balanced_realtime`, `balanced`, `low_latency`, `high_accuracy`, `pi_cpu`, and `gpu`; `balanced_realtime` is the default and preserves previous balanced realtime behavior.
+- Explicit env vars override transcription profile defaults for model, device, compute type, beam size, chunk durations, VAD settings, and hallucination thresholds.
 - `scripts/run.sh mac-dev`, `scripts/run.sh uat-check`, and `scripts/run.sh prod-check` fall back to `backend/.env.example` when local backend env files are absent.
 - Optional local LLM responses use `POST /llm/respond`, backed by LM Studio's OpenAI-compatible `/chat/completions` API.
 - LM Studio config comes from `LM_STUDIO_BASE_URL`, `LM_STUDIO_MODEL`, and `LM_STUDIO_TIMEOUT_SECONDS`.
@@ -95,6 +101,7 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - HTTP REST requests receive an `x-request-id` response header; LLM/TTS/frontend diagnostics calls send request IDs for log correlation.
 - Safe structured logging helpers live in `backend/app/observability/`; logs should use metadata such as category, event, provider, status, duration, request ID/session ID, safe errors, and text length only.
 - Process-local STT metrics live in `backend/app/observability/metrics.py` and are updated by `AudioStreamHandler`; they reset on backend restart.
+- STT metrics and transcription metadata include `real_time_factor`, where values below `1.0` are faster than real time.
 - Streaming transcript overlap cleanup lives in `backend/app/websocket/stream_text.py`; `AudioStreamHandler` coordinates buffering and flush decisions.
 - Do not hardcode temporary tunnel URLs in source code.
 
@@ -139,7 +146,7 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - Change frontend local assistant behavior: update `frontend/src/hooks/useLocalAssistant.ts`, `frontend/src/services/assistantApi.ts`, `frontend/src/services/ttsApi.ts`, `frontend/src/components/Assistant/LocalAssistantPanel.tsx`, and `ARCHITECTURE_GRAPH.md`.
 - Change backend wrapper behavior: update `backend/app/domains/*` and register adapters through `backend/app/domains/registry.py`.
 - Change backend endpoint/protocol: update `backend/app/main.py`, `backend/app/websocket/control_messages.py`, `backend/app/websocket/responses.py`, `frontend/src/hooks/useWebSocket.ts`, `frontend/src/lib/constants.ts`, and `ARCHITECTURE_GRAPH.md`.
-- Change audio format/chunking: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, `backend/app/websocket/audio_stream_handler.py`, and docs.
+- Change audio format/chunking/profile tuning: update `frontend/src/hooks/useAudioRecorder.ts`, `backend/app/audio_config.py`, `backend/app/websocket/audio_stream_handler.py`, env docs, focused config tests, and context docs.
 - Change backend service construction: update `backend/app/dependencies.py` and focused route/service tests.
 - Change backend STT behavior: update `backend/app/dependencies.py`, `backend/app/services/stt/service.py`, `backend/app/services/stt/faster_whisper.py`, `backend/app/services/stt/audio_processing.py`, `backend/app/services/stt/transcription_text.py`, `backend/app/audio_config.py`, focused STT/WebSocket tests, and `ARCHITECTURE_GRAPH.md`.
 - Change system REST route behavior: update `backend/app/api/system_routes.py`, related route tests, and `ARCHITECTURE_GRAPH.md`.
@@ -148,6 +155,7 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - Change local LLM behavior: update `backend/app/dependencies.py`, `backend/app/api/llm_routes.py`, `backend/app/services/llm/service.py`, `backend/app/services/llm/lm_studio.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
 - Change local TTS behavior: update `backend/app/dependencies.py`, `backend/app/api/tts_routes.py`, `backend/app/services/tts/service.py`, `backend/app/services/tts/supertonic.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
 - Change diagnostics/observability behavior: update `backend/app/observability/*`, `backend/app/services/diagnostics/service.py`, `backend/app/api/diagnostics_routes.py`, `frontend/src/hooks/useDiagnostics.ts`, `frontend/src/services/diagnosticsApi.ts`, docs, and focused diagnostics tests.
+- Change guided STT settings UI: update `frontend/src/components/Settings/SettingsModal.tsx`, `frontend/src/services/configApi.ts`, `frontend/src/types/index.ts`, and focused frontend static/build tests.
 - Change generic voice commands: update `backend/app/services/commands/processor.py` and `frontend/src/hooks/useVoiceCommands.ts`.
 - Change editor insertion behavior: update `frontend/src/app/page.tsx` and `frontend/src/components/Editor/DictationEditor.tsx`.
 
@@ -178,3 +186,5 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - 2026-06-01: Added centralized backend service construction in `backend/app/dependencies.py`, map-based domain registration, typed STT result contracts, and `websocket/stream_text.py` overlap cleanup while preserving public endpoints and `/ws/audio` message shapes.
 - 2026-06-02: Moved STT helpers into `backend/app/services/stt/`, moved command parsing into `backend/app/services/commands/`, and extracted system REST routes into `backend/app/api/system_routes.py` without changing endpoint behavior.
 - 2026-06-02: Added lightweight diagnostics endpoints, REST request IDs, safe structured logging helpers, process-local STT metrics, and a collapsed frontend diagnostics panel without changing `/ws/audio` or LLM/TTS success payloads.
+- 2026-06-02: Added config-based transcription profiles, env-backed VAD/hallucination/chunking knobs, browser `sampleSize` mic hint, and additive `real_time_factor` STT metadata while preserving `/ws/audio`.
+- 2026-06-02: Added a read-only guided STT Settings tab that fetches safe backend config from `GET /config` and shows compact tuning guidance without changing backend runtime behavior.

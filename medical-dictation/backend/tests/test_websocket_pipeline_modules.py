@@ -88,6 +88,7 @@ class WebSocketPipelineModuleTests(unittest.TestCase):
                 "commands": [],
                 "processing_time_ms": 10.0,
                 "audio_duration_seconds": 1.0,
+                "real_time_factor": 0.01,
                 "flush_reason": "natural_pause",
             },
             fallback_domain="general",
@@ -101,6 +102,7 @@ class WebSocketPipelineModuleTests(unittest.TestCase):
         self.assertEqual(message["confidence"], 0.95)
         self.assertEqual(message["processing_time_ms"], 10.0)
         self.assertEqual(message["audio_duration_seconds"], 1.0)
+        self.assertEqual(message["real_time_factor"], 0.01)
         self.assertEqual(message["flush_reason"], "natural_pause")
         self.assertIn("timestamp", message)
 

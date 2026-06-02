@@ -44,12 +44,18 @@ class DiagnosticsService:
             "provider": "faster_whisper",
             "configured": True,
             "loaded": model_loaded,
+            "transcription_profile": getattr(
+                self._config,
+                "TRANSCRIPTION_PROFILE",
+                "balanced_realtime",
+            ),
             "model_size": getattr(self._config, "MODEL_SIZE", "unknown"),
             "device": getattr(self._config, "DEVICE", "unknown"),
             "compute_type": getattr(self._config, "COMPUTE_TYPE", "unknown"),
             "vad_enabled": vad_enabled,
             "sample_rate": getattr(self._config, "SAMPLE_RATE", 16000),
             "channels": getattr(self._config, "CHANNELS", 1),
+            "settings": self._safe_stt_settings(),
             "metrics": metrics,
             "last_error": None,
         }
@@ -135,3 +141,8 @@ class DiagnosticsService:
         if self._stt_metrics is not None:
             return self._stt_metrics.snapshot()
         return STTMetrics.from_config(self._config, vad_enabled=vad_enabled).snapshot()
+
+    def _safe_stt_settings(self) -> dict:
+        if hasattr(self._config, "safe_stt_settings"):
+            return self._config.safe_stt_settings()
+        return {}
