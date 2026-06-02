@@ -39,6 +39,14 @@ Backend transcription domain defaults to vanilla/general:
 DEFAULT_TRANSCRIPTION_DOMAIN=general
 ```
 
+Recommended Mac CPU backend profile:
+
+```text
+MODEL_SIZE=base
+DEVICE=cpu
+COMPUTE_TYPE=int8
+```
+
 ## DEV-WINDOWS
 
 Backend env:
@@ -72,6 +80,32 @@ Backend transcription domain defaults to vanilla/general:
 
 ```text
 DEFAULT_TRANSCRIPTION_DOMAIN=general
+```
+
+Recommended Windows CPU backend profile:
+
+```text
+MODEL_SIZE=base
+DEVICE=cpu
+COMPUTE_TYPE=int8
+```
+
+Recommended Windows GPU backend profile:
+
+```text
+MODEL_SIZE=base
+DEVICE=cuda
+COMPUTE_TYPE=float16
+```
+
+## RASPBERRY-PI CPU
+
+Use the same backend env pattern as local development, with smaller model settings:
+
+```text
+MODEL_SIZE=tiny
+DEVICE=cpu
+COMPUTE_TYPE=int8
 ```
 
 ## UAT
@@ -154,6 +188,7 @@ The workflow filename still uses the original folder naming. Treat the workflow 
 - Frontend API/WebSocket URLs must come from `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL`.
 - Backend CORS origins must come from `CORS_ORIGINS`.
 - Keep `DEFAULT_TRANSCRIPTION_DOMAIN=general` unless a wrapper adds and documents a new adapter.
+- Use `/diagnostics` and `/diagnostics/*` for local provider health checks before changing env values.
 
 ## Last Updated Notes
 
@@ -161,3 +196,4 @@ The workflow filename still uses the original folder naming. Treat the workflow 
 - 2026-05-30: Backend real env files are local-only; `backend/.env.example` is the committed template.
 - 2026-05-30: `scripts/run.sh` now falls back to `backend/.env.example` for missing local backend env files during macOS dev and local UAT checks.
 - 2026-05-30: Added `scripts/run.sh prod-check` for local production build validation.
+- 2026-06-02: Documented CPU/GPU/Raspberry Pi profile recommendations and diagnostics health-check guidance.

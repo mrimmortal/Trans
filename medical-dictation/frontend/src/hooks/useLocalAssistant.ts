@@ -11,6 +11,9 @@ interface LocalAssistantState {
   stage: AssistantStage;
   error: string | null;
   errorCode: LocalAssistantErrorCode | null;
+  lastRequestId: string | null;
+  lastLlmRequestId: string | null;
+  lastTtsRequestId: string | null;
 }
 
 const INITIAL_STATE: LocalAssistantState = {
@@ -19,6 +22,9 @@ const INITIAL_STATE: LocalAssistantState = {
   stage: 'idle',
   error: null,
   errorCode: null,
+  lastRequestId: null,
+  lastLlmRequestId: null,
+  lastTtsRequestId: null,
 };
 
 export function useLocalAssistant() {
@@ -37,7 +43,7 @@ export function useLocalAssistant() {
 
     setState((prev) => ({ ...prev, stage: 'playing', error: null, errorCode: null }));
 
-    const audio = new Audio(url);
+      const audio = new Audio(url);
     audioRef.current = audio;
     audio.onended = () => {
       if (audioRef.current === audio) {
@@ -86,9 +92,12 @@ export function useLocalAssistant() {
           ...prev,
           responseText: assistantResponse.response,
           stage: 'generating-speech',
+          lastRequestId: assistantResponse.request_id || prev.lastRequestId,
+          lastLlmRequestId: assistantResponse.request_id || prev.lastLlmRequestId,
         }));
 
-        const audioUrl = await synthesizeSpeech(assistantResponse.response);
+        const ttsResult = await synthesizeSpeech(assistantResponse.response);
+        const audioUrl = ttsResult.audioUrl;
         revokeAudioUrl(audioUrlRef.current);
         audioUrlRef.current = audioUrl;
 
@@ -96,6 +105,8 @@ export function useLocalAssistant() {
           ...prev,
           audioUrl,
           stage: 'idle',
+          lastRequestId: ttsResult.request_id || prev.lastRequestId,
+          lastTtsRequestId: ttsResult.request_id || prev.lastTtsRequestId,
         }));
 
         await playAudio(audioUrl);
@@ -142,11 +153,15 @@ export function useLocalAssistant() {
   };
 }
 
-function mapAssistantError(error: unknown): Pick<LocalAssistantState, 'error' | 'errorCode'> {
+function mapAssistantError(
+  error: unknown
+): Partial<Pick<LocalAssistantState, 'error' | 'errorCode' | 'lastRequestId' | 'lastLlmRequestId' | 'lastTtsRequestId'>> {
   if (error instanceof AssistantApiError && error.code === 'LM_STUDIO_UNAVAILABLE') {
     return {
       error: 'LM Studio unavailable.',
       errorCode: 'LM_STUDIO_UNAVAILABLE',
+      lastRequestId: error.requestId || null,
+      lastLlmRequestId: error.requestId || null,
     };
   }
 
@@ -154,11 +169,25 @@ function mapAssistantError(error: unknown): Pick<LocalAssistantState, 'error' | 
     return {
       error: 'TTS unavailable.',
       errorCode: 'TTS_UNAVAILABLE',
+      lastRequestId: error.requestId || null,
+      lastTtsRequestId: error.requestId || null,
     };
   }
 
-  return {
+  const mapped: Partial<
+    Pick<LocalAssistantState, 'error' | 'errorCode' | 'lastRequestId' | 'lastLlmRequestId' | 'lastTtsRequestId'>
+  > = {
     error: 'Assistant request failed.',
     errorCode: 'REQUEST_FAILED',
   };
+
+  if (error instanceof AssistantApiError) {
+    mapped.lastRequestId = error.requestId || null;
+    mapped.lastLlmRequestId = error.requestId || null;
+  } else if (error instanceof TTSApiError) {
+    mapped.lastRequestId = error.requestId || null;
+    mapped.lastTtsRequestId = error.requestId || null;
+  }
+
+  return mapped;
 }

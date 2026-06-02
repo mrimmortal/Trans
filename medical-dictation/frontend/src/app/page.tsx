@@ -7,6 +7,7 @@ import { Toolbar } from '@/components/Editor/Toolbar';
 import { DictationEditor, DictationEditorHandle } from '@/components/Editor/DictationEditor';
 import { Editor } from '@tiptap/react';
 import { LocalAssistantPanel } from '@/components/Assistant/LocalAssistantPanel';
+import { DeveloperDiagnosticsPanel } from '@/components/Diagnostics/DeveloperDiagnosticsPanel';
 import { RecordButton } from '@/components/Recorder/RecordButton';
 import { AudioVisualizer } from '@/components/Recorder/AudioVisualizer';
 import { Sidebar } from '@/components/Sidebar/Sidebar';
@@ -16,6 +17,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useAudioRecorder } from '@/hooks/useAudioRecorder';
 import { useVoiceCommands } from '@/hooks/useVoiceCommands';
 import { useLocalAssistant } from '@/hooks/useLocalAssistant';
+import { useDiagnostics } from '@/hooks/useDiagnostics';
 import { useSettings } from '@/hooks/useSettings';
 import { useToast } from '@/components/ui/Toast';
 import {
@@ -117,6 +119,12 @@ export default function Page() {
 
   const { processText } = useVoiceCommands();
   const localAssistant = useLocalAssistant();
+  const diagnostics = useDiagnostics({
+    websocketStatus: isConnected ? 'connected' : isConnecting ? 'connecting' : wsError ? 'error' : 'disconnected',
+    assistantStatus: localAssistant.stage,
+    assistantRequestId: localAssistant.lastRequestId,
+    assistantError: localAssistant.error,
+  });
   const { settings, updateSettings } = useSettings();
   const { showToast } = useToast();
 
@@ -1214,6 +1222,21 @@ export default function Page() {
             onRun={handleRunAssistant}
             onReplay={localAssistant.replayAudio}
             onClear={localAssistant.clearAssistant}
+          />
+
+          <DeveloperDiagnosticsPanel
+            diagnostics={diagnostics.diagnostics}
+            websocketStatus={isConnected ? 'connected' : isConnecting ? 'connecting' : wsError ? 'error' : 'disconnected'}
+            assistantStatus={localAssistant.stage}
+            assistantRequestId={localAssistant.lastRequestId}
+            assistantError={localAssistant.error}
+            isChecking={diagnostics.isChecking}
+            lastError={diagnostics.lastError}
+            lastRequestId={diagnostics.lastRequestId}
+            onCheckBackend={diagnostics.checkBackend}
+            onCheckLlm={diagnostics.checkLlm}
+            onCheckTts={diagnostics.checkTts}
+            onCopyDebugInfo={diagnostics.copyDebugInfo}
           />
 
           {/* Editor */}

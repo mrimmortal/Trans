@@ -59,6 +59,22 @@ class SupertonicProvider:
 
         return audio_bytes
 
+    def check_health(self) -> dict:
+        """Check Supertonic configuration and import availability without synthesis."""
+        try:
+            self._ensure_supertonic_provider()
+            if self._tts_factory is None:
+                self._load_supertonic_tts_class()
+            return {"status": "healthy", "available": True, "last_error": None}
+        except SupertonicConfigError as exc:
+            return {"status": "unhealthy", "available": False, "last_error": str(exc)}
+        except ImportError:
+            return {
+                "status": "unhealthy",
+                "available": False,
+                "last_error": "Supertonic is not installed",
+            }
+
     def _ensure_supertonic_provider(self) -> None:
         if self._settings.provider.strip().lower() != "supertonic":
             raise SupertonicConfigError(f"Unsupported TTS_PROVIDER: {self._settings.provider}")

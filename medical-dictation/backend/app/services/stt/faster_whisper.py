@@ -34,6 +34,7 @@ from app.services.stt.audio_processing import (
 from app.services.stt.config import get_faster_whisper_settings
 from app.services.stt.base import SpeechDetectionResult, TranscriptionResult
 from app.services.stt.transcription_text import clean_text, filter_hallucinations
+from app.observability.safe_errors import safe_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -380,7 +381,7 @@ class FasterWhisperSTTProvider:
             }
 
         except Exception as e:
-            logger.error(f"Unexpected error in transcribe_audio_bytes: {e}", exc_info=True)
+            logger.error("Unexpected error in transcribe_audio_bytes: %s", safe_error_message(e))
             return {
                 "text": "",
                 "is_final": False,
@@ -439,7 +440,7 @@ class FasterWhisperSTTProvider:
                     word_timestamps=False,
                 )
             except Exception as e:
-                logger.error(f"Whisper transcribe call failed: {e}", exc_info=True)
+                logger.error("Whisper transcribe call failed: %s", safe_error_message(e))
                 return {
                     "text": "",
                     "is_final": False,
@@ -525,7 +526,7 @@ class FasterWhisperSTTProvider:
             }
 
         except Exception as e:
-            logger.error(f"Whisper transcription error: {e}", exc_info=True)
+            logger.error("Whisper transcription error: %s", safe_error_message(e))
             return {
                 "text": "",
                 "is_final": False,

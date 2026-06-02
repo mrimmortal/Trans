@@ -9,9 +9,10 @@ import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.diagnostics_routes import router as diagnostics_router
 from app.api.llm_routes import router as llm_router
 from app.api.system_routes import router as system_router
 from app.api.tts_routes import router as tts_router
@@ -21,6 +22,10 @@ from app.models.schemas import (
     ConnectionResponse,
     ErrorResponse,
 )
+from app.observability.events import log_event
+from app.observability.metrics import STTMetrics
+from app.observability.request_id import REQUEST_ID_HEADER, get_or_create_request_id
+from app.observability.safe_errors import safe_error_message
 from app.websocket.audio_stream_handler import AudioStreamHandler
 from app.websocket.control_messages import handle_control_message
 from app.websocket.responses import build_transcription_message, build_welcome_config
@@ -61,10 +66,12 @@ async def lifespan(app: FastAPI):
         logger.info("Loading Whisper model and VAD (this may take 30-60 seconds)...")
         stt_service = create_stt_service(config)
         logger.info("✓ Whisper model loaded successfully")
+        stt_metrics = STTMetrics.from_config(config, vad_enabled=stt_service.vad_model is not None)
 
         # ── Store in app state ──
         app.state.config = config
         app.state.stt_service = stt_service
+        app.state.stt_metrics = stt_metrics
         app.state.active_connections = 0
 
         logger.info("=" * 80)
@@ -78,7 +85,7 @@ async def lifespan(app: FastAPI):
         logger.info("=" * 80)
 
     except Exception as e:
-        logger.critical(f"Failed to start application: {e}", exc_info=True)
+        logger.critical("Failed to start application: %s", safe_error_message(e))
         raise
 
     yield
@@ -128,7 +135,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = get_or_create_request_id(request)
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers[REQUEST_ID_HEADER] = request_id
+    return response
+
+
 app.include_router(system_router)
+app.include_router(diagnostics_router)
 app.include_router(llm_router)
 app.include_router(tts_router)
 
@@ -157,10 +175,21 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
         await websocket.accept()
         app.state.active_connections += 1
 
-        logger.info(f"[{session_id}] Client connected (total: {app.state.active_connections})")
+        log_event(
+            category="WEBSOCKET",
+            event="websocket.connected",
+            status="success",
+            session_id=session_id,
+            active_connections=app.state.active_connections,
+        )
 
         # ── STEP 2: Create handler ──
-        handler = AudioStreamHandler(app.state.stt_service, app.state.config, domain=domain)
+        handler = AudioStreamHandler(
+            app.state.stt_service,
+            app.state.config,
+            domain=domain,
+            metrics=getattr(app.state, "stt_metrics", None),
+        )
 
         # ── STEP 3: Send welcome message ──
         welcome_config = build_welcome_config(
@@ -198,10 +227,17 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
                         await websocket.send_json(response)
                         
                         cmd_count = len(result.get("commands", []))
-                        if cmd_count > 0:
-                            logger.info(f"[{session_id}] Transcription with {cmd_count} commands: {result['text'][:50]}...")
-                        else:
-                            logger.info(f"[{session_id}] Transcription: {result['text'][:50]}...")
+                        log_event(
+                            category="WEBSOCKET",
+                            event="websocket.transcription_sent",
+                            status="success",
+                            provider="faster_whisper",
+                            duration_ms=result.get("processing_time_ms"),
+                            session_id=session_id,
+                            text_length=len(result.get("text", "")),
+                            commands_count=cmd_count,
+                            flush_reason=result.get("flush_reason"),
+                        )
 
                 # Text control message
                 elif "text" in data:
@@ -229,15 +265,15 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
                     logger.info(f"[{session_id}] WebSocket already disconnected")
                     break
                 else:
-                    logger.error(f"[{session_id}] Error: {e}", exc_info=True)
+                    logger.error("[%s] WebSocket runtime error: %s", session_id, safe_error_message(e))
                     break
 
             except Exception as e:
-                logger.error(f"[{session_id}] Error: {e}", exc_info=True)
+                logger.error("[%s] WebSocket error: %s", session_id, safe_error_message(e))
                 break
 
     except Exception as e:
-        logger.error(f"[{session_id}] WebSocket connection error: {e}", exc_info=True)
+        logger.error("[%s] WebSocket connection error: %s", session_id, safe_error_message(e))
         try:
             await websocket.close(code=1011, reason=str(e))
         except Exception:
@@ -277,11 +313,17 @@ async def websocket_audio_stream(websocket: WebSocket, domain: Optional[str] = N
                 )
 
         except Exception as e:
-            logger.error(f"[{session_id}] Cleanup error: {e}", exc_info=True)
+            logger.error("[%s] Cleanup error: %s", session_id, safe_error_message(e))
 
         finally:
             app.state.active_connections -= 1
-            logger.info(f"[{session_id}] Connection closed (total: {app.state.active_connections})")
+            log_event(
+                category="WEBSOCKET",
+                event="websocket.closed",
+                status="success",
+                session_id=session_id,
+                active_connections=app.state.active_connections,
+            )
 
 
 # ─────────────────────────────────────────────────────────────────

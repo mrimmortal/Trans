@@ -20,24 +20,42 @@ class TTSRoutesTests(unittest.TestCase):
         with patch("app.api.tts_routes.create_tts_service") as create_service:
             create_service.return_value.synthesize.side_effect = SupertonicConfigError("supertonic is not installed")
 
-            response = self.client.post("/tts/synthesize", json={"text": "hello"})
+            response = self.client.post(
+                "/tts/synthesize",
+                json={"text": "hello"},
+                headers={"x-request-id": "tts-config-1"},
+            )
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers["x-request-id"], "tts-config-1")
         self.assertEqual(
             response.json()["detail"],
-            {"code": "TTS_CONFIG_ERROR", "message": "supertonic is not installed"},
+            {
+                "code": "TTS_CONFIG_ERROR",
+                "message": "supertonic is not installed",
+                "request_id": "tts-config-1",
+            },
         )
 
     def test_synthesis_error_returns_502(self):
         with patch("app.api.tts_routes.create_tts_service") as create_service:
             create_service.return_value.synthesize.side_effect = SupertonicSynthesisError("model download failed")
 
-            response = self.client.post("/tts/synthesize", json={"text": "hello"})
+            response = self.client.post(
+                "/tts/synthesize",
+                json={"text": "hello"},
+                headers={"x-request-id": "tts-synthesis-1"},
+            )
 
         self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.headers["x-request-id"], "tts-synthesis-1")
         self.assertEqual(
             response.json()["detail"],
-            {"code": "TTS_SYNTHESIS_ERROR", "message": "model download failed"},
+            {
+                "code": "TTS_SYNTHESIS_ERROR",
+                "message": "model download failed",
+                "request_id": "tts-synthesis-1",
+            },
         )
 
     def test_success_returns_wav_audio(self):

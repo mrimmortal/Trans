@@ -6,6 +6,8 @@ from typing import Optional
 
 from app.audio_config import AudioConfig
 from app.domains.registry import get_domain_adapter
+from app.observability.metrics import STTMetrics
+from app.observability.safe_errors import safe_error_message
 from app.services.stt.base import STTProvider, TranscriptionResult
 from app.websocket.stream_text import (
     boundary_tokens,
@@ -34,6 +36,7 @@ class AudioStreamHandler:
         stt_service: STTProvider,
         config: AudioConfig,
         domain: str | None = None,
+        metrics: STTMetrics | None = None,
     ):
         """
         Initialize stream handler for a client.
@@ -45,6 +48,7 @@ class AudioStreamHandler:
         """
         self.engine = stt_service
         self.config = config
+        self.metrics = metrics
         self.domain_adapter = get_domain_adapter(
             domain or getattr(config, "DEFAULT_TRANSCRIPTION_DOMAIN", "general")
         )
@@ -84,6 +88,8 @@ class AudioStreamHandler:
         """
         self.audio_received_bytes += len(audio_bytes)
         self.chunks_received += 1
+        if self.metrics is not None:
+            self.metrics.record_chunk()
 
         vad_result = self.engine.detect_speech(audio_bytes)
 
@@ -110,6 +116,8 @@ class AudioStreamHandler:
                 self.audio_buffer.extend(audio_bytes)
             else:
                 self.silence_chunks_skipped += 1
+                if self.metrics is not None:
+                    self.metrics.record_silence_skipped()
                 logger.debug("Skipping silence chunk (saved CPU)")
 
             time_since_speech = time.time() - self.last_speech_time
@@ -158,7 +166,7 @@ class AudioStreamHandler:
             processing_time_ms = float(result.get("processing_time_ms") or 0.0)
 
             if result.get("error"):
-                logger.warning("Transcription error: %s", result["error"])
+                logger.warning("Transcription error: %s", safe_error_message(result["error"]))
                 self.audio_buffer.clear()
                 self.overlap_buffer.clear()
                 self.has_speech_in_buffer = False
@@ -166,6 +174,8 @@ class AudioStreamHandler:
 
             text = result.get("text", "").strip()
             if not text:
+                if self.metrics is not None:
+                    self.metrics.record_empty_transcription()
                 self.audio_buffer.clear()
                 self.overlap_buffer.clear()
                 self.has_speech_in_buffer = False
@@ -195,6 +205,12 @@ class AudioStreamHandler:
             )
 
             self.transcriptions_count += 1
+            if self.metrics is not None:
+                self.metrics.record_transcription(
+                    audio_duration_seconds=audio_duration_seconds,
+                    processing_time_ms=processing_time_ms,
+                    flush_reason=flush_reason,
+                )
             if processed_text:
                 self.total_words += len(processed_text.split())
                 self._remember_emitted_text(processed_text)
@@ -225,7 +241,7 @@ class AudioStreamHandler:
             }
 
         except Exception as e:
-            logger.error("Error during transcription: %s", e, exc_info=True)
+            logger.error("Error during transcription: %s", safe_error_message(e))
             self.audio_buffer.clear()
             self.overlap_buffer.clear()
             self.has_speech_in_buffer = False

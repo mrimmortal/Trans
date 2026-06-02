@@ -37,6 +37,27 @@ Validate production build locally:
 ./scripts/run.sh prod-check
 ```
 
+## Smoke Checks
+
+With the backend running locally:
+
+```bash
+curl -s http://127.0.0.1:8000/health
+curl -s http://127.0.0.1:8000/diagnostics
+curl -s http://127.0.0.1:8000/diagnostics/stt
+curl -s http://127.0.0.1:8000/diagnostics/llm
+curl -s http://127.0.0.1:8000/diagnostics/tts
+curl -s -X POST http://127.0.0.1:8000/llm/respond \
+  -H 'Content-Type: application/json' \
+  -H 'x-request-id: debug-llm-001' \
+  -d '{"text":"Say hello in one short sentence."}'
+curl -s -X POST http://127.0.0.1:8000/tts/synthesize \
+  -H 'Content-Type: application/json' \
+  -H 'x-request-id: debug-tts-001' \
+  -d '{"text":"Hello from local TTS."}' \
+  --output /tmp/tts-debug.wav
+```
+
 Deploy UAT on the Windows UAT host:
 
 ```powershell

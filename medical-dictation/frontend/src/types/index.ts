@@ -154,6 +154,7 @@ export interface LLMRespondResponse {
   response: string;
   model: string;
   provider: string;
+  request_id?: string;
 }
 
 export type AssistantApiErrorCode = 'LM_STUDIO_UNAVAILABLE' | 'REQUEST_FAILED';
@@ -166,9 +167,43 @@ export interface TTSSynthesizeRequest {
 
 export type TTSApiErrorCode = 'TTS_UNAVAILABLE' | 'REQUEST_FAILED';
 
+export interface TTSSynthesizeResult {
+  audioUrl: string;
+  request_id?: string;
+}
+
 export type LocalAssistantErrorCode =
   | 'LM_STUDIO_UNAVAILABLE'
   | 'TTS_UNAVAILABLE'
   | 'REQUEST_FAILED';
 
 export type AssistantStage = 'idle' | 'generating-response' | 'generating-speech' | 'playing';
+
+export interface ProviderDiagnostics {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  provider?: string;
+  configured?: boolean;
+  loaded?: boolean;
+  reachable?: boolean;
+  available?: boolean;
+  model?: string;
+  model_size?: string;
+  device?: string;
+  compute_type?: string;
+  vad_enabled?: boolean;
+  last_error?: string | null;
+  metrics?: Record<string, unknown>;
+}
+
+export interface DiagnosticsResponse {
+  status?: 'healthy' | 'degraded' | 'unhealthy';
+  request_id: string;
+  backend?: {
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    service: string;
+    environment: string;
+  };
+  stt?: ProviderDiagnostics;
+  llm?: ProviderDiagnostics;
+  tts?: ProviderDiagnostics;
+}

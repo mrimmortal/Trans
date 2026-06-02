@@ -18,8 +18,10 @@ flowchart LR
     WS["src/hooks/useWebSocket.ts\nWebSocket client"]
     AssistantHook["src/hooks/useLocalAssistant.ts\nLLM -> TTS orchestration"]
     AssistantPanel["src/components/Assistant/LocalAssistantPanel.tsx\nResponse + playback UI"]
+    DiagnosticsPanel["src/components/Diagnostics/DeveloperDiagnosticsPanel.tsx\nCollapsed debug status"]
     AssistantAPI["src/services/assistantApi.ts\nPOST /llm/respond client"]
     TTSAPI["src/services/ttsApi.ts\nPOST /tts/synthesize client"]
+    DiagnosticsAPI["src/services/diagnosticsApi.ts\nGET /diagnostics client"]
     VoiceCommands["src/hooks/useVoiceCommands.ts\nLocal commands + snippets"]
     Editor["src/components/Editor/DictationEditor.tsx\nTipTap editor"]
     Sidebar["src/components/Sidebar/*\nSnippets / history"]
@@ -30,6 +32,9 @@ flowchart LR
     App["backend/app/main.py\nFastAPI app + /ws/audio"]
     Dependencies["backend/app/dependencies.py\nService composition"]
     SystemRoutes["api/system_routes.py\nGET / /health /config"]
+    DiagnosticsRoutes["api/diagnostics_routes.py\nGET /diagnostics*"]
+    DiagnosticsService["services/diagnostics/service.py\nSafe provider health checks"]
+    Observability["observability/*\nRequest IDs, safe logs, STT metrics"]
     LLMRoutes["api/llm_routes.py\nPOST /llm/respond"]
     LLMService["services/llm/service.py\nGeneric LLM service boundary"]
     LMStudio["services/llm/lm_studio.py\nLM Studio provider"]
@@ -55,6 +60,7 @@ flowchart LR
   Page --> Recorder
   Page --> WS
   Page --> AssistantPanel
+  Page --> DiagnosticsPanel
   Page --> AssistantHook
   Page --> VoiceCommands
   Page --> Editor
@@ -65,19 +71,30 @@ flowchart LR
   Constants --> WS
   Constants --> AssistantAPI
   Constants --> TTSAPI
+  Constants --> DiagnosticsAPI
   AssistantPanel --> AssistantHook
   AssistantHook --> AssistantAPI
   AssistantHook --> TTSAPI
-  AssistantAPI -- "http://.../llm/respond" --> App
-  TTSAPI -- "http://.../tts/synthesize" --> App
+  AssistantAPI -- "http://.../llm/respond + x-request-id" --> App
+  TTSAPI -- "http://.../tts/synthesize + x-request-id" --> App
+  DiagnosticsPanel --> DiagnosticsAPI
+  DiagnosticsAPI -- "http://.../diagnostics + x-request-id" --> App
 
   Recorder -- "binary PCM audio chunks" --> WS
   WS -- "ws://.../ws/audio" --> App
   App --> Handler
   App --> Dependencies
   App --> SystemRoutes
+  App --> DiagnosticsRoutes
+  App --> Observability
   SystemRoutes --> Config
   SystemRoutes --> Domains
+  DiagnosticsRoutes --> DiagnosticsService
+  DiagnosticsService --> Config
+  DiagnosticsService --> STTService
+  DiagnosticsService --> LMStudio
+  DiagnosticsService --> SupertonicTTS
+  Handler --> Observability
   App --> LLMRoutes
   LLMRoutes --> Dependencies
   LLMRoutes --> LLMService
@@ -229,11 +246,17 @@ GET /health
 GET /config
 POST /llm/respond
 POST /tts/synthesize
+GET /diagnostics
+GET /diagnostics/stt
+GET /diagnostics/llm
+GET /diagnostics/tts
 ```
 
 `POST /llm/respond` accepts `{ "text": "...", "system_prompt": "..." }`, delegates through the backend LLM service boundary to the configured LM Studio provider, calls LM Studio's OpenAI-compatible `/chat/completions` endpoint, and returns `{ "response": "...", "model": "...", "provider": "lmstudio" }`. It is independent of `/ws/audio` and does not alter the transcription pipeline.
 
 `POST /tts/synthesize` accepts `{ "text": "...", "voice": "M1", "lang": "en" }`, delegates through the backend TTS service boundary to the configured Supertonic provider, and returns playable `audio/wav` bytes. It is independent of `/ws/audio`, STT, and the LM Studio flow.
+
+Diagnostics endpoints return safe backend/STT/LLM/TTS health, config presence, provider availability, request IDs, and process-local metrics. They do not expose secrets, full prompts, transcript text, AI responses, audio bytes, stack traces, provider URLs, or local filesystem paths.
 
 ## Persistence Graph
 
@@ -261,6 +284,8 @@ flowchart TD
 - Keep streaming overlap text cleanup in `backend/app/websocket/stream_text.py`; `AudioStreamHandler` should coordinate it rather than own the cleanup internals.
 - Keep Windows CUDA path setup centralized in `backend/app/infrastructure/cuda_bootstrap.py`.
 - Keep system REST routes in `backend/app/api/system_routes.py`; `backend/app/main.py` should stay focused on app setup, lifespan, router registration, and `/ws/audio`.
+- Keep diagnostics in `backend/app/api/diagnostics_routes.py`, `backend/app/services/diagnostics/service.py`, and `backend/app/observability/`; do not mix diagnostics into provider business behavior.
+- Keep REST request ID support in HTTP middleware and frontend REST service clients; do not add request IDs to `/ws/audio` payloads.
 - Keep audio conversion/preprocessing in `backend/app/services/stt/audio_processing.py` and transcription text cleanup in `backend/app/services/stt/transcription_text.py`.
 - Keep STT orchestration in `backend/app/services/stt/service.py`, service construction in `backend/app/dependencies.py`, and Faster-Whisper/Silero provider logic in `backend/app/services/stt/faster_whisper.py`.
 - Keep generic command parsing in `backend/app/services/commands/processor.py`.
@@ -268,6 +293,7 @@ flowchart TD
 - Keep the LM Studio REST integration in `backend/app/api/llm_routes.py`, `backend/app/dependencies.py`, `backend/app/services/llm/service.py`, and `backend/app/services/llm/lm_studio.py`; do not route it through `/ws/audio`.
 - Keep the Supertonic TTS integration in `backend/app/api/tts_routes.py`, `backend/app/dependencies.py`, `backend/app/services/tts/service.py`, and `backend/app/services/tts/supertonic.py`; do not route it through `/ws/audio`.
 - Keep frontend assistant API calls in `frontend/src/services/assistantApi.ts` and `frontend/src/services/ttsApi.ts`; do not add REST assistant logic to WebSocket or recorder hooks.
+- Keep frontend diagnostics calls in `frontend/src/services/diagnosticsApi.ts` and `frontend/src/hooks/useDiagnostics.ts`.
 - Keep frontend wrapper branding and feature toggles in `frontend/src/lib/appConfig.ts`.
 - Keep user-local snippets/sessions/settings/autosave in localStorage unless a backend storage change is explicitly requested.
 - If adding a new cross-boundary message, document its JSON shape here.
@@ -284,3 +310,4 @@ flowchart TD
 - 2026-06-01: Refactored backend STT into a reusable service/provider boundary with Faster-Whisper/Silero as the provider, preserving `/ws/audio` behavior.
 - 2026-06-01: Added centralized backend service composition, map-based domain registration for available-domain metadata, typed STT result contracts, and focused streaming text cleanup helpers without changing public endpoint or WebSocket contracts.
 - 2026-06-02: Moved STT helpers and command parsing into focused service subpackages and extracted system REST routes from `main.py` into `api/system_routes.py` without changing public endpoint behavior.
+- 2026-06-02: Added diagnostics routes, request ID middleware, safe structured logging helpers, process-local STT metrics, and a collapsed frontend diagnostics panel without changing `/ws/audio` contracts.

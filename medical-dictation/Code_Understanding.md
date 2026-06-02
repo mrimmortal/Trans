@@ -43,10 +43,14 @@ The main rule is simple: keep the core transcription pipeline stable and put ext
 - WebSocket internals: `backend/app/websocket/*`.
 - Config: `backend/app/audio_config.py` and service-specific config helpers.
 - Schemas: `backend/app/models/schemas.py`.
+- Observability: `backend/app/observability/*`.
+- Diagnostics: `backend/app/api/diagnostics_routes.py`, `backend/app/services/diagnostics/service.py`.
 
 System REST routes live in `backend/app/api/system_routes.py`; LLM/TTS REST routes live in their focused API modules. `backend/app/main.py` should stay focused on FastAPI setup, lifespan, router registration, and `WS /ws/audio`.
 
 Routes should stay thin. Business behavior belongs in services, providers, domain adapters, or focused WebSocket modules.
+
+Diagnostics are intentionally separate from core provider behavior. Provider modules may expose safe health checks, but diagnostics routes should not generate LLM text, synthesize audio, or start a second STT pipeline.
 
 ## UI To Backend Service Execution Flow
 
@@ -95,6 +99,15 @@ useLocalAssistant
 ```
 
 Do not put REST service calls directly inside visual components when orchestration, retries, loading state, or follow-up actions are involved. Use a hook plus a service client.
+
+## Diagnostics And Request IDs
+
+- REST endpoints attach an `x-request-id` response header. Frontend LLM, TTS, and diagnostics clients also send `x-request-id`.
+- Safe structured backend logs should include category, event, provider, status, duration, request ID/session ID, text length, and safe error messages only.
+- Do not log full transcript text, prompts, AI responses, audio bytes, secrets, stack traces, provider URLs, or local paths.
+- Use `GET /diagnostics` for aggregate backend/STT/LLM/TTS status.
+- Use `GET /diagnostics/stt`, `/diagnostics/llm`, and `/diagnostics/tts` to isolate provider-specific failures.
+- The frontend diagnostics panel is collapsed by default and uses `frontend/src/hooks/useDiagnostics.ts`.
 
 ## How To Add New Capabilities
 

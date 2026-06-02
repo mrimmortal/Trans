@@ -47,13 +47,13 @@ def filter_hallucinations(text: str, config) -> str:
     normalized_text = text_lower.strip(" .,!?:;\"'")
 
     if normalized_text in [p.lower().strip(" .,!?:;\"'") for p in hallucination_phrases]:
-        logger.debug("Filtered hallucination (exact match): '%s'", text)
+        logger.debug("Filtered hallucination (exact match, text_length=%s)", len(text))
         return ""
 
     if len(text) < 15:
         for phrase in ["thank you", "subscribe", "www.", ".com", "copyright"]:
             if phrase in text_lower:
-                logger.debug("Filtered hallucination (short + phrase): '%s'", text)
+                logger.debug("Filtered hallucination (short + phrase, text_length=%s)", len(text))
                 return ""
 
     instruction_leak_patterns = [
@@ -63,7 +63,7 @@ def filter_hallucinations(text: str, config) -> str:
         "preserve dictated wording",
     ]
     if any(pattern in text_lower for pattern in instruction_leak_patterns):
-        logger.debug("Filtered hallucination (prompt leakage): '%s'", text)
+        logger.debug("Filtered hallucination (prompt leakage, text_length=%s)", len(text))
         return ""
 
     words = text.split()
@@ -72,7 +72,7 @@ def filter_hallucinations(text: str, config) -> str:
         if word_counts:
             _most_common_word, count = word_counts.most_common(1)[0]
             if count / len(words) > 0.5:
-                logger.debug("Filtered hallucination (repetition): '%s'", text)
+                logger.debug("Filtered hallucination (repetition, text_length=%s)", len(text))
                 return ""
 
     sentences = [
@@ -83,20 +83,20 @@ def filter_hallucinations(text: str, config) -> str:
     if len(sentences) >= 2:
         sentence_counts = Counter(sentences)
         if sentence_counts.most_common(1)[0][1] > 1:
-            logger.debug("Filtered hallucination (repeated sentence): '%s'", text)
+            logger.debug("Filtered hallucination (repeated sentence, text_length=%s)", len(text))
             return ""
 
     text_stripped = text.strip().rstrip(".,;:!?")
     if len(text_stripped) < 2:
-        logger.debug("Filtered hallucination (too short): '%s'", text)
+        logger.debug("Filtered hallucination (too short, text_length=%s)", len(text))
         return ""
 
     if all(not c.isalnum() for c in text_stripped):
-        logger.debug("Filtered hallucination (punctuation only): '%s'", text)
+        logger.debug("Filtered hallucination (punctuation only, text_length=%s)", len(text))
         return ""
 
     if re.search(r"\b(\w)\s+\1\s+\1\b", text_lower):
-        logger.debug("Filtered hallucination (single char repetition): '%s'", text)
+        logger.debug("Filtered hallucination (single char repetition, text_length=%s)", len(text))
         return ""
 
     return text

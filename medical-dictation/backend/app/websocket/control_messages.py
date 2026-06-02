@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import WebSocket
 
 from app.models.schemas import ErrorResponse
+from app.observability.safe_errors import safe_error_message
 from app.services.commands import CommandType, VoiceCommand
 from app.websocket.audio_stream_handler import AudioStreamHandler
 
@@ -119,12 +120,7 @@ async def handle_control_message(
                         "timestamp": timestamp,
                     }
                 )
-                logger.info(
-                    "[%s] Custom command registered: '%s' -> '%s...'",
-                    session_id,
-                    pattern,
-                    replacement[:30],
-                )
+                logger.info("[%s] Custom command registered", session_id)
             else:
                 await websocket.send_json(
                     {
@@ -146,7 +142,7 @@ async def handle_control_message(
                         "timestamp": timestamp,
                     }
                 )
-                logger.info("[%s] Custom command unregistered: '%s'", session_id, pattern)
+                logger.info("[%s] Custom command unregistered", session_id)
 
         elif msg_type == "command_history":
             limit = message.get("limit", 50)
@@ -180,10 +176,10 @@ async def handle_control_message(
             await websocket.send_json(error.model_dump())
 
     except Exception as e:
-        logger.error("[%s] Error handling control message: %s", session_id, e, exc_info=True)
+        logger.error("[%s] Error handling control message: %s", session_id, safe_error_message(e))
         error = ErrorResponse(
             type="error",
-            message=f"Control message error: {str(e)}",
+            message=f"Control message error: {safe_error_message(e)}",
             code="CONTROL_ERROR",
         )
         try:

@@ -54,6 +54,33 @@ class LMStudioProvider:
         content = self._extract_response_content(response)
         return LLMRespondResponse(response=content, model=model)
 
+    def check_health(self) -> dict:
+        """Check LM Studio configuration and reachability without generating text."""
+        try:
+            base_url = self._require_config_value("LM_STUDIO_BASE_URL", self._settings.base_url)
+            self._require_config_value("LM_STUDIO_MODEL", self._settings.model)
+            url = f"{base_url.rstrip('/')}/models"
+
+            with httpx.Client(timeout=self._settings.timeout_seconds, transport=self._transport) as client:
+                response = client.get(url)
+                response.raise_for_status()
+
+            return {"status": "healthy", "reachable": True, "last_error": None}
+        except LMStudioConfigError as exc:
+            return {"status": "unhealthy", "reachable": False, "last_error": str(exc)}
+        except httpx.HTTPStatusError as exc:
+            return {
+                "status": "unhealthy",
+                "reachable": False,
+                "last_error": f"LM Studio returned HTTP {exc.response.status_code}",
+            }
+        except (httpx.TimeoutException, httpx.RequestError):
+            return {
+                "status": "unhealthy",
+                "reachable": False,
+                "last_error": "LM Studio is unavailable",
+            }
+
     def _require_config_value(self, name: str, value: str) -> str:
         if not isinstance(value, str) or not value.strip():
             raise LMStudioConfigError(f"{name} is required")

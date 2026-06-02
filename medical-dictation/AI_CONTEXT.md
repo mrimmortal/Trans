@@ -17,9 +17,12 @@ Frontend entry:
 - `frontend/src/hooks/useWebSocket.ts`
 - `frontend/src/hooks/useVoiceCommands.ts`
 - `frontend/src/hooks/useLocalAssistant.ts`
+- `frontend/src/hooks/useDiagnostics.ts`
 - `frontend/src/services/assistantApi.ts`
 - `frontend/src/services/ttsApi.ts`
+- `frontend/src/services/diagnosticsApi.ts`
 - `frontend/src/components/Assistant/LocalAssistantPanel.tsx`
+- `frontend/src/components/Diagnostics/DeveloperDiagnosticsPanel.tsx`
 
 Backend entry:
 
@@ -28,6 +31,8 @@ Backend entry:
 - `backend/app/audio_config.py`
 - `backend/app/infrastructure/cuda_bootstrap.py`
 - `backend/app/api/system_routes.py`
+- `backend/app/api/diagnostics_routes.py`
+- `backend/app/observability/`
 - `backend/app/services/stt/audio_processing.py`
 - `backend/app/services/stt/service.py`
 - `backend/app/services/stt/faster_whisper.py`
@@ -39,6 +44,7 @@ Backend entry:
 - `backend/app/api/tts_routes.py`
 - `backend/app/services/tts/service.py`
 - `backend/app/services/tts/supertonic.py`
+- `backend/app/services/diagnostics/service.py`
 - `backend/app/domains/base.py`
 - `backend/app/domains/general.py`
 - `backend/app/domains/registry.py`
@@ -85,6 +91,10 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 - Backend TTS code is split between generic service/provider boundaries in `backend/app/services/tts/`, centralized service construction in `backend/app/dependencies.py`, and the Supertonic provider implementation.
 - Backend STT code is split between the generic service/provider boundary in `backend/app/services/stt/`, centralized service construction in `backend/app/dependencies.py`, and the Faster-Whisper/Silero provider implementation.
 - System REST routes for `GET /`, `GET /health`, and `GET /config` live in `backend/app/api/system_routes.py`; `backend/app/main.py` owns app setup, router registration, lifespan, and `/ws/audio`.
+- Diagnostics REST routes live in `backend/app/api/diagnostics_routes.py` and report backend/STT/LLM/TTS status without exposing secrets, transcripts, prompts, responses, audio bytes, or stack traces.
+- HTTP REST requests receive an `x-request-id` response header; LLM/TTS/frontend diagnostics calls send request IDs for log correlation.
+- Safe structured logging helpers live in `backend/app/observability/`; logs should use metadata such as category, event, provider, status, duration, request ID/session ID, safe errors, and text length only.
+- Process-local STT metrics live in `backend/app/observability/metrics.py` and are updated by `AudioStreamHandler`; they reset on backend restart.
 - Streaming transcript overlap cleanup lives in `backend/app/websocket/stream_text.py`; `AudioStreamHandler` coordinates buffering and flush decisions.
 - Do not hardcode temporary tunnel URLs in source code.
 
@@ -108,13 +118,20 @@ For Mac, Windows, and UAT setup, read `ENVIRONMENTS.md`.
 1. User clicks Local Assistant in `frontend/src/components/Assistant/LocalAssistantPanel.tsx`.
 2. `frontend/src/app/page.tsx` reads current TipTap plain text.
 3. `frontend/src/hooks/useLocalAssistant.ts` calls `assistantApi.requestAssistantResponse()`.
-4. `frontend/src/services/assistantApi.ts` sends `POST /llm/respond`.
+4. `frontend/src/services/assistantApi.ts` sends `POST /llm/respond` with `x-request-id`.
 5. The assistant response is shown in the panel.
 6. `useLocalAssistant` calls `ttsApi.synthesizeSpeech()` with the response text.
-7. `frontend/src/services/ttsApi.ts` sends `POST /tts/synthesize` and creates an audio object URL.
+7. `frontend/src/services/ttsApi.ts` sends `POST /tts/synthesize` with `x-request-id` and creates an audio object URL.
 8. `useLocalAssistant` plays the returned WAV through browser audio.
 
 This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and the STT insertion path.
+
+## Diagnostics Flow
+
+1. `frontend/src/components/Diagnostics/DeveloperDiagnosticsPanel.tsx` is collapsed by default.
+2. `frontend/src/hooks/useDiagnostics.ts` calls `frontend/src/services/diagnosticsApi.ts`.
+3. Backend diagnostics routes use `backend/app/services/diagnostics/service.py`.
+4. Provider health checks stay inside provider modules and do not generate LLM text or synthesize audio.
 
 ## Common Change Targets
 
@@ -130,6 +147,7 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - Change shell startup env loading: update `scripts/run.sh`, `ENVIRONMENTS.md`, and script tests.
 - Change local LLM behavior: update `backend/app/dependencies.py`, `backend/app/api/llm_routes.py`, `backend/app/services/llm/service.py`, `backend/app/services/llm/lm_studio.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
 - Change local TTS behavior: update `backend/app/dependencies.py`, `backend/app/api/tts_routes.py`, `backend/app/services/tts/service.py`, `backend/app/services/tts/supertonic.py`, `backend/app/models/schemas.py`, `backend/app/audio_config.py`, and `ARCHITECTURE_GRAPH.md`.
+- Change diagnostics/observability behavior: update `backend/app/observability/*`, `backend/app/services/diagnostics/service.py`, `backend/app/api/diagnostics_routes.py`, `frontend/src/hooks/useDiagnostics.ts`, `frontend/src/services/diagnosticsApi.ts`, docs, and focused diagnostics tests.
 - Change generic voice commands: update `backend/app/services/commands/processor.py` and `frontend/src/hooks/useVoiceCommands.ts`.
 - Change editor insertion behavior: update `frontend/src/app/page.tsx` and `frontend/src/components/Editor/DictationEditor.tsx`.
 
@@ -159,3 +177,4 @@ This flow is independent of `/ws/audio`, `useWebSocket`, `useAudioRecorder`, and
 - 2026-06-01: Refactored backend STT into generic service/provider boundaries with Faster-Whisper/Silero as the provider while preserving `/ws/audio` behavior.
 - 2026-06-01: Added centralized backend service construction in `backend/app/dependencies.py`, map-based domain registration, typed STT result contracts, and `websocket/stream_text.py` overlap cleanup while preserving public endpoints and `/ws/audio` message shapes.
 - 2026-06-02: Moved STT helpers into `backend/app/services/stt/`, moved command parsing into `backend/app/services/commands/`, and extracted system REST routes into `backend/app/api/system_routes.py` without changing endpoint behavior.
+- 2026-06-02: Added lightweight diagnostics endpoints, REST request IDs, safe structured logging helpers, process-local STT metrics, and a collapsed frontend diagnostics panel without changing `/ws/audio` or LLM/TTS success payloads.

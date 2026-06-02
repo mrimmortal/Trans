@@ -21,24 +21,42 @@ class LLMRoutesTests(unittest.TestCase):
         with patch("app.api.llm_routes.create_llm_service") as create_service:
             create_service.return_value.respond.side_effect = LMStudioConfigError("missing config")
 
-            response = self.client.post("/llm/respond", json={"text": "hello"})
+            response = self.client.post(
+                "/llm/respond",
+                json={"text": "hello"},
+                headers={"x-request-id": "llm-config-1"},
+            )
 
         self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers["x-request-id"], "llm-config-1")
         self.assertEqual(
             response.json()["detail"],
-            {"code": "LM_STUDIO_CONFIG_ERROR", "message": "missing config"},
+            {
+                "code": "LM_STUDIO_CONFIG_ERROR",
+                "message": "missing config",
+                "request_id": "llm-config-1",
+            },
         )
 
     def test_unavailable_client_returns_502(self):
         with patch("app.api.llm_routes.create_llm_service") as create_service:
             create_service.return_value.respond.side_effect = LMStudioUnavailableError("offline")
 
-            response = self.client.post("/llm/respond", json={"text": "hello"})
+            response = self.client.post(
+                "/llm/respond",
+                json={"text": "hello"},
+                headers={"x-request-id": "llm-unavailable-1"},
+            )
 
         self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.headers["x-request-id"], "llm-unavailable-1")
         self.assertEqual(
             response.json()["detail"],
-            {"code": "LM_STUDIO_UNAVAILABLE", "message": "offline"},
+            {
+                "code": "LM_STUDIO_UNAVAILABLE",
+                "message": "offline",
+                "request_id": "llm-unavailable-1",
+            },
         )
 
     def test_successful_call_returns_lmstudio_response(self):
