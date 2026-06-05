@@ -3,6 +3,7 @@ Provides small helpers for normalizing model inputs and outputs.
 """
 
 from collections.abc import Mapping
+from contextlib import nullcontext
 
 
 def attr_or_key(value, name, default=None):
@@ -96,11 +97,30 @@ def decode_to_text(decoded):
     return text_from_output(decoded)
 
 
-def torch_dtype_from_compute_type(torch_module, compute_type, default=None):
+def torch_inference_context(torch_module):
+    """
+    Returns the strongest available no-gradient inference context.
+    """
+    inference_mode = getattr(torch_module, "inference_mode", None)
+    if inference_mode is not None:
+        return inference_mode()
+    no_grad = getattr(torch_module, "no_grad", None)
+    return no_grad() if no_grad is not None else nullcontext()
+
+
+def torch_dtype_from_compute_type(
+    torch_module,
+    compute_type,
+    default=None,
+    device=None,
+):
     """
     Maps a compute type string to a torch dtype when possible.
     """
     normalized = (compute_type or "").lower().replace("-", "_")
+    is_cpu = str(device or "").lower().startswith("cpu")
+    if is_cpu:
+        return getattr(torch_module, "float32", default)
     if normalized in ("float16", "fp16", "half"):
         return getattr(torch_module, "float16", default)
     if normalized in ("bfloat16", "bf16"):

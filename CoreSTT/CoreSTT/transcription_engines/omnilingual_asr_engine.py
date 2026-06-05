@@ -5,7 +5,11 @@ Adapts Meta Omnilingual ASR models to the engine interface.
 from importlib import import_module
 from pathlib import Path
 
-from ._model_utils import decode_to_text, torch_dtype_from_compute_type
+from ._model_utils import (
+    decode_to_text,
+    torch_dtype_from_compute_type,
+    torch_inference_context,
+)
 from .base import (
     BaseTranscriptionEngine,
     TranscriptionEngineError,
@@ -297,7 +301,7 @@ class OmnilingualASRBackend:
         Resolves the torch device for Omnilingual ASR.
         """
 
-        device = self.engine_options.get("device", self.config.device)
+        device = self.config.device
         if not device:
             return None
 
@@ -321,7 +325,11 @@ class OmnilingualASRBackend:
         if dtype is not None:
             return dtype
 
-        dtype = torch_dtype_from_compute_type(torch_module, self.config.compute_type)
+        dtype = torch_dtype_from_compute_type(
+            torch_module,
+            self.config.compute_type,
+            device=self._resolve_device(),
+        )
         if dtype is not None:
             return dtype
 
@@ -447,7 +455,9 @@ class OmnilingualASRBackend:
         elif _is_ctc_model(self.model_card):
             merged_params.pop("lang", None)
 
-        return pipeline.transcribe([audio_input], **merged_params)
+        torch_module = self._torch_module or self._load_torch()
+        with torch_inference_context(torch_module):
+            return pipeline.transcribe([audio_input], **merged_params)
 
 
 class OmnilingualASREngine(BaseTranscriptionEngine):

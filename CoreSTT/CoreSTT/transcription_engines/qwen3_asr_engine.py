@@ -4,7 +4,12 @@ Adapts Qwen3-ASR models to the transcription engine interface.
 
 from importlib import import_module
 
-from ._model_utils import language_from_output, text_from_output, torch_dtype_from_compute_type
+from ._model_utils import (
+    language_from_output,
+    text_from_output,
+    torch_dtype_from_compute_type,
+    torch_inference_context,
+)
 from .base import (
     BaseTranscriptionEngine,
     TranscriptionEngineError,
@@ -49,7 +54,7 @@ class Qwen3ASRBackend:
 
         if model_factory is None:
             model_factory = self._load_model_factory()
-        torch_module = torch_module or self._load_torch()
+        self.torch = torch_module or self._load_torch()
 
         model_options = dict(self.engine_options.get("model", {}))
         if config.download_root and "cache_dir" not in model_options:
@@ -60,18 +65,21 @@ class Qwen3ASRBackend:
             self.model = model_factory.LLM(**model_options)
         else:
             dtype = torch_dtype_from_compute_type(
-                torch_module,
+                self.torch,
                 config.compute_type,
                 default=(
-                    getattr(torch_module, "float32", None)
+                    getattr(self.torch, "float32", None)
                     if config.device == "cpu"
-                    else getattr(torch_module, "bfloat16", None)
+                    else getattr(self.torch, "bfloat16", None)
                 ),
+                device=config.device,
             )
             if dtype is not None:
                 model_options.setdefault("dtype", dtype)
             model_options.setdefault("device_map", config.device)
             self.model = model_factory.from_pretrained(self.model_name, **model_options)
+            if hasattr(self.model, "eval"):
+                self.model.eval()
 
     @staticmethod
     def _load_model_factory():
@@ -110,11 +118,12 @@ class Qwen3ASRBackend:
         merged_params.update(params)
         if not isinstance(audio, (str, list, tuple)):
             audio = (audio, self.sample_rate)
-        return self.model.transcribe(
-            audio=audio,
-            language=language,
-            **merged_params,
-        )
+        with torch_inference_context(self.torch):
+            return self.model.transcribe(
+                audio=audio,
+                language=language,
+                **merged_params,
+            )
 
 
 class Qwen3ASREngine(BaseTranscriptionEngine):

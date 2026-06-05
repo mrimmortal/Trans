@@ -25,6 +25,7 @@ from .silero_vad import create_silero_vad_model
 from .safepipe import SafePipe
 from .wakeword import OPENWAKEWORD_BACKENDS, setup_wakeword_detection
 from .audio_input_worker import run_audio_data_worker
+from .device import resolve_stt_device
 from .runtime import read_stdout_pipe, start_recorder_worker
 from .transcription import run_transcription_worker
 from .voice_activity import warmup_voice_activity_detectors
@@ -388,7 +389,7 @@ def _initialize_transcription_runtime(recorder, recorder_cls):
         recorder.parent_transcription_pipe, child_transcription_pipe = SafePipe()
         recorder.parent_stdout_pipe, child_stdout_pipe = SafePipe()
 
-    recorder.device = "cuda" if recorder.device == "cuda" and torch.cuda.is_available() else "cpu"
+    recorder.device = resolve_stt_device(recorder.device, torch, logger)
 
     if recorder._uses_external_transcription_executor:
         logger.info("Using external main transcription executor")

@@ -4,6 +4,7 @@ Adapts OpenAI Whisper Python models to the engine interface.
 
 from importlib import import_module
 
+from ._model_utils import torch_inference_context
 from .base import (
     BaseTranscriptionEngine,
     TranscriptionEngineError,
@@ -17,7 +18,7 @@ class OpenAIWhisperBackend:
     Wraps the openai-whisper model object.
     """
 
-    def __init__(self, config, whisper_module=None):
+    def __init__(self, config, whisper_module=None, torch_module=None):
         """
         Loads an openai-whisper model backend.
         """
@@ -25,6 +26,7 @@ class OpenAIWhisperBackend:
         self.engine_options = dict(config.engine_options or {})
         self.transcribe_options = dict(self.engine_options.get("transcribe", {}))
         whisper_module = whisper_module or self._load_whisper_module()
+        self.torch = torch_module or import_module("torch")
 
         model_options = dict(self.engine_options.get("model", {}))
         model_options.update(self.engine_options.get("load_model", {}))
@@ -55,7 +57,8 @@ class OpenAIWhisperBackend:
         """
         merged_params = dict(params)
         merged_params.update(self.transcribe_options)
-        return self.model.transcribe(audio, **merged_params)
+        with torch_inference_context(self.torch):
+            return self.model.transcribe(audio, **merged_params)
 
 
 class OpenAIWhisperEngine(BaseTranscriptionEngine):
@@ -98,9 +101,9 @@ class OpenAIWhisperEngine(BaseTranscriptionEngine):
             params["suppress_tokens"] = self.config.suppress_tokens
 
         compute_type = (self.config.compute_type or "").lower().replace("-", "_")
-        if compute_type in ("float16", "fp16", "half"):
+        if self.config.device == "cuda" and compute_type in ("float16", "fp16", "half"):
             params["fp16"] = True
-        elif compute_type in ("float32", "fp32", "int8"):
+        elif self.config.device == "cpu" or compute_type in ("float32", "fp32", "int8"):
             params["fp16"] = False
 
         result = self.backend.transcribe(audio, **params)

@@ -82,7 +82,7 @@ def parse_audio_packet(packet):
 
 
 def create_recorder(send_message):
-    """Creates a recorder tuned for local CPU browser testing."""
+    """Creates a recorder that uses CUDA when available."""
 
     def on_realtime(text):
         send_message({"type": "realtime", "text": text})
@@ -91,9 +91,10 @@ def create_recorder(send_message):
         spinner=False,
         use_microphone=False,
         model="small.en",
-        device="cpu",
-        compute_type="int8",
+        device="auto",
+        compute_type="default",
         language="en",
+        level=logging.INFO,
         no_log_file=True,
         enable_realtime_transcription=True,
         realtime_model_type="tiny.en",

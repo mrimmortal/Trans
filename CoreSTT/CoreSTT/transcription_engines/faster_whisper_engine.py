@@ -3,6 +3,9 @@ Adapts faster-whisper models to the transcription engine interface.
 """
 
 from importlib import import_module
+import logging
+import os
+from pathlib import Path
 
 from .base import (
     BaseTranscriptionEngine,
@@ -10,6 +13,41 @@ from .base import (
     TranscriptionInfo,
     TranscriptionResult,
 )
+
+logger = logging.getLogger("corestt")
+
+
+def _prepare_windows_cuda_dlls(config):
+    """
+    Makes PyTorch's bundled CUDA 12 DLLs visible to CTranslate2 on Windows.
+    """
+    if os.name != "nt" or not str(config.device).startswith("cuda"):
+        return
+
+    try:
+        torch = import_module("torch")
+    except ModuleNotFoundError:
+        return
+
+    torch_lib = Path(torch.__file__).resolve().parent / "lib"
+    cublas = torch_lib / "cublas64_12.dll"
+    if not cublas.exists():
+        raise TranscriptionEngineError(
+            "faster-whisper requires CUDA 12 cuBLAS (cublas64_12.dll), but "
+            "the installed PyTorch build does not provide it. Install "
+            "'requirements-cuda.txt' to use the supported CUDA 12.8 runtime, "
+            "or set STT_DEVICE=cpu."
+        )
+
+    add_dll_directory = getattr(os, "add_dll_directory", None)
+    if add_dll_directory is not None:
+        # Keep the handle alive for the process lifetime.
+        if not hasattr(_prepare_windows_cuda_dlls, "_dll_handles"):
+            _prepare_windows_cuda_dlls._dll_handles = []
+        _prepare_windows_cuda_dlls._dll_handles.append(
+            add_dll_directory(str(torch_lib))
+        )
+    logger.info("faster-whisper CUDA DLL directory: %s", torch_lib)
 
 
 def _load_faster_whisper():
@@ -41,6 +79,7 @@ class FasterWhisperEngine(BaseTranscriptionEngine):
         Initializes the faster-whisper model.
         """
         super().__init__(config)
+        _prepare_windows_cuda_dlls(config)
         faster_whisper, batched_inference_pipeline = _load_faster_whisper()
         model = faster_whisper.WhisperModel(
             model_size_or_path=self.config.model,

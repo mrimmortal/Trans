@@ -1,0 +1,4 @@
+--index-url https://download.pytorch.org/whl/cu128
+torch==2.11.0+cu128
+torchaudio==2.11.0+cu128
+Electrical sigEnlaelc.t rical signals. Connect the signal. Very good technical signals. Electrical signal. Electrical signals. Electrical signals electrical signals electrical signals. Electrical signal. SSttaattee  cchhaannggee  ffrroomm  tlihsiste ntihingn gt too  rreeccoordr.d. S tate change from this thing to record. Make just the sensitivity. Mike just a sense of humor Mike does it. 

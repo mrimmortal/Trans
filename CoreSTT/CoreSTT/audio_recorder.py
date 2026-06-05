@@ -100,7 +100,7 @@ class AudioToTextRecorder:
                  compute_type: str = "default",
                  input_device_index: int = None,
                  gpu_device_index: Union[int, List[int]] = 0,
-                 device: str = "cuda",
+                 device: str = "auto",
                  on_recording_start=None,
                  on_recording_stop=None,
                  on_transcription_start=None,
@@ -236,8 +236,11 @@ class AudioToTextRecorder:
             IDs (e.g. [0, 1, 2, 3]). In that case, multiple transcriptions can
             run in parallel when transcribe() is called from multiple Python
             threads
-        - device (str, default="cuda"): Device for model to use. Can either be 
-            "cuda" or "cpu".
+        - device (str, default="auto"): Device for model execution. "auto"
+            selects CUDA when PyTorch reports it available and otherwise uses
+            CPU. "cuda" and "cpu" force a preference; unavailable CUDA falls
+            back to CPU. The STT_DEVICE environment variable overrides this
+            value.
         - on_recording_start (callable, default=None): Callback function to be
             called when recording of audio to be transcripted starts.
         - on_recording_stop (callable, default=None): Callback function to be

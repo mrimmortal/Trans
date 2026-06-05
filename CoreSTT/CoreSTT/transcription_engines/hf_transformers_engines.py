@@ -9,6 +9,7 @@ from ._model_utils import (
     model_kwargs_from_inputs,
     move_to_device,
     torch_dtype_from_compute_type,
+    torch_inference_context,
 )
 from .base import (
     BaseTranscriptionEngine,
@@ -93,7 +94,7 @@ class CohereTranscribeBackend:
                 "cohere_transcribe",
                 ["AutoProcessor", "CohereAsrForConditionalGeneration"],
             )
-        torch_module = torch_module or _load_torch("cohere_transcribe")
+        self.torch = torch_module or _load_torch("cohere_transcribe")
 
         self.processor = processor_cls.from_pretrained(
             self.model_name,
@@ -105,16 +106,19 @@ class CohereTranscribeBackend:
         )
         model_options.setdefault(
             "device_map",
-            self.engine_options.get("device_map", "auto" if config.device != "cpu" else "cpu"),
+            config.device,
         )
         dtype = torch_dtype_from_compute_type(
-            torch_module,
+            self.torch,
             config.compute_type,
             default=None,
+            device=config.device,
         )
         if dtype is not None:
             model_options.setdefault("torch_dtype", dtype)
         self.model = model_cls.from_pretrained(self.model_name, **model_options)
+        if hasattr(self.model, "eval"):
+            self.model.eval()
 
     def transcribe(self, audio, language, **params):
         """
@@ -138,10 +142,11 @@ class CohereTranscribeBackend:
 
         generate_kwargs = dict(self.generate_options)
         generate_kwargs.update(params)
-        outputs = self.model.generate(
-            **model_kwargs_from_inputs(inputs),
-            **generate_kwargs,
-        )
+        with torch_inference_context(self.torch):
+            outputs = self.model.generate(
+                **model_kwargs_from_inputs(inputs),
+                **generate_kwargs,
+            )
 
         decode_kwargs = {"skip_special_tokens": True}
         audio_chunk_index = getattr(inputs, "get", lambda name, default=None: default)(
@@ -199,7 +204,7 @@ class GraniteSpeechBackend:
         self.config = config
         self.engine_options = dict(config.engine_options or {})
         self.model_name = config.model or DEFAULT_GRANITE_MODEL
-        self.device = self.engine_options.get("device", config.device)
+        self.device = config.device
         self.generate_options = dict(
             self.engine_options.get(
                 "generate",
@@ -232,6 +237,7 @@ class GraniteSpeechBackend:
             self.torch,
             config.compute_type,
             default=default_dtype,
+            device=self.device,
         )
         model_options = _with_cache_dir(
             self.engine_options.get("model", {}),
@@ -241,6 +247,8 @@ class GraniteSpeechBackend:
         if dtype is not None:
             model_options.setdefault("torch_dtype", dtype)
         self.model = model_cls.from_pretrained(self.model_name, **model_options)
+        if hasattr(self.model, "eval"):
+            self.model.eval()
 
     def _audio_tensor(self, audio):
         """
@@ -274,10 +282,11 @@ class GraniteSpeechBackend:
 
         generate_kwargs = dict(self.generate_options)
         generate_kwargs.update(params)
-        model_outputs = self.model.generate(
-            **model_kwargs_from_inputs(model_inputs),
-            **generate_kwargs,
-        )
+        with torch_inference_context(self.torch):
+            model_outputs = self.model.generate(
+                **model_kwargs_from_inputs(model_inputs),
+                **generate_kwargs,
+            )
 
         try:
             num_input_tokens = model_inputs["input_ids"].shape[-1]
@@ -356,7 +365,7 @@ class MoonshineBackend:
         self.config = config
         self.engine_options = dict(config.engine_options or {})
         self.model_name = config.model or DEFAULT_MOONSHINE_MODEL
-        self.device = self.engine_options.get("device", config.device)
+        self.device = config.device
         self.generate_options = dict(self.engine_options.get("generate", {}))
 
         if processor_cls is None or model_cls is None:
@@ -378,9 +387,12 @@ class MoonshineBackend:
                 if self.device == "cpu"
                 else getattr(self.torch, "float16", None)
             ),
+            device=self.device,
         )
         self.model = move_to_device(self.model, self.device)
         self.model = move_to_device(self.model, dtype=dtype)
+        if hasattr(self.model, "eval"):
+            self.model.eval()
 
         self.processor = processor_cls.from_pretrained(
             self.model_name,
@@ -424,10 +436,11 @@ class MoonshineBackend:
             else:
                 generate_kwargs["max_new_tokens"] = 256
 
-        generated_ids = self.model.generate(
-            **model_kwargs_from_inputs(inputs),
-            **generate_kwargs,
-        )
+        with torch_inference_context(self.torch):
+            generated_ids = self.model.generate(
+                **model_kwargs_from_inputs(inputs),
+                **generate_kwargs,
+            )
         try:
             generated_ids = generated_ids[0]
         except Exception:

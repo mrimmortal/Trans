@@ -7,7 +7,7 @@ import tempfile
 from importlib import import_module
 from pathlib import Path
 
-from ._model_utils import language_from_output, text_from_output
+from ._model_utils import language_from_output, text_from_output, torch_inference_context
 from .base import (
     BaseTranscriptionEngine,
     TranscriptionEngineError,
@@ -24,7 +24,13 @@ class ParakeetNeMoBackend:
     Wraps NVIDIA NeMo ASR models for Parakeet transcription.
     """
 
-    def __init__(self, config, asr_model_cls=None, soundfile_module=None):
+    def __init__(
+        self,
+        config,
+        asr_model_cls=None,
+        soundfile_module=None,
+        torch_module=None,
+    ):
         """
         Initializes the NeMo Parakeet backend.
         """
@@ -34,6 +40,7 @@ class ParakeetNeMoBackend:
         self.sample_rate = self.engine_options.get("sample_rate", 16000)
         self.transcribe_options = dict(self.engine_options.get("transcribe", {}))
         self.soundfile_module = soundfile_module
+        self.torch = torch_module or self._load_torch()
 
         asr_model_cls = asr_model_cls or self._load_asr_model_class()
         model_options = dict(self.engine_options.get("model", {}))
@@ -62,6 +69,18 @@ class ParakeetNeMoBackend:
                 "for real-model testing."
             ) from exc
         return nemo_asr.models.ASRModel
+
+    @staticmethod
+    def _load_torch():
+        """
+        Loads torch for NeMo inference contexts.
+        """
+        try:
+            return import_module("torch")
+        except ModuleNotFoundError as exc:
+            raise TranscriptionEngineError(
+                "The 'parakeet' transcription engine requires the 'torch' package."
+            ) from exc
 
     def _load_soundfile(self):
         """
@@ -100,7 +119,8 @@ class ParakeetNeMoBackend:
         merged_params.update(self.transcribe_options)
         paths, temporary_path = self._audio_paths(audio)
         try:
-            return self.model.transcribe(paths, **merged_params)
+            with torch_inference_context(self.torch):
+                return self.model.transcribe(paths, **merged_params)
         finally:
             if temporary_path:
                 try:
