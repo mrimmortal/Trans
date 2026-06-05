@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CoreSTT Demo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f6f7f9;
+      color: #171a1f;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+    }
+
+    main {
+      width: min(860px, calc(100vw - 32px));
+      display: grid;
+      gap: 16px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    button {
+      border: 1px solid #1f6feb;
+      background: #1f6feb;
+      color: white;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .status {
+      min-height: 20px;
+      color: #5b6472;
+      font-size: 14px;
+    }
+
+    .panel {
+      border: 1px solid #d8dee8;
+      border-radius: 8px;
+      background: white;
+      padding: 18px;
+    }
+
+    .label {
+      margin: 0 0 8px;
+      color: #5b6472;
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    #realtime {
+      min-height: 52px;
+      color: #1f6feb;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    #final {
+      min-height: 180px;
+      white-space: pre-wrap;
+      font-size: 18px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>CoreSTT</h1>
+      <button id="toggle">Start</button>
+    </header>
+
+    <div id="status" class="status">Ready.</div>
+
+    <section class="panel">
+      <p class="label">Realtime</p>
+      <div id="realtime"></div>
+    </section>
+
+    <section class="panel">
+      <p class="label">Final Transcript</p>
+      <div id="final"></div>
+    </section>
+  </main>
+
+  <script>
+    const toggle = document.getElementById("toggle");
+    const statusEl = document.getElementById("status");
+    const realtimeEl = document.getElementById("realtime");
+    const finalEl = document.getElementById("final");
+
+    let socket = null;
+    let stream = null;
+    let audioContext = null;
+    let processor = null;
+    let source = null;
+    let running = false;
+    let sentPackets = 0;
+    let lastPacketStatusAt = 0;
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function wsUrl() {
+      return `ws://${window.location.hostname}:8021/ws`;
+    }
+
+    function buildPacket(samples, sampleRate) {
+      const metadata = new TextEncoder().encode(JSON.stringify({ sampleRate }));
+      const header = new ArrayBuffer(4);
+      new DataView(header).setUint32(0, metadata.byteLength, true);
+      return new Blob([header, metadata, samples.buffer]);
+    }
+
+    function floatToInt16(floatSamples) {
+      const intSamples = new Int16Array(floatSamples.length);
+      for (let index = 0; index < floatSamples.length; index += 1) {
+        const clamped = Math.max(-1, Math.min(1, floatSamples[index]));
+        intSamples[index] = clamped < 0 ? clamped * 32768 : clamped * 32767;
+      }
+      return intSamples;
+    }
+
+    async function start() {
+      toggle.disabled = true;
+      setStatus("Connecting to STT server...");
+
+      socket = new WebSocket(wsUrl());
+      let resolveServerReady = null;
+      const serverReady = new Promise((resolve) => {
+        resolveServerReady = resolve;
+      });
+
+      socket.onmessage = (event) => {
+        const message = JSON.parse(event.data);
+        if (message.type === "realtime") {
+          realtimeEl.textContent = message.text || "";
+        } else if (message.type === "final") {
+          realtimeEl.textContent = "";
+          finalEl.textContent += `${message.text}\n`;
+        } else if (message.type === "status") {
+          setStatus(message.text);
+          if (message.text.startsWith("Connected.") && resolveServerReady) {
+            resolveServerReady();
+            resolveServerReady = null;
+          }
+        } else if (message.type === "error") {
+          setStatus(message.text);
+        }
+      };
+
+      await new Promise((resolve, reject) => {
+        socket.onopen = resolve;
+        socket.onerror = reject;
+      });
+
+      setStatus("Loading STT models...");
+      await serverReady;
+      setStatus("Requesting microphone...");
+
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new AudioContext();
+      source = audioContext.createMediaStreamSource(stream);
+      processor = audioContext.createScriptProcessor(1024, 1, 1);
+
+      processor.onaudioprocess = (event) => {
+        if (!running || socket.readyState !== WebSocket.OPEN) {
+          return;
+        }
+        const samples = floatToInt16(event.inputBuffer.getChannelData(0));
+        socket.send(buildPacket(samples, audioContext.sampleRate));
+        sentPackets += 1;
+        if (sentPackets === 1 || sentPackets - lastPacketStatusAt >= 100) {
+          lastPacketStatusAt = sentPackets;
+          setStatus(`Listening. Audio packets sent: ${sentPackets}`);
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      running = true;
+      sentPackets = 0;
+      lastPacketStatusAt = 0;
+      toggle.textContent = "Stop";
+      toggle.disabled = false;
+      setStatus("Listening.");
+    }
+
+    async function stop() {
+      running = false;
+      toggle.disabled = true;
+
+      if (processor) processor.disconnect();
+      if (source) source.disconnect();
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      if (audioContext) await audioContext.close();
+      if (socket) socket.close();
+
+      processor = null;
+      source = null;
+      stream = null;
+      audioContext = null;
+      socket = null;
+
+      toggle.textContent = "Start";
+      toggle.disabled = false;
+      setStatus("Stopped.");
+    }
+
+    toggle.addEventListener("click", async () => {
+      try {
+        if (running) {
+          await stop();
+        } else {
+          await start();
+        }
+      } catch (error) {
+        setStatus(error.message || String(error));
+        toggle.textContent = "Start";
+        toggle.disabled = false;
+        running = false;
+      }
+    });
+  </script>
+</body>
+</html>

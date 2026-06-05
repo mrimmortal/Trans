@@ -1,1 +1,0 @@
-"""Lightweight local observability helpers."""

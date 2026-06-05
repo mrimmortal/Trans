@@ -1,1 +1,0 @@
-"""Transcription Template Backend Application."""
