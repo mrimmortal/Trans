@@ -17,11 +17,17 @@ commands as local validation.
   historical constructor signature.
 - `CoreSTT/CoreSTT/core/`: recorder lifecycle, VAD, buffering, realtime
   processing, text formatting, wake-word, and transcription flow helpers.
+- `CoreSTT/CoreSTT/server/`: internal modules extracted from the FastAPI
+  server for settings/CLI parsing, audio helpers, timeline tracking,
+  connection tracking, statistics, and inference scheduling.
 - `CoreSTT/CoreSTT/transcription_engines/`: ASR adapter implementations and
   factory.
-- `CoreSTT/server.py`: FastAPI/uvicorn browser streaming server.
+- `CoreSTT/server.py`: public FastAPI/uvicorn browser streaming server,
+  compatibility exports, and script entrypoint.
 - `CoreSTT/protocol.py`: binary browser audio packet and config parsing helpers.
 - `CoreSTT/static/index.html`: browser console UI.
+- `CoreSTT/tools/stress/harness.py`: repo-local websocket stress and soak test
+  harness for concurrent handshake or synthetic audio streaming load.
 - `CoreSTT/tests/`: `unittest` coverage for server config and protocol behavior.
 
 ## Key Entrypoints
@@ -62,6 +68,9 @@ See `docs/COMMANDS.md`.
   user explicitly asks for a breaking API change.
 - Preserve binary packet behavior in `CoreSTT/protocol.py` and websocket server
   expectations unless intentionally changing the browser/server contract.
+- Preserve `CoreSTT/server.py` compatibility exports including
+  `create_app`, `parse_args`, `settings_from_args`, `main`, and
+  `ServerSettings`; internal server modules are implementation details.
 - Do not weaken runtime config validation, queue limits, session limits, auth or
   secret handling if added later, or error reporting.
 - Do not edit generated caches, virtualenvs, model downloads, or local `.env`

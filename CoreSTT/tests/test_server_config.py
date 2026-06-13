@@ -1,6 +1,7 @@
 import unittest
 
 from protocol import encode_audio_packet
+import server
 from server import (
     AudioPacketError,
     ConnectionManager,
@@ -40,6 +41,59 @@ class FakeScheduler:
 
 
 class ServerConfigTest(unittest.TestCase):
+    def test_server_module_preserves_public_compatibility_exports(self):
+        expected_names = [
+            "ACTIVE_RUNTIME_SETTINGS",
+            "AudioData",
+            "AudioPacketError",
+            "BASE_TUNING_DEFAULTS",
+            "BOOL_SETTINGS",
+            "ConnectionManager",
+            "CoreSTTService",
+            "DICT_SETTINGS",
+            "FairInferenceQueue",
+            "FLOAT_SETTINGS",
+            "InferenceJob",
+            "InferenceResult",
+            "InferenceScheduler",
+            "INT_SETTINGS",
+            "NEW_SESSION_RUNTIME_SETTINGS",
+            "OPTIONAL_STRING_SETTINGS",
+            "QueueSubmitResult",
+            "RecorderBackedRealtimeSession",
+            "RealtimeSession",
+            "RunningStats",
+            "SchedulerTranscriptionExecutor",
+            "SegmentState",
+            "SegmentTimelineTracker",
+            "ServerSettings",
+            "SessionStore",
+            "SharedEngineWorker",
+            "STARTUP_ONLY_SETTINGS",
+            "TUNING_PROFILES",
+            "TUPLE_FLOAT_SETTINGS",
+            "VoiceActivityDetector",
+            "coerce_setting_value",
+            "create_app",
+            "decode_audio_packet",
+            "effective_device",
+            "load_fastapi",
+            "main",
+            "normalize_engine_name",
+            "parse_args",
+            "parse_float_tuple",
+            "parse_json_object",
+            "read_wav_float32",
+            "require_positive_int",
+            "resample_int16",
+            "runtime_settings_contract",
+            "settings_from_args",
+        ]
+
+        for name in expected_names:
+            with self.subTest(name=name):
+                self.assertTrue(hasattr(server, name), name)
+
     def test_settings_from_args_applies_profile_defaults_and_engine_names(self):
         args = parse_args([
             "--host",
@@ -122,7 +176,7 @@ class ServerConfigTest(unittest.TestCase):
             config_response = client.get("/api/config")
 
         self.assertEqual(index_response.status_code, 200)
-        self.assertIn("CoreSTT Live Console", index_response.text)
+        self.assertIn("CoreSTT WebSocket Integration", index_response.text)
         self.assertEqual(health_response.status_code, 200)
         self.assertTrue(health_response.json()["ok"])
         self.assertEqual(config_response.status_code, 200)

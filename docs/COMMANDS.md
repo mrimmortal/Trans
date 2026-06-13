@@ -62,6 +62,12 @@ Discover all current `unittest` tests from `CoreSTT/`:
 .venv/bin/python -m unittest discover tests
 ```
 
+Stress harness tests from `CoreSTT/`:
+
+```bash
+.venv/bin/python -m unittest tests/test_stress_harness.py
+```
+
 Create `CoreSTT/.venv` and install `requirements.txt` before running tests.
 Server tests import runtime dependencies such as `numpy`.
 
@@ -82,6 +88,13 @@ After starting the server:
 GET http://127.0.0.1:8020/health
 GET http://127.0.0.1:8020/api/config
 GET http://127.0.0.1:8020/api/metrics
+```
+
+Stress-test harness from `CoreSTT/`:
+
+```bash
+.venv/bin/python -m tools.stress.harness --url ws://127.0.0.1:8020/ws/transcribe --clients 25 --duration 30 --mode handshake --ping-interval 2 --metrics
+.venv/bin/python -m tools.stress.harness --url ws://127.0.0.1:8020/ws/transcribe --clients 10 --duration 20 --mode stream --chunk-ms 100 --ping-interval 2
 ```
 
 ## Notes

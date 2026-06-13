@@ -73,3 +73,55 @@ Validation:
 Next:
 - Fix or update the stale server config test assertion for the current page
   title `CoreSTT WebSocket Integration`.
+
+## 2026-06-13 - Modularize Server Safe Phases
+
+Changed:
+- Added compatibility guard coverage for `CoreSTT/server.py` public exports and
+  updated the stale served-index title assertion to the current UI title.
+- Extracted server settings/CLI, audio helpers, running stats, timeline state,
+  connection tracking, and inference scheduler internals under
+  `CoreSTT/CoreSTT/server/`.
+- Kept `CoreSTT/server.py` as the public server entrypoint and compatibility
+  export surface.
+- Updated `AI_CONTEXT.md` and `docs/MODULE_MAP.md` with the new server module
+  boundaries.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 5 tests.
+- `.venv/bin/python -m unittest tests/test_server_protocol.py` from `CoreSTT/`:
+  passed, 5 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 10
+  tests.
+- Server smoke with `.venv/bin/python server.py --host 127.0.0.1 --port 8020
+  --device cpu --no-model-warmup`: passed `/health`, `/api/config`,
+  `/api/metrics`, and websocket hello/ready/ping checks.
+
+Next:
+- If continuing modularization, extract realtime session/service wiring in
+  smaller phases with websocket smoke validation after each phase.
+
+## 2026-06-13 - Add Stress Harness
+
+Changed:
+- Added `CoreSTT/tools/stress/harness.py` as a repo-local websocket stress and
+  soak test harness with handshake and synthetic audio streaming modes.
+- Added focused `unittest` coverage in `CoreSTT/tests/test_stress_harness.py`.
+- Updated AI context and command docs for the new harness entrypoint.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_stress_harness.py` from `CoreSTT/`:
+  passed, 5 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 15
+  tests.
+- `.venv/bin/python -m tools.stress.harness --url ws://127.0.0.1:8020/ws/transcribe --clients 3 --duration 2 --mode handshake --ping-interval 1 --metrics`:
+  passed against the live server with 3/3 connects, hello, ready, and pong.
+- `.venv/bin/python -m tools.stress.harness --url ws://127.0.0.1:8020/ws/transcribe --clients 1 --duration 2 --mode stream --ping-interval 1`:
+  passed against the live server with successful hello, ready, and short audio
+  streaming.
+
+Next:
+- Use handshake mode first to find session-limit or websocket-admission issues,
+  then scale stream mode gradually to measure queue and transcript latency
+  degradation.
