@@ -9,8 +9,10 @@ demo server, browser UI, and dependency list are contained inside this folder.
 - `CoreSTT/audio_recorder.py`: main `AudioToTextRecorder` entry point.
 - `CoreSTT/core/`: recorder lifecycle, VAD, buffering, realtime processing, and transcription flow.
 - `CoreSTT/transcription_engines/`: ASR engine adapters and factory.
-- `static/index.html`: minimal browser microphone UI.
-- `server.py`: standalone HTTP and websocket demo server.
+- `static/index.html`: full browser microphone console with live transcript,
+  signal history, session state, timeline events, metrics, and config display.
+- `protocol.py`: binary browser audio packet helpers used by the server.
+- `server.py`: standalone FastAPI/uvicorn browser streaming server.
 
 ## Install
 
@@ -36,10 +38,10 @@ PyAudio may need PortAudio installed first. On macOS:
 brew install portaudio
 ```
 
-## Run Demo
+## Run Server
 
 ```bash
-python server.py --host 127.0.0.1 --port 8020 --ws-port 8021
+python server.py --host 127.0.0.1 --port 8020 --device cpu
 ```
 
 Open:
@@ -49,6 +51,15 @@ http://127.0.0.1:8020
 ```
 
 Click `Start` and allow microphone access.
+
+Useful endpoints:
+
+- `GET /`: browser console.
+- `GET /health`: readiness, active sessions, scheduler health, and startup errors.
+- `GET /api/config`: public settings, limits, supported engines, and runtime setting contract.
+- `PATCH /api/config`: update supported runtime settings.
+- `GET /api/metrics`: session, scheduler, queue, latency, and limit metrics.
+- `WS /ws/transcribe`: browser audio streaming websocket.
 
 ## Use In Your Project
 
@@ -86,11 +97,25 @@ text = recorder.text()
 
 ## Default Model Path
 
-The demo uses:
+The server uses:
 
 - final model: `small.en`
 - realtime model: `tiny.en`
 - backend: `faster_whisper`
-- device: `cpu`
+- device: `cuda` by default, with server-side fallback to CPU when CUDA is not available
 
 For better accuracy, use a larger model and GPU when available.
+
+## Server Features
+
+- FastAPI app served on one port.
+- Multi-session websocket admission with `--max-sessions`.
+- Active speaker throttling with `--max-active-speakers`.
+- Shared main/realtime inference workers with fair per-session queueing.
+- Realtime job coalescing and stale interim update dropping.
+- Configurable final/realtime engines, models, prompts, beam sizes, batch sizes,
+  VAD timing, wake-word settings, and queue limits.
+- Named tuning profiles for Parakeet latency/quality tradeoffs.
+- Wake-word states and timeline events when wake words are enabled.
+- Runtime config update endpoint for active-session-safe and new-session-only settings.
+- Metrics for sessions, queues, inference latency, scheduler health, and dropped work.

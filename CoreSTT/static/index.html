@@ -3,252 +3,932 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CoreSTT Demo</title>
+  <title>CoreSTT WebSocket Integration</title>
   <style>
     :root {
-      color-scheme: light;
-      font-family: Arial, Helvetica, sans-serif;
-      background: #f6f7f9;
-      color: #171a1f;
+      color-scheme: dark;
+      --bg: #0f1115;
+      --panel: #171a1f;
+      --panel-2: #11151a;
+      --line: #2b3139;
+      --text: #f4f6f8;
+      --muted: #9aa6b2;
+      --soft: #c8d0d8;
+      --green: #57d68d;
+      --amber: #f1bd5a;
+      --red: #ff6b6b;
+      --cyan: #5ad7ff;
+      --radius: 8px;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
+
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
+      background: var(--bg);
+      color: var(--text);
     }
 
-    main {
-      width: min(860px, calc(100vw - 32px));
-      display: grid;
-      gap: 16px;
+    button { font: inherit; }
+
+    .app {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
     }
 
     header {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      gap: 12px;
+      align-items: flex-start;
+      gap: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 20px;
     }
+
+    h1, h2, h3, p { margin-top: 0; }
 
     h1 {
-      margin: 0;
-      font-size: 24px;
-      font-weight: 700;
+      margin-bottom: 6px;
+      font-size: 26px;
+      line-height: 1.15;
     }
 
-    button {
-      border: 1px solid #1f6feb;
-      background: #1f6feb;
-      color: white;
-      border-radius: 6px;
-      padding: 10px 14px;
+    h2 {
+      margin-bottom: 12px;
+      font-size: 18px;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      font-size: 15px;
+    }
+
+    p, li {
+      color: var(--soft);
+      line-height: 1.55;
       font-size: 14px;
-      cursor: pointer;
     }
 
-    button:disabled {
-      opacity: 0.55;
-      cursor: not-allowed;
+    .muted { color: var(--muted); }
+
+    .status-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
     }
 
-    .status {
-      min-height: 20px;
-      color: #5b6472;
-      font-size: 14px;
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 30px;
+      padding: 0 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #15181d;
+      color: var(--soft);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+
+    .dot.ready { background: var(--green); }
+    .dot.live { background: var(--red); }
+    .dot.wait { background: var(--amber); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 360px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
     }
 
     .panel {
-      border: 1px solid #d8dee8;
-      border-radius: 8px;
-      background: white;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
       padding: 18px;
     }
 
-    .label {
-      margin: 0 0 8px;
-      color: #5b6472;
-      font-size: 13px;
+    .panel + .panel { margin-top: 18px; }
+
+    .control-stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .primary, .secondary {
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      color: var(--text);
+      background: #151b22;
+      cursor: pointer;
+      padding: 0 14px;
+    }
+
+    .primary {
+      background: #143142;
+      border-color: rgba(90, 215, 255, 0.45);
       font-weight: 700;
+    }
+
+    .primary.active {
+      background: #3a1f25;
+      border-color: rgba(255, 107, 107, 0.62);
+    }
+
+    .button-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .kv {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .kv-row {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr);
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 13px;
+    }
+
+    .kv-row:last-child { border-bottom: 0; }
+    .kv-row label { color: var(--muted); }
+    .kv-row span { color: var(--text); overflow-wrap: anywhere; }
+
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+    }
+
+    code {
+      color: #d9f6ff;
+      background: rgba(90,215,255,0.08);
+      border: 1px solid rgba(90,215,255,0.14);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 0;
+      padding: 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: #0f1318;
+      color: #e8eef4;
+      line-height: 1.45;
+    }
+
+    .docs {
+      display: grid;
+      gap: 18px;
+    }
+
+    .doc-section {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel-2);
+      padding: 16px;
+    }
+
+    .transcript {
+      display: grid;
+      gap: 10px;
+      max-height: 460px;
+      overflow: auto;
+    }
+
+    .empty {
+      border: 1px dashed var(--line);
+      border-radius: var(--radius);
+      padding: 18px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .segment {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      background: #15191f;
+    }
+
+    .segment.final {
+      border-color: rgba(87, 214, 141, 0.30);
+      background: #131a18;
+    }
+
+    .segment.interim {
+      border-color: rgba(90, 215, 255, 0.32);
+      background: #121b22;
+    }
+
+    .segment-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      color: var(--muted);
+      font-size: 11px;
       text-transform: uppercase;
     }
 
-    #realtime {
-      min-height: 52px;
-      color: #1f6feb;
-      font-size: 18px;
+    .segment-text {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
       line-height: 1.5;
+      font-size: 17px;
     }
 
-    #final {
-      min-height: 180px;
-      white-space: pre-wrap;
-      font-size: 18px;
-      line-height: 1.55;
+    .stable-text { color: #fff; font-weight: 650; }
+    .unstable-text { color: #cfe2e8; }
+
+    .event-log {
+      display: grid;
+      gap: 8px;
+      max-height: 260px;
+      overflow: auto;
+      margin-top: 12px;
+    }
+
+    .event {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 8px;
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.4;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .event time { color: var(--muted); }
+    .event small { display: block; color: var(--muted); margin-top: 2px; }
+
+    @media (max-width: 900px) {
+      .app { padding: 16px; }
+      header { flex-direction: column; }
+      .status-row { justify-content: flex-start; }
+      .grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <main>
+  <div class="app">
     <header>
-      <h1>CoreSTT</h1>
-      <button id="toggle">Start</button>
+      <div>
+        <h1>CoreSTT WebSocket Integration</h1>
+        <p class="muted">Minimal browser client for testing the same WebSocket calling mechanism and copying the integration contract into any platform.</p>
+      </div>
+      <div class="status-row" aria-label="Connection status">
+        <span class="chip"><span id="serverDot" class="dot wait"></span><span id="serverState">Connecting</span></span>
+        <span class="chip"><span id="recordDot" class="dot"></span><span id="recordState">Idle</span></span>
+        <span class="chip"><span id="latency">0 ms</span></span>
+      </div>
     </header>
 
-    <div id="status" class="status">Ready.</div>
+    <div class="grid">
+      <aside>
+        <section class="panel">
+          <h2>Live test client</h2>
+          <p class="muted">These controls use the same socket, same start/stop/clear/ping messages, and same binary audio packet format.</p>
+          <div class="control-stack">
+            <button id="streamButton" class="primary" type="button">Start stream</button>
+            <div class="button-row">
+              <button id="connectButton" class="secondary" type="button">Reconnect</button>
+              <button id="clearButton" class="secondary" type="button">Clear</button>
+            </div>
+            <button id="copyButton" class="secondary" type="button">Copy transcript</button>
+          </div>
 
-    <section class="panel">
-      <p class="label">Realtime</p>
-      <div id="realtime"></div>
-    </section>
+          <div class="kv" aria-label="Runtime status">
+            <div class="kv-row"><label>Endpoint</label><span id="endpointText">--</span></div>
+            <div class="kv-row"><label>Sample rate</label><span id="sampleRate">--</span></div>
+            <div class="kv-row"><label>Queue</label><span id="queueDepth">0</span></div>
+            <div class="kv-row"><label>State</label><span id="subtitle">Idle</span></div>
+          </div>
+        </section>
 
-    <section class="panel">
-      <p class="label">Final Transcript</p>
-      <div id="final"></div>
-    </section>
-  </main>
+        <section class="panel">
+          <h2>Server config</h2>
+          <div class="kv">
+            <div class="kv-row"><label>Profile</label><span id="tuningProfile">--</span></div>
+            <div class="kv-row"><label>Final model</label><span id="finalModel">--</span></div>
+            <div class="kv-row"><label>Realtime</label><span id="realtimeModel">--</span></div>
+            <div class="kv-row"><label>Engine</label><span id="engineName">--</span></div>
+            <div class="kv-row"><label>Device</label><span id="deviceName">--</span></div>
+            <div class="kv-row"><label>Cadence</label><span id="cadenceInfo">--</span></div>
+            <div class="kv-row"><label>VAD</label><span id="vadInfo">--</span></div>
+            <div class="kv-row"><label>Wake</label><span id="wakeInfo">--</span></div>
+            <div class="kv-row"><label>Decode</label><span id="decodeInfo">--</span></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Event log</h2>
+          <div id="eventLog" class="event-log" aria-label="Event log"></div>
+        </section>
+      </aside>
+
+      <main class="docs">
+        <section class="panel">
+          <h2>Transcript</h2>
+          <div id="transcript" class="transcript">
+            <div class="empty">No transcript yet. Start the stream and speak.</div>
+          </div>
+        </section>
+
+        <section class="doc-section">
+          <h2>1. Connection</h2>
+          <p>The browser builds the WebSocket URL from the current host. Use <code>wss:</code> on HTTPS and <code>ws:</code> on HTTP.</p>
+          <pre><code>const proto = location.protocol === "https:" ? "wss:" : "ws:";
+const socket = new WebSocket(proto + "//" + location.host + "/ws/transcribe");
+socket.binaryType = "arraybuffer";</code></pre>
+        </section>
+
+        <section class="doc-section">
+          <h2>2. Client → Server messages</h2>
+          <p>Control messages are sent as JSON text frames. Audio is sent as a binary frame.</p>
+          <pre><code>{ "type": "start" }   // begin server-side recorder/session
+{ "type": "stop" }    // stop server-side recorder/session
+{ "type": "clear" }   // clear transcript on server/client
+{ "type": "ping" }    // latency check, server replies with pong</code></pre>
+        </section>
+
+        <section class="doc-section">
+          <h2>3. Binary audio packet format</h2>
+          <p>Each audio frame keeps the current mechanism: 4-byte little-endian metadata length, then UTF-8 JSON metadata, then PCM audio bytes.</p>
+          <pre><code>[uint32 metadataLength LE][metadata JSON UTF-8][pcm_s16le audio]
+
+metadata = {
+  sampleRate: audioContext.sampleRate,
+  channels: 1,
+  format: "pcm_s16le",
+  frames: pcm.length,
+  sentAt: performance.now()
+}</code></pre>
+        </section>
+
+        <section class="doc-section">
+          <h2>4. Browser audio capture config</h2>
+          <p>The current client captures mono microphone audio and sends approximately 40 ms chunks after converting Float32 samples into signed 16-bit PCM.</p>
+          <pre><code>navigator.mediaDevices.getUserMedia({
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: 1
+  }
+});</code></pre>
+        </section>
+
+        <section class="doc-section">
+          <h2>5. Server → Client message types</h2>
+          <p>The UI handles these existing server message types without changing their meaning.</p>
+          <pre><code>hello      -> contains clientId and optional settings
+ready      -> recorder/session ready, optional settings
+status     -> queueDepth and state
+realtime   -> interim transcript update
+final      -> final transcript segment
+timeline   -> recorder/wake/transcription event
+clear      -> clear local transcript
+warning    -> non-fatal warning
+error      -> error message
+pong       -> latency response</code></pre>
+        </section>
+
+        <section class="doc-section">
+          <h2>6. Integration checklist for any platform</h2>
+          <ul>
+            <li>Open WebSocket at <code>/ws/transcribe</code>.</li>
+            <li>Send <code>{"type":"start"}</code> before audio packets.</li>
+            <li>Capture mono audio and convert it to <code>pcm_s16le</code>.</li>
+            <li>Send packets using the exact metadata-length + metadata + PCM layout.</li>
+            <li>Handle <code>realtime</code> for interim text and <code>final</code> for confirmed text.</li>
+            <li>Send <code>{"type":"stop"}</code> when recording ends.</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+  </div>
 
   <script>
-    const toggle = document.getElementById("toggle");
-    const statusEl = document.getElementById("status");
-    const realtimeEl = document.getElementById("realtime");
-    const finalEl = document.getElementById("final");
+    const ui = {
+      serverDot: document.getElementById("serverDot"),
+      serverState: document.getElementById("serverState"),
+      recordDot: document.getElementById("recordDot"),
+      recordState: document.getElementById("recordState"),
+      latency: document.getElementById("latency"),
+      streamButton: document.getElementById("streamButton"),
+      clearButton: document.getElementById("clearButton"),
+      connectButton: document.getElementById("connectButton"),
+      copyButton: document.getElementById("copyButton"),
+      transcript: document.getElementById("transcript"),
+      subtitle: document.getElementById("subtitle"),
+      eventLog: document.getElementById("eventLog"),
+      endpointText: document.getElementById("endpointText"),
+      sampleRate: document.getElementById("sampleRate"),
+      queueDepth: document.getElementById("queueDepth"),
+      tuningProfile: document.getElementById("tuningProfile"),
+      finalModel: document.getElementById("finalModel"),
+      realtimeModel: document.getElementById("realtimeModel"),
+      engineName: document.getElementById("engineName"),
+      deviceName: document.getElementById("deviceName"),
+      cadenceInfo: document.getElementById("cadenceInfo"),
+      vadInfo: document.getElementById("vadInfo"),
+      wakeInfo: document.getElementById("wakeInfo"),
+      decodeInfo: document.getElementById("decodeInfo")
+    };
 
-    let socket = null;
-    let stream = null;
-    let audioContext = null;
-    let processor = null;
-    let source = null;
-    let running = false;
-    let sentPackets = 0;
-    let lastPacketStatusAt = 0;
-
-    function setStatus(text) {
-      statusEl.textContent = text;
-    }
+    const state = {
+      socket: null,
+      clientId: null,
+      connected: false,
+      streaming: false,
+      stream: null,
+      audioContext: null,
+      source: null,
+      worklet: null,
+      processor: null,
+      zeroGain: null,
+      sampleRate: 0,
+      chunkBuffers: [],
+      bufferedSamples: 0,
+      targetChunkMs: 40,
+      segments: [],
+      wakeEnabled: false,
+      lastPingAt: 0
+    };
 
     function wsUrl() {
-      return `ws://${window.location.hostname}:8021/ws`;
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      return proto + "//" + location.host + "/ws/transcribe";
     }
 
-    function buildPacket(samples, sampleRate) {
-      const metadata = new TextEncoder().encode(JSON.stringify({ sampleRate }));
-      const header = new ArrayBuffer(4);
-      new DataView(header).setUint32(0, metadata.byteLength, true);
-      return new Blob([header, metadata, samples.buffer]);
+    ui.endpointText.textContent = wsUrl();
+
+    function nowTime() {
+      return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     }
 
-    function floatToInt16(floatSamples) {
-      const intSamples = new Int16Array(floatSamples.length);
-      for (let index = 0; index < floatSamples.length; index += 1) {
-        const clamped = Math.max(-1, Math.min(1, floatSamples[index]));
-        intSamples[index] = clamped < 0 ? clamped * 32768 : clamped * 32767;
+    function formatWallTime(timestamp) {
+      const number = Number(timestamp);
+      if (!Number.isFinite(number)) return nowTime();
+      return new Date(number * 1000).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+
+    function addEvent(text, detail, timestamp) {
+      const row = document.createElement("div");
+      row.className = "event";
+      const time = document.createElement("time");
+      time.textContent = timestamp ? formatWallTime(timestamp) : nowTime();
+      const body = document.createElement("span");
+      body.textContent = text;
+      if (detail) {
+        const small = document.createElement("small");
+        small.textContent = detail;
+        body.append(small);
       }
-      return intSamples;
+      row.append(time, body);
+      ui.eventLog.prepend(row);
+      while (ui.eventLog.children.length > 40) ui.eventLog.lastChild.remove();
     }
 
-    async function start() {
-      toggle.disabled = true;
-      setStatus("Connecting to STT server...");
+    function setServerState(text, mode) {
+      ui.serverState.textContent = text;
+      ui.serverDot.className = "dot " + (mode || "wait");
+    }
 
-      socket = new WebSocket(wsUrl());
-      let resolveServerReady = null;
-      const serverReady = new Promise((resolve) => {
-        resolveServerReady = resolve;
-      });
+    function setRecordState(text, mode) {
+      ui.recordState.textContent = text;
+      let className = "";
+      if (mode === true) className = "live";
+      else if (typeof mode === "string") className = mode;
+      ui.recordDot.className = "dot " + className;
+    }
 
-      socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        if (message.type === "realtime") {
-          realtimeEl.textContent = message.text || "";
-        } else if (message.type === "final") {
-          realtimeEl.textContent = "";
-          finalEl.textContent += `${message.text}\n`;
-        } else if (message.type === "status") {
-          setStatus(message.text);
-          if (message.text.startsWith("Connected.") && resolveServerReady) {
-            resolveServerReady();
-            resolveServerReady = null;
-          }
-        } else if (message.type === "error") {
-          setStatus(message.text);
-        }
+    function stateLabel(serverState) {
+      const labels = {
+        idle: "Idle",
+        listening: "Waiting for voice",
+        voice: "Voice detected",
+        silence: "Silence",
+        wakeword_wait: "Waiting for wake word",
+        wakeword_detected: "Waiting for voice",
+        wakeword_timeout: "Wake word timeout",
+        recording: "Recording",
+        transcribing: "Transcribing",
+        closed: "Closed"
       };
+      return labels[serverState] || String(serverState || "Idle");
+    }
 
-      await new Promise((resolve, reject) => {
-        socket.onopen = resolve;
-        socket.onerror = reject;
+    function stateTone(serverState) {
+      if (serverState === "recording" || serverState === "transcribing" || serverState === "voice") return "live";
+      if (serverState === "wakeword_wait" || serverState === "wakeword_detected" || serverState === "listening") return "wait";
+      return "";
+    }
+
+    function connectSocket() {
+      if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        return Promise.resolve(state.socket);
+      }
+
+      return new Promise((resolve, reject) => {
+        const socket = new WebSocket(wsUrl());
+        socket.binaryType = "arraybuffer";
+        state.socket = socket;
+        setServerState("Connecting", "wait");
+
+        socket.onopen = () => {
+          state.connected = true;
+          setServerState("Connected", "ready");
+          addEvent("WebSocket connected");
+          resolve(socket);
+        };
+
+        socket.onmessage = (event) => handleServerMessage(JSON.parse(event.data));
+
+        socket.onerror = () => {
+          setServerState("Socket error", "wait");
+          addEvent("WebSocket error");
+          reject(new Error("WebSocket error"));
+        };
+
+        socket.onclose = () => {
+          state.connected = false;
+          setServerState("Disconnected", "wait");
+          addEvent("WebSocket disconnected");
+        };
       });
+    }
 
-      setStatus("Loading STT models...");
-      await serverReady;
-      setStatus("Requesting microphone...");
-
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioContext = new AudioContext();
-      source = audioContext.createMediaStreamSource(stream);
-      processor = audioContext.createScriptProcessor(1024, 1, 1);
-
-      processor.onaudioprocess = (event) => {
-        if (!running || socket.readyState !== WebSocket.OPEN) {
-          return;
+    function handleServerMessage(message) {
+      if (message.type === "hello") {
+        state.clientId = message.clientId;
+        applySettings(message.settings);
+      } else if (message.type === "ready") {
+        applySettings(message.settings);
+        setServerState("Ready", "ready");
+        addEvent("Recorder ready");
+      } else if (message.type === "status") {
+        ui.queueDepth.textContent = String(message.queueDepth || 0);
+        if (message.state) {
+          const label = stateLabel(message.state);
+          ui.subtitle.textContent = label;
+          setRecordState(label, stateTone(message.state));
         }
-        const samples = floatToInt16(event.inputBuffer.getChannelData(0));
-        socket.send(buildPacket(samples, audioContext.sampleRate));
-        sentPackets += 1;
-        if (sentPackets === 1 || sentPackets - lastPacketStatusAt >= 100) {
-          lastPacketStatusAt = sentPackets;
-          setStatus(`Listening. Audio packets sent: ${sentPackets}`);
-        }
+      } else if (message.type === "timeline") {
+        addEvent(timelineTitle(message), timelineDetail(message), message.timestamp);
+      } else if (message.type === "realtime") {
+        upsertSegment(message.segmentId, message.displayText || message.text, false, {
+          segment: message.segment || null,
+          rawText: message.rawText || message.text || "",
+          displayText: message.displayText || message.text || "",
+          stableText: message.stableText || message.committedStableText || "",
+          unstableText: message.visualUnstableText || message.unstableText || "",
+          sequence: message.sequence,
+          isOutlier: Boolean(message.isOutlier)
+        });
+      } else if (message.type === "final") {
+        upsertSegment(message.segmentId, message.text, true, { segment: message.segment || null });
+      } else if (message.type === "clear") {
+        state.segments = [];
+        renderTranscript();
+        addEvent("Transcript cleared");
+      } else if (message.type === "error") {
+        addEvent("Error: " + message.message);
+      } else if (message.type === "warning") {
+        addEvent("Warning: " + message.message);
+      } else if (message.type === "pong") {
+        ui.latency.textContent = Math.max(0, Math.round(performance.now() - state.lastPingAt)) + " ms";
+      }
+    }
+
+    function timelineTitle(message) {
+      const labels = {
+        final_transcript: "Final transcript",
+        realtime_transcript: "Realtime update",
+        recording_ended: "Recording ended",
+        recording_started: "Recording started",
+        transcription_started: "Final transcription started",
+        wakeword_detected: "Wake word detected",
+        wakeword_followup_started: "Follow-up voice window",
+        wakeword_followup_timeout: "Follow-up timeout",
+        wakeword_timeout: "Wake word timeout",
+        wakeword_wait_ended: "Wake word wait ended",
+        wakeword_wait_started: "Waiting for wake word"
       };
-
-      source.connect(processor);
-      processor.connect(audioContext.destination);
-
-      running = true;
-      sentPackets = 0;
-      lastPacketStatusAt = 0;
-      toggle.textContent = "Stop";
-      toggle.disabled = false;
-      setStatus("Listening.");
+      return labels[message.event] || message.event || "Timeline event";
     }
 
-    async function stop() {
-      running = false;
-      toggle.disabled = true;
-
-      if (processor) processor.disconnect();
-      if (source) source.disconnect();
-      if (stream) stream.getTracks().forEach((track) => track.stop());
-      if (audioContext) await audioContext.close();
-      if (socket) socket.close();
-
-      processor = null;
-      source = null;
-      stream = null;
-      audioContext = null;
-      socket = null;
-
-      toggle.textContent = "Start";
-      toggle.disabled = false;
-      setStatus("Stopped.");
+    function timelineDetail(message) {
+      const details = [];
+      if (message.segmentId) details.push("Segment " + message.segmentId);
+      const segment = message.segment || {};
+      if (segment.recordingStartedAt) details.push("start " + formatWallTime(segment.recordingStartedAt));
+      if (segment.recordingEndedAt) details.push("end " + formatWallTime(segment.recordingEndedAt));
+      if (Number.isFinite(Number(segment.durationSeconds))) {
+        details.push("duration " + formatSeconds(segment.durationSeconds));
+      } else if (Number.isFinite(Number(message.durationSeconds))) {
+        details.push("duration " + formatSeconds(message.durationSeconds));
+      }
+      if (segment.preRecordingBuffer) {
+        details.push("pre-roll " + formatSeconds(segment.preRecordingBuffer.includedSeconds));
+      }
+      const wake = message.wakeWord || segment.wakeWord;
+      if (wake && wake.enabled) {
+        if (wake.detectedAt) details.push("wake " + formatWallTime(wake.detectedAt));
+        else if (wake.timeoutAt) details.push("timeout " + formatWallTime(wake.timeoutAt));
+        else if (wake.state) details.push(wake.state.replaceAll("_", " "));
+      }
+      if (message.reason) details.push(message.reason);
+      return details.join(" - ");
     }
 
-    toggle.addEventListener("click", async () => {
-      try {
-        if (running) {
-          await stop();
+    function applySettings(settings) {
+      if (!settings) return;
+      const finalEngine = settings.transcription_engine || "--";
+      const realtimeEngine = settings.realtime_transcription_engine || settings.transcription_engine || "--";
+      const usesParakeet = String(finalEngine).includes("parakeet") || String(realtimeEngine).includes("parakeet");
+      state.wakeEnabled = Boolean(settings.wake_word_enabled);
+      ui.tuningProfile.textContent = settings.tuning_profile || "custom";
+      ui.finalModel.textContent = settings.model || "--";
+      if (settings.use_main_model_for_realtime) {
+        ui.realtimeModel.textContent = (settings.model || "--") + " (same as final)";
+        ui.engineName.textContent = finalEngine + " / same";
+      } else {
+        ui.realtimeModel.textContent = settings.realtime_model || settings.model || "--";
+        ui.engineName.textContent = finalEngine + " / " + realtimeEngine;
+      }
+      ui.deviceName.textContent = (settings.device || "--") + " / " + (settings.compute_type || "default");
+      ui.cadenceInfo.textContent = formatSeconds(settings.realtime_processing_pause) + " realtime pause, batch " + settings.realtime_batch_size;
+      ui.vadInfo.textContent = formatSeconds(settings.post_speech_silence_duration) + " final silence, min " + formatSeconds(settings.min_length_of_recording);
+      ui.wakeInfo.textContent = settings.wake_word_enabled
+        ? (settings.wakeword_backend || "wake") + " / " + (settings.wake_words || "model")
+        : "Off";
+      ui.decodeInfo.textContent = usesParakeet
+        ? "Parakeet: batch " + settings.batch_size + "; beam not used"
+        : "Beam " + settings.beam_size + " final / " + settings.beam_size_realtime + " realtime";
+    }
+
+    function formatSeconds(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return "--";
+      return number.toFixed(number < 1 ? 2 : 1) + "s";
+    }
+
+    function upsertSegment(id, text, final, details = {}) {
+      const segmentId = Number(id);
+      let segment = state.segments.find(item => item.id === segmentId);
+      if (!segment) {
+        segment = { id: segmentId, text: "", final: false, createdAt: Date.now() };
+        state.segments.push(segment);
+      }
+      segment.text = text || "";
+      segment.final = final;
+      segment.timeline = details.segment || segment.timeline || null;
+      segment.rawText = final ? "" : details.rawText || "";
+      segment.displayText = final ? text : details.displayText || text || "";
+      segment.stableText = final ? "" : details.stableText || "";
+      segment.unstableText = final ? "" : details.unstableText || "";
+      segment.sequence = final ? undefined : details.sequence;
+      segment.isOutlier = !final && Boolean(details.isOutlier);
+      segment.updatedAt = Date.now();
+      renderTranscript();
+      ui.transcript.scrollTop = ui.transcript.scrollHeight;
+    }
+
+    function renderTranscript() {
+      ui.transcript.replaceChildren();
+      if (state.segments.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No transcript yet. Start the stream and speak.";
+        ui.transcript.append(empty);
+        return;
+      }
+
+      for (const segment of state.segments) {
+        const article = document.createElement("article");
+        article.className = "segment " + (segment.final ? "final" : "interim");
+        const meta = document.createElement("div");
+        meta.className = "segment-meta";
+        const left = document.createElement("span");
+        left.textContent = segment.final ? "Final" : "Realtime";
+        const right = document.createElement("span");
+        right.textContent = segment.sequence
+          ? "Segment " + segment.id + " / #" + segment.sequence
+          : "Segment " + segment.id;
+        const body = document.createElement("div");
+        body.className = "segment-text";
+        if (!segment.final && (segment.stableText || segment.unstableText)) {
+          const stable = document.createElement("span");
+          stable.className = "stable-text";
+          stable.textContent = segment.stableText || "";
+          const unstable = document.createElement("span");
+          unstable.className = "unstable-text";
+          unstable.textContent = segment.unstableText || "";
+          body.append(stable, unstable);
         } else {
-          await start();
+          body.textContent = segment.text;
         }
+        meta.append(left, right);
+        article.append(meta, body);
+        ui.transcript.append(article);
+      }
+    }
+
+    async function startStream() {
+      await connectSocket();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1
+        }
+      });
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      const audioContext = new AudioContextClass({ latencyHint: "interactive" });
+      state.stream = stream;
+      state.audioContext = audioContext;
+      state.sampleRate = audioContext.sampleRate;
+      ui.sampleRate.textContent = String(audioContext.sampleRate) + " Hz";
+
+      const source = audioContext.createMediaStreamSource(stream);
+      const zeroGain = audioContext.createGain();
+      zeroGain.gain.value = 0;
+      zeroGain.connect(audioContext.destination);
+      state.source = source;
+      state.zeroGain = zeroGain;
+
+      if (audioContext.audioWorklet) {
+        const workletSource = "class CoreSTTCapture extends AudioWorkletProcessor { process(inputs) { const input = inputs[0]; if (input && input[0]) this.port.postMessage(input[0].slice(0)); return true; } } registerProcessor('corestt-capture', CoreSTTCapture);";
+        const blob = new Blob([workletSource], { type: "application/javascript" });
+        const url = URL.createObjectURL(blob);
+        await audioContext.audioWorklet.addModule(url);
+        URL.revokeObjectURL(url);
+        const node = new AudioWorkletNode(audioContext, "corestt-capture");
+        node.port.onmessage = event => enqueueSamples(event.data);
+        source.connect(node);
+        node.connect(zeroGain);
+        state.worklet = node;
+      } else {
+        const processor = audioContext.createScriptProcessor(1024, 1, 1);
+        processor.onaudioprocess = event => enqueueSamples(event.inputBuffer.getChannelData(0));
+        source.connect(processor);
+        processor.connect(zeroGain);
+        state.processor = processor;
+      }
+
+      state.streaming = true;
+      ui.streamButton.classList.add("active");
+      ui.streamButton.textContent = "Stop stream";
+      setRecordState("Streaming", true);
+      state.socket.send(JSON.stringify({ type: "start" }));
+      addEvent("Microphone stream started");
+      if (state.wakeEnabled) {
+        setRecordState("Waiting for wake word", "wait");
+        ui.subtitle.textContent = "Waiting for wake word";
+      } else {
+        setRecordState("Waiting for voice", "wait");
+        ui.subtitle.textContent = "Waiting for voice";
+      }
+    }
+
+    function stopStream() {
+      state.streaming = false;
+      flushAudio();
+      if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        state.socket.send(JSON.stringify({ type: "stop" }));
+      }
+      if (state.worklet) state.worklet.disconnect();
+      if (state.processor) state.processor.disconnect();
+      if (state.source) state.source.disconnect();
+      if (state.zeroGain) state.zeroGain.disconnect();
+      if (state.stream) state.stream.getTracks().forEach(track => track.stop());
+      if (state.audioContext) state.audioContext.close();
+      state.worklet = null;
+      state.processor = null;
+      state.source = null;
+      state.zeroGain = null;
+      state.stream = null;
+      state.audioContext = null;
+      state.chunkBuffers = [];
+      state.bufferedSamples = 0;
+      ui.streamButton.classList.remove("active");
+      ui.streamButton.textContent = "Start stream";
+      setRecordState("Idle", "");
+      ui.subtitle.textContent = "Idle";
+      addEvent("Microphone stream stopped");
+    }
+
+    function enqueueSamples(samples) {
+      if (!state.streaming || !state.socket || state.socket.readyState !== WebSocket.OPEN) return;
+      const copy = new Float32Array(samples);
+      state.chunkBuffers.push(copy);
+      state.bufferedSamples += copy.length;
+      const targetSamples = Math.max(256, Math.floor(state.sampleRate * state.targetChunkMs / 1000));
+      if (state.bufferedSamples >= targetSamples) flushAudio();
+    }
+
+    function flushAudio() {
+      if (!state.bufferedSamples || !state.socket || state.socket.readyState !== WebSocket.OPEN) return;
+      const merged = new Float32Array(state.bufferedSamples);
+      let offset = 0;
+      for (const chunk of state.chunkBuffers) {
+        merged.set(chunk, offset);
+        offset += chunk.length;
+      }
+      state.chunkBuffers = [];
+      state.bufferedSamples = 0;
+
+      const pcm = new Int16Array(merged.length);
+      for (let i = 0; i < merged.length; i++) {
+        const value = Math.max(-1, Math.min(1, merged[i]));
+        pcm[i] = value < 0 ? value * 32768 : value * 32767;
+      }
+
+      const metadata = {
+        sampleRate: state.sampleRate,
+        channels: 1,
+        format: "pcm_s16le",
+        frames: pcm.length,
+        sentAt: performance.now()
+      };
+      state.socket.send(encodePacket(metadata, pcm.buffer));
+    }
+
+    function encodePacket(metadata, audioBuffer) {
+      const metadataBytes = new TextEncoder().encode(JSON.stringify(metadata));
+      const packet = new ArrayBuffer(4 + metadataBytes.byteLength + audioBuffer.byteLength);
+      const view = new DataView(packet);
+      view.setUint32(0, metadataBytes.byteLength, true);
+      new Uint8Array(packet, 4, metadataBytes.byteLength).set(metadataBytes);
+      new Uint8Array(packet, 4 + metadataBytes.byteLength).set(new Uint8Array(audioBuffer));
+      return packet;
+    }
+
+    ui.streamButton.addEventListener("click", async () => {
+      try {
+        if (state.streaming) stopStream();
+        else await startStream();
       } catch (error) {
-        setStatus(error.message || String(error));
-        toggle.textContent = "Start";
-        toggle.disabled = false;
-        running = false;
+        addEvent("Start failed: " + error.message);
+        stopStream();
       }
     });
+
+    ui.clearButton.addEventListener("click", () => {
+      state.segments = [];
+      renderTranscript();
+      if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        state.socket.send(JSON.stringify({ type: "clear" }));
+      }
+    });
+
+    ui.connectButton.addEventListener("click", () => connectSocket().catch(error => addEvent(error.message)));
+
+    ui.copyButton.addEventListener("click", async () => {
+      const text = state.segments.map(segment => segment.text).join("\n").trim();
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
+      addEvent("Transcript copied");
+    });
+
+    setInterval(() => {
+      if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        state.lastPingAt = performance.now();
+        state.socket.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 2500);
+
+    connectSocket().catch(() => {});
+    renderTranscript();
   </script>
 </body>
 </html>
