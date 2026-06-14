@@ -15,6 +15,7 @@ Use this file to avoid scanning the full repo.
 | Server timeline/metrics helpers | `CoreSTT/CoreSTT/server/timeline.py`, `CoreSTT/CoreSTT/server/stats.py`, `CoreSTT/CoreSTT/server/connection.py` | `CoreSTT/tests/test_server_config.py`, `CoreSTT/tests/test_server_protocol.py` | Segment timeline state, running statistics, and websocket connection tracking. |
 | Server inference scheduler | `CoreSTT/CoreSTT/server/inference.py` | `CoreSTT/tests/test_server_config.py`, `CoreSTT/tests/test_server_protocol.py` | Fair inference queue, shared engine worker, scheduler, and transcription executor. Preserve queue and threading behavior. |
 | Browser audio protocol | `CoreSTT/protocol.py` | `CoreSTT/tests/test_server_protocol.py`, `CoreSTT/tests/test_server_config.py` | Binary packet helpers and JSON/config parsing used by server and UI. |
+| WebSocket client integration contract | `docs/WEBSOCKET_CLIENT_CONTRACT.md`, `CoreSTT/protocol.py`, `CoreSTT/static/index.html` | `CoreSTT/tests/test_server_protocol.py` | Cross-platform client request/input contract for web, Windows, Android, iOS, macOS, and backend clients. |
 | Browser console UI | `CoreSTT/static/index.html` | `CoreSTT/tests/test_server_config.py` covers serving index | Microphone console for live transcript, session state, events, metrics, and config display. |
 | Stress testing harness | `CoreSTT/tools/stress/harness.py` | `CoreSTT/tests/test_stress_harness.py` | Standalone websocket load generator for handshake-only or synthetic audio streaming sessions. Does not change server runtime behavior. |
 | Setup/runtime docs | `CoreSTT/README.md`, `CoreSTT/requirements.txt` | To verify | README is the current source for setup, run, endpoints, and package usage. |
@@ -26,6 +27,9 @@ Use this file to avoid scanning the full repo.
   and `AudioToTextRecorder` constructor arguments.
 - Protocols/message contracts: `CoreSTT/protocol.py`, `WS /ws/transcribe`, and
   server runtime config request/response behavior.
+- WebSocket client contract: update `docs/WEBSOCKET_CLIENT_CONTRACT.md` when
+  `/ws/transcribe`, JSON control messages, binary packet layout, audio metadata
+  validation, or server message shapes intentionally change.
 - Config/env names: server CLI options and runtime setting names in
   `CoreSTT/server.py` and `CoreSTT/CoreSTT/server/settings.py`.
 - Server compatibility: imports from `CoreSTT/server.py` for

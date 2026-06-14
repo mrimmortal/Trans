@@ -125,3 +125,20 @@ Next:
 - Use handshake mode first to find session-limit or websocket-admission issues,
   then scale stream mode gradually to measure queue and transcript latency
   degradation.
+
+## 2026-06-14 - Add WebSocket Client Contract
+
+Changed:
+- Added `docs/WEBSOCKET_CLIENT_CONTRACT.md` to standardize client-to-server
+  WebSocket integration.
+- Documented JSON control messages, binary audio packet format, metadata
+  schema, platform integration notes, and server response types.
+- Updated `AI_CONTEXT.md` and `docs/MODULE_MAP.md` with the new integration
+  contract pointer.
+
+Validation:
+- Docs-only change; tests not run.
+- Checked packet format against `CoreSTT/protocol.py`.
+- Checked control messages against `CoreSTT/static/index.html` and
+  `CoreSTT/server.py`.
+- Checked audio metadata validation rules against `CoreSTT/server.py`.

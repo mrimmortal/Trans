@@ -26,6 +26,8 @@ commands as local validation.
   compatibility exports, and script entrypoint.
 - `CoreSTT/protocol.py`: binary browser audio packet and config parsing helpers.
 - `CoreSTT/static/index.html`: browser console UI.
+- `docs/WEBSOCKET_CLIENT_CONTRACT.md`: standardized client request/input
+  contract for `WS /ws/transcribe`; read before building non-browser clients.
 - `CoreSTT/tools/stress/harness.py`: repo-local websocket stress and soak test
   harness for concurrent handshake or synthetic audio streaming load.
 - `CoreSTT/tests/`: `unittest` coverage for server config and protocol behavior.
@@ -68,6 +70,8 @@ See `docs/COMMANDS.md`.
   user explicitly asks for a breaking API change.
 - Preserve binary packet behavior in `CoreSTT/protocol.py` and websocket server
   expectations unless intentionally changing the browser/server contract.
+- Use `docs/WEBSOCKET_CLIENT_CONTRACT.md` as the integration contract for
+  browser, desktop, mobile, CLI, and backend websocket clients.
 - Preserve `CoreSTT/server.py` compatibility exports including
   `create_app`, `parse_args`, `settings_from_args`, `main`, and
   `ServerSettings`; internal server modules are implementation details.
