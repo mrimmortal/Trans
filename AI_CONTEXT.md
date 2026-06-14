@@ -28,6 +28,8 @@ commands as local validation.
 - `CoreSTT/static/index.html`: browser console UI.
 - `docs/WEBSOCKET_CLIENT_CONTRACT.md`: standardized client request/input
   contract for `WS /ws/transcribe`; read before building non-browser clients.
+- `Web Client/`: Vite React TypeScript transcription editor that consumes
+  `docs/WEBSOCKET_CLIENT_CONTRACT.md` and connects to CoreSTT WS `/ws/transcribe`.
 - `CoreSTT/tools/stress/harness.py`: repo-local websocket stress and soak test
   harness for concurrent handshake or synthetic audio streaming load.
 - `CoreSTT/tests/`: `unittest` coverage for server config and protocol behavior.

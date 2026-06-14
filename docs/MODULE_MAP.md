@@ -18,6 +18,7 @@ Use this file to avoid scanning the full repo.
 | WebSocket client integration contract | `docs/WEBSOCKET_CLIENT_CONTRACT.md`, `CoreSTT/protocol.py`, `CoreSTT/static/index.html` | `CoreSTT/tests/test_server_protocol.py` | Cross-platform client request/input contract for web, Windows, Android, iOS, macOS, and backend clients. |
 | Browser console UI | `CoreSTT/static/index.html` | `CoreSTT/tests/test_server_config.py` covers serving index | Microphone console for live transcript, session state, events, metrics, and config display. |
 | Stress testing harness | `CoreSTT/tools/stress/harness.py` | `CoreSTT/tests/test_stress_harness.py` | Standalone websocket load generator for handshake-only or synthetic audio streaming sessions. Does not change server runtime behavior. |
+| Web transcription editor | `Web Client/`, `docs/WEBSOCKET_CLIENT_CONTRACT.md` | To verify | Standalone browser client for CoreSTT WebSocket transcription, realtime preview, editable transcript, copy/export, and cross-platform contract usage. |
 | Setup/runtime docs | `CoreSTT/README.md`, `CoreSTT/requirements.txt` | To verify | README is the current source for setup, run, endpoints, and package usage. |
 | CI/deployment | `.github/workflows/medical-dictation-pipeline.yml` | To verify | Workflow targets `medical-dictation/`, which is not present in this checkout. |
 

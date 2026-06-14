@@ -2,6 +2,49 @@
 
 Keep entries compact and useful for future continuation.
 
+## 2026-06-14 - Upgrade Editor to TipTap Rich Text
+
+Changed:
+- Replaced plain `<textarea>` editor with TipTap-based rich text editor (22
+  ProseMirror extensions).
+- Added full formatting toolbar: Bold, Italic, Underline, Strike, Code,
+  Superscript, Subscript, Font Family, Font Size, Text Color, Highlight,
+  Headings H1-H6, Alignment, Bullet/Ordered/Task Lists, Blockquote, Code
+  Block, Horizontal Rule, Link, Image, Table (with grid picker + row/col
+  ops), Undo/Redo, Clear Formatting, Find/Replace.
+- Added Find/Replace panel with case-sensitive toggle, count, replace all.
+- Added reusable Dialog component for link/image URL entry.
+- Added custom FontSize TipTap extension.
+- Added turndown for HTML-to-Markdown export.
+- Updated exports: .txt, .md, .html, .doc (Word-compatible).
+- Refactored hook to ref-based editor control (removed transcriptText state).
+- Editor autosaves HTML to localStorage (debounced).
+- Bundle ~568 KB (TipTap + ProseMirror + turndown).
+
+Validation:
+- `npm run build` (tsc + vite build): passed.
+- TypeScript strict mode: 0 errors.
+- 160 modules transformed.
+- Chunk size warning for bundle > 500 KB (expected with TipTap).
+
+## 2026-06-14 - Add Web Client Transcription Editor
+
+Changed:
+- Added `Web Client/` as a Vite React TypeScript transcription editor.
+- Implemented WebSocket connection, JSON control messages, binary PCM packet
+  encoding, microphone capture, realtime preview, editable final transcript,
+  local autosave, copy/export, event log, and server status.
+- Added Web Client README and feature plan docs.
+- Updated AI context and module map.
+
+Validation:
+- `cd "Web Client" && npm install && npm run build`: passed.
+- TypeScript compiles with no errors (strict mode).
+- Vite production build produces dist/ (index.html, assets CSS + JS).
+- Packet encoder uses DataView.setUint32(..., true) for little-endian.
+- AudioWorklet with ScriptProcessor fallback.
+- Audio cleanup stops all tracks and closes AudioContext.
+
 ## 2026-06-13 - Bootstrap AI Context Docs
 
 Changed:
