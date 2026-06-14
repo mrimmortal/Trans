@@ -155,7 +155,7 @@ export function useTranscriptionSession(editorRef: React.RefObject<EditorHandle 
           setRealtimePreview({ text: "", segmentId: null, queueDelayMs: 0, inferenceMs: 0, latencyMs: 0 });
           const finalText = message.text ?? "";
           if (finalText && editorRef.current) {
-            editorRef.current.appendParagraph(finalText);
+            editorRef.current.appendFormattedText(finalText);
             setHasContent(true);
           }
           addEvent("final", `[${message.segmentId}] ${finalText.slice(0, 60)}`);

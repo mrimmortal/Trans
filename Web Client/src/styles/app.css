@@ -957,6 +957,44 @@ select {
   font-size: 13px;
 }
 
+/* ─── Voice Commands ─── */
+
+.vc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vc-row {
+  display: grid;
+  grid-template-columns: 1fr 16px 1fr;
+  gap: 4px;
+  align-items: center;
+  font-size: 11px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vc-row:last-child {
+  border-bottom: 0;
+}
+
+.vc-say {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--cyan);
+  font-size: 10px;
+  word-break: break-word;
+}
+
+.vc-arrow {
+  color: var(--muted);
+  text-align: center;
+}
+
+.vc-does {
+  color: var(--soft);
+}
+
 /* ─── Responsive ─── */
 
 @media (max-width: 860px) {

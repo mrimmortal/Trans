@@ -33,9 +33,11 @@ import { EditorToolbar } from "./EditorToolbar";
 import { FindReplace } from "./FindReplace";
 import { Dialog } from "./Dialog";
 import { loadTranscriptHtml, saveTranscriptHtml, clearTranscriptDraft } from "../services/transcriptStorage";
+import { parseVoiceCommands, processCaseTransforms, type Fragment } from "../services/voiceCommands";
 
 export interface EditorHandle {
   appendParagraph: (text: string) => void;
+  appendFormattedText: (text: string) => void;
   clear: () => void;
   getText: () => string;
   getHTML: () => string;
@@ -127,6 +129,107 @@ export const TranscriptEditor = forwardRef<EditorHandle, Props>(
               content: [{ type: "text", text }],
             })
             .run();
+        },
+        appendFormattedText: (text: string) => {
+          if (!editor) return;
+          const stripped = text.replace(/\.+$/, "");
+          if (!stripped) return;
+
+          let fragments = parseVoiceCommands(stripped);
+          if (fragments.length === 0) return;
+
+          const hasUndo = fragments.some((f) => f.type === "actionUndo");
+          if (hasUndo) {
+            editor.chain().undo().run();
+            fragments = fragments.filter((f) => f.type !== "actionUndo");
+          }
+
+          const hasDelete = fragments.some((f) => f.type === "actionDeleteLastWord");
+          if (hasDelete) {
+            fragments = fragments.filter((f) => f.type !== "actionDeleteLastWord");
+          }
+
+          if (fragments.length === 0) {
+            if (hasDelete) {
+              const end = editor.state.selection.$anchor.pos;
+              const textBefore = editor.state.doc.textBetween(0, end);
+              const match = textBefore.match(/\s*(\S+)\s*$/);
+              if (match) {
+                const from = end - match[0].length;
+                editor.chain().focus().deleteRange({ from, to: end }).run();
+              }
+            }
+            return;
+          }
+
+          fragments = processCaseTransforms(fragments);
+
+          const groups: Fragment[][] = [[]];
+          for (const frag of fragments) {
+            if (frag.type === "newParagraph") {
+              groups.push([]);
+            } else {
+              groups[groups.length - 1]!.push(frag);
+            }
+          }
+
+          const insertGroup = (group: Fragment[], prependSpace: boolean) => {
+            if (group.length === 0) return;
+            if (prependSpace) {
+              editor.chain().focus().insertContent(" ").run();
+            }
+            let chain = editor.chain().focus();
+            for (let i = 0; i < group.length; i++) {
+              const f = group[i];
+              const next = group[i + 1];
+              if (!f) continue;
+              if (f.type === "toggleBold") { chain = chain.toggleBold(); continue; }
+              if (f.type === "toggleItalic") { chain = chain.toggleItalic(); continue; }
+              if (f.type === "toggleUnderline") { chain = chain.toggleUnderline(); continue; }
+              if (f.type === "toggleStrikethrough") { chain = chain.toggleStrike(); continue; }
+              if (f.type === "hardBreak") { chain = chain.setHardBreak(); continue; }
+              if (f.type === "text") {
+                let t = f.text;
+                if (next?.type === "insertPeriod") t = t.replace(/ +$/, "");
+                if (t) chain = chain.insertContent(t);
+                continue;
+              }
+              if (f.type === "insertSpace") { chain = chain.insertContent(" "); continue; }
+              if (f.type === "insertTab") { chain = chain.insertContent("\t"); continue; }
+              if (f.type === "insertPeriod") { chain = chain.insertContent("."); continue; }
+              if (f.type === "insertComma") { chain = chain.insertContent(","); continue; }
+              if (f.type === "insertQuestion") { chain = chain.insertContent("?"); continue; }
+              if (f.type === "insertExclamation") { chain = chain.insertContent("!"); continue; }
+              if (f.type === "insertHyphen") { chain = chain.insertContent("-"); continue; }
+              if (f.type === "insertColon") { chain = chain.insertContent(":"); continue; }
+              if (f.type === "insertSemicolon") { chain = chain.insertContent(";"); continue; }
+            }
+            chain.run();
+          };
+
+          const firstGroup = groups[0]!;
+          const needsSpace = !editor.isEmpty && firstGroup.some((f) => f?.type === "text");
+          insertGroup(firstGroup, needsSpace);
+
+          for (let i = 1; i < groups.length; i++) {
+            const block = groups[i]!;
+            if (block.length === 0) continue;
+            editor.chain().focus().insertContentAt(editor.state.doc.content.size, {
+              type: "paragraph",
+              content: [{ type: "text", text: "" }],
+            }).run();
+            insertGroup(block, false);
+          }
+
+          if (hasDelete) {
+            const end = editor.state.selection.$anchor.pos;
+            const textBefore = editor.state.doc.textBetween(0, end);
+            const match = textBefore.match(/\s*(\S+)\s*$/);
+            if (match) {
+              const from = end - match[0].length;
+              editor.chain().focus().deleteRange({ from, to: end }).run();
+            }
+          }
         },
         clear: () => {
           if (!editor) return;

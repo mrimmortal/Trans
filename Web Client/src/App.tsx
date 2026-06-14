@@ -8,6 +8,7 @@ import { TranscriptEditor } from "./components/TranscriptEditor";
 import { TranscriptToolbar } from "./components/TranscriptToolbar";
 import { EventLog } from "./components/EventLog";
 import { ServerStatusPanel } from "./components/ServerStatusPanel";
+import { VoiceCommandsPanel } from "./components/VoiceCommandsPanel";
 import "./styles/app.css";
 
 export default function App() {
@@ -81,6 +82,7 @@ export default function App() {
             onExportHtml={() => exportTranscript("html")}
             onExportDoc={() => exportTranscript("doc")}
           />
+          <VoiceCommandsPanel />
           <ServerStatusPanel status={serverStatus} />
           <EventLog events={eventLog} />
         </aside>
