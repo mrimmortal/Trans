@@ -33,6 +33,33 @@ macOS PyAudio prerequisite:
 brew install portaudio
 ```
 
+## Deployment Scripts
+
+From the repository root, macOS:
+
+```bash
+scripts/deploy-macos.sh
+```
+
+From the repository root, Linux:
+
+```bash
+scripts/deploy-linux.sh
+```
+
+Useful options:
+
+```bash
+scripts/deploy-macos.sh --setup-only
+scripts/deploy-linux.sh --setup-only
+scripts/deploy-macos.sh --host 127.0.0.1 --port 8020 --device cpu
+scripts/deploy-linux.sh --install-node --yes
+```
+
+The macOS and Linux scripts install OS prerequisites only when `--yes` is
+provided. Node.js is skipped unless `package.json` exists or `--install-node` is
+provided.
+
 ## Run
 
 From `CoreSTT/`:

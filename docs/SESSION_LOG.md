@@ -142,3 +142,19 @@ Validation:
 - Checked control messages against `CoreSTT/static/index.html` and
   `CoreSTT/server.py`.
 - Checked audio metadata validation rules against `CoreSTT/server.py`.
+
+## 2026-06-28 - Add Deployment Scripts
+
+Changed:
+- Added shared deployment runner `scripts/deploy.py`.
+- Added separate macOS and Linux wrappers for Python, PortAudio, optional Node,
+  virtualenv setup, package installation, and server execution.
+- Added focused deployment script tests and documented script commands.
+
+Validation:
+- `python3 -m unittest tests/test_deploy_script.py` from repo root: passed, 4
+  tests.
+
+Next:
+- Run a full setup with `scripts/deploy-macos.sh --setup-only` or
+  `scripts/deploy-linux.sh --setup-only` when dependency downloads are approved.
