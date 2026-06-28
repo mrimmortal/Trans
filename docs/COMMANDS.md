@@ -47,18 +47,26 @@ From the repository root, Linux:
 scripts/deploy-linux.sh
 ```
 
-Useful options:
+From the repository root, Windows PowerShell:
 
-```bash
-scripts/deploy-macos.sh --setup-only
-scripts/deploy-linux.sh --setup-only
-scripts/deploy-macos.sh --host 127.0.0.1 --port 8020 --device cpu
-scripts/deploy-linux.sh --install-node --yes
+```powershell
+.\scripts\deploy-windows.ps1
 ```
 
-The macOS and Linux scripts install OS prerequisites only when `--yes` is
-provided. Node.js is skipped unless `package.json` exists or `--install-node` is
-provided.
+The scripts use these defaults:
+
+```bash
+HOST=127.0.0.1 PORT=8020 DEVICE=cpu scripts/deploy-macos.sh
+HOST=127.0.0.1 PORT=8020 DEVICE=cpu scripts/deploy-linux.sh
+```
+
+```powershell
+.\scripts\deploy-windows.ps1 -HostAddress 127.0.0.1 -Port 8020 -Device cpu
+```
+
+Each script checks for Python 3.11 or newer, asks before attempting OS-level
+Python installation when supported, creates `CoreSTT/.venv`, installs
+`CoreSTT/requirements.txt`, and runs the server command documented below.
 
 ## Run
 

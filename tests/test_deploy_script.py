@@ -1,70 +1,45 @@
-import importlib.util
 import pathlib
 import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DEPLOY_PATH = ROOT / "scripts" / "deploy.py"
+MAC_SCRIPT = ROOT / "scripts" / "deploy-macos.sh"
+LINUX_SCRIPT = ROOT / "scripts" / "deploy-linux.sh"
+WINDOWS_SCRIPT = ROOT / "scripts" / "deploy-windows.ps1"
 
 
-def load_deploy_module():
-    spec = importlib.util.spec_from_file_location("deploy", DEPLOY_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+def read_script(path):
+    return path.read_text(encoding="utf-8")
 
 
 class DeployScriptTest(unittest.TestCase):
-    def test_python_version_supports_project_minimum(self):
-        deploy = load_deploy_module()
+    def test_mac_linux_and_windows_scripts_exist(self):
+        self.assertTrue(MAC_SCRIPT.exists())
+        self.assertTrue(LINUX_SCRIPT.exists())
+        self.assertTrue(WINDOWS_SCRIPT.exists())
 
-        self.assertTrue(deploy.is_supported_python((3, 11, 0)))
-        self.assertTrue(deploy.is_supported_python((3, 12, 2)))
-        self.assertFalse(deploy.is_supported_python((3, 10, 13)))
+    def test_shell_scripts_follow_documented_unix_commands(self):
+        for script in (MAC_SCRIPT, LINUX_SCRIPT):
+            with self.subTest(script=script.name):
+                text = read_script(script)
+                self.assertIn("python3.11", text)
+                self.assertIn("-m venv .venv", text)
+                self.assertIn(".venv/bin/python -m pip install -r requirements.txt", text)
+                self.assertIn('.venv/bin/python server.py --host "${HOST}" --port "${PORT}" --device "${DEVICE}"', text)
 
-    def test_node_install_is_conditional_on_manifest_or_flag(self):
-        deploy = load_deploy_module()
+    def test_windows_script_follows_documented_windows_commands(self):
+        text = read_script(WINDOWS_SCRIPT)
 
-        self.assertFalse(deploy.should_prepare_node(False, False))
-        self.assertTrue(deploy.should_prepare_node(True, False))
-        self.assertTrue(deploy.should_prepare_node(False, True))
+        self.assertIn("py -3.11", text)
+        self.assertIn("-m venv .venv", text)
+        self.assertIn(".venv\\Scripts\\python.exe -m pip install -r requirements.txt", text)
+        self.assertIn(".venv\\Scripts\\python.exe server.py --host $HostAddress --port $Port --device $Device", text)
 
-    def test_server_command_uses_venv_python_and_cpu_default(self):
-        deploy = load_deploy_module()
-        project = deploy.ProjectPaths(
-            root=pathlib.Path("/repo"),
-            corestt=pathlib.Path("/repo/CoreSTT"),
-            venv=pathlib.Path("/repo/CoreSTT/.venv"),
-        )
-
-        command = deploy.build_server_command(project, "127.0.0.1", 8020, "cpu")
-
-        self.assertEqual(command[1:], ["server.py", "--host", "127.0.0.1", "--port", "8020", "--device", "cpu"])
-        self.assertIn(".venv", command[0])
-
-    def test_force_reinstall_precedes_requirements_file_flag(self):
-        deploy = load_deploy_module()
-        project = deploy.ProjectPaths(
-            root=pathlib.Path("/repo"),
-            corestt=pathlib.Path("/repo/CoreSTT"),
-            venv=pathlib.Path("/repo/CoreSTT/.venv"),
-        )
-        commands = []
-
-        def record_command(command, cwd, dry_run=False):
-            commands.append(command)
-
-        deploy.run_command = record_command
-
-        deploy.install_python_packages(
-            project,
-            pathlib.Path("/repo/CoreSTT/.venv/bin/python"),
-            force_reinstall=True,
-            dry_run=True,
-        )
-
-        package_command = commands[1]
-        self.assertLess(package_command.index("--force-reinstall"), package_command.index("-r"))
+    def test_scripts_do_not_include_node_or_extra_python_runner(self):
+        self.assertFalse((ROOT / "scripts" / "deploy.py").exists())
+        for script in (MAC_SCRIPT, LINUX_SCRIPT, WINDOWS_SCRIPT):
+            with self.subTest(script=script.name):
+                self.assertNotIn("node", read_script(script).lower())
 
 
 if __name__ == "__main__":

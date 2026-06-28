@@ -3,28 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CORE_DIR="${ROOT_DIR}/CoreSTT"
 
-INSTALL_NODE=0
-YES=0
-PASSTHROUGH=()
-
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --install-node)
-      INSTALL_NODE=1
-      PASSTHROUGH+=("$1")
-      shift
-      ;;
-    --yes|-y)
-      YES=1
-      shift
-      ;;
-    *)
-      PASSTHROUGH+=("$1")
-      shift
-      ;;
-  esac
-done
+HOST="${HOST:-127.0.0.1}"
+PORT="${PORT:-8020}"
+DEVICE="${DEVICE:-cpu}"
 
 has_supported_python() {
   local candidate
@@ -40,45 +23,53 @@ PY
   return 1
 }
 
+find_python() {
+  local candidate
+  for candidate in "${PYTHON:-}" python3.13 python3.12 python3.11 python3; do
+    [[ -z "${candidate}" ]] && continue
+    if command -v "${candidate}" >/dev/null 2>&1; then
+      if "${candidate}" - <<'PY' >/dev/null 2>&1; then
+import sys
+raise SystemExit(0 if sys.version_info >= (3, 11) else 1)
+PY
+        echo "${candidate}"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+ask_yes_no() {
+  local prompt="$1"
+  local answer
+  read -r -p "${prompt} [y/N] " answer
+  [[ "${answer}" == "y" || "${answer}" == "Y" ]]
+}
+
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This script is for macOS. Use scripts/deploy-linux.sh on Linux." >&2
   exit 1
 fi
 
-if ! command -v brew >/dev/null 2>&1; then
-  echo "Homebrew is not installed. Install it from https://brew.sh, then rerun this script." >&2
-  exit 1
-fi
-
 if ! has_supported_python; then
-  if [[ "${YES}" -eq 1 ]]; then
+  echo "Python 3.11 or newer is required."
+  if command -v brew >/dev/null 2>&1 && ask_yes_no "Install Python 3.11 with Homebrew now?"; then
     brew install python@3.11
   else
-    echo "Python 3.11 or newer is required. Run: brew install python@3.11" >&2
-    echo "Or rerun with --yes to install supported prerequisites." >&2
+    echo "Install Python 3.11 or newer, then rerun this script." >&2
     exit 1
   fi
 fi
 
-if ! brew list portaudio >/dev/null 2>&1; then
-  if [[ "${YES}" -eq 1 ]]; then
-    brew install portaudio
-  else
-    echo "PortAudio is required for PyAudio. Run: brew install portaudio" >&2
-    echo "Or rerun with --yes to install supported prerequisites." >&2
-    exit 1
-  fi
+if command -v brew >/dev/null 2>&1 && ! brew list portaudio >/dev/null 2>&1; then
+  echo "PyAudio may require PortAudio on macOS."
+  ask_yes_no "Install PortAudio with Homebrew now?" && brew install portaudio
 fi
 
-if [[ "${INSTALL_NODE}" -eq 1 ]] && ! command -v node >/dev/null 2>&1; then
-  if [[ "${YES}" -eq 1 ]]; then
-    brew install node
-  else
-    echo "Node.js was requested but is not installed. Run: brew install node" >&2
-    echo "Or rerun with --install-node --yes." >&2
-    exit 1
-  fi
-fi
+PYTHON_BIN="$(find_python)"
 
-cd "${ROOT_DIR}"
-exec python3 "${SCRIPT_DIR}/deploy.py" "${PASSTHROUGH[@]}"
+cd "${CORE_DIR}"
+"${PYTHON_BIN}" -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python server.py --host "${HOST}" --port "${PORT}" --device "${DEVICE}"

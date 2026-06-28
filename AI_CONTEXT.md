@@ -51,8 +51,9 @@ commands as local validation.
 ## Runtime / Integration Notes
 
 - Python dependencies are listed in `CoreSTT/requirements.txt`.
-- Deployment helpers live in `scripts/`: `deploy.py` contains shared setup/run
-  logic, with `deploy-macos.sh` and `deploy-linux.sh` handling OS prerequisites.
+- Deployment helpers live in `scripts/`: `deploy-macos.sh`,
+  `deploy-linux.sh`, and `deploy-windows.ps1` follow `docs/COMMANDS.md` setup
+  and run commands for each OS.
 - Create and use `CoreSTT/.venv` for local setup and testing. Run tests through
   `.venv/bin/python` after installing requirements instead of relying on a
   global `python` executable.
