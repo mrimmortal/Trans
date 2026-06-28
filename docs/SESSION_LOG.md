@@ -150,11 +150,12 @@ Changed:
   `deploy-macos.sh`, `deploy-linux.sh`, and `deploy-windows.ps1`.
 - Removed the shared Python runner and Node handling.
 - Kept the scripts aligned with `docs/COMMANDS.md`: check Python, create
-  `CoreSTT/.venv`, install `requirements.txt`, and run `server.py`.
+  `CoreSTT/.venv` when missing, install `requirements.txt`, and run
+  `server.py`.
 - Updated focused deployment script tests and documented script commands.
 
 Validation:
-- `python3 -m unittest tests/test_deploy_script.py` from repo root: passed, 4
+- `python3 -m unittest tests/test_deploy_script.py` from repo root: passed, 5
   tests.
 
 Next:

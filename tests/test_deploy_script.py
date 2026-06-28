@@ -41,6 +41,17 @@ class DeployScriptTest(unittest.TestCase):
             with self.subTest(script=script.name):
                 self.assertNotIn("node", read_script(script).lower())
 
+    def test_scripts_create_virtualenv_only_when_missing(self):
+        for script in (MAC_SCRIPT, LINUX_SCRIPT):
+            with self.subTest(script=script.name):
+                text = read_script(script)
+                self.assertIn('if [[ ! -x ".venv/bin/python" ]]; then', text)
+                self.assertIn('"${PYTHON_BIN}" -m venv .venv', text)
+
+        windows_text = read_script(WINDOWS_SCRIPT)
+        self.assertIn('if (-not (Test-Path ".venv\\Scripts\\python.exe"))', windows_text)
+        self.assertIn("py -3.11 -m venv .venv", windows_text)
+
 
 if __name__ == "__main__":
     unittest.main()

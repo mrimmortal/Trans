@@ -70,6 +70,8 @@ fi
 PYTHON_BIN="$(find_python)"
 
 cd "${CORE_DIR}"
-"${PYTHON_BIN}" -m venv .venv
+if [[ ! -x ".venv/bin/python" ]]; then
+  "${PYTHON_BIN}" -m venv .venv
+fi
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python server.py --host "${HOST}" --port "${PORT}" --device "${DEVICE}"

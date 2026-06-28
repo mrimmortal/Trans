@@ -30,6 +30,8 @@ if (-not (Test-CompatiblePython)) {
 }
 
 Set-Location $CoreDir
-py -3.11 -m venv .venv
+if (-not (Test-Path ".venv\Scripts\python.exe")) {
+    py -3.11 -m venv .venv
+}
 & .venv\Scripts\python.exe -m pip install -r requirements.txt
 & .venv\Scripts\python.exe server.py --host $HostAddress --port $Port --device $Device
