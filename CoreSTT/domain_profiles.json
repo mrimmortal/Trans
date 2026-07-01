@@ -1,0 +1,20 @@
+{
+  "profiles": {
+    "general": {
+      "initial_prompt": null,
+      "initial_prompt_realtime": null,
+      "hotwords": []
+    },
+    "medical": {
+      "initial_prompt": "This is medical dictation. Preserve clinical terminology, medication names, diagnoses, symptoms, anatomy terms, lab values, and abbreviations.",
+      "initial_prompt_realtime": "Medical dictation. Prefer clinical terminology and medication names.",
+      "hotwords": [
+        "hypertension",
+        "metformin",
+        "dyspnea",
+        "myocardial infarction",
+        "hemoglobin A1c"
+      ]
+    }
+  }
+}

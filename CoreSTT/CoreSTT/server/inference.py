@@ -3,7 +3,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .audio import SERVER_SAMPLE_RATE, effective_device, read_wav_float32
 from .settings import ServerSettings
@@ -27,6 +27,10 @@ class InferenceJob:
     created_at: float
     deadline_at: Optional[float] = None
     sample_rate: int = SERVER_SAMPLE_RATE
+    initial_prompt: Any = None
+    override_initial_prompt: bool = False
+    engine_options: Optional[Dict[str, Any]] = None
+    override_engine_options: bool = False
 
 
 @dataclass(frozen=True)
@@ -321,11 +325,7 @@ class SharedEngineWorker:
             try:
                 if self.engine is None:
                     raise RuntimeError(f"{self.name} inference engine is unavailable")
-                result = self.engine.transcribe(
-                    job.audio,
-                    language=job.language if job.language else None,
-                    use_prompt=job.use_prompt,
-                )
+                result = self._transcribe(job)
                 text = (getattr(result, "text", "") or "").strip()
                 self.completed_jobs += 1
             except Exception as exc:
@@ -371,6 +371,31 @@ class SharedEngineWorker:
             self.engine.warmup(audio)
         except Exception:
             LOGGER.debug("Warmup skipped for %s", self.name, exc_info=True)
+
+    def _transcribe(self, job):
+        config = getattr(self.engine, "config", None)
+        if config is None:
+            return self.engine.transcribe(
+                job.audio,
+                language=job.language if job.language else None,
+                use_prompt=job.use_prompt,
+            )
+
+        old_prompt = getattr(config, "initial_prompt", None)
+        old_options = getattr(config, "engine_options", None)
+        if job.override_initial_prompt:
+            config.initial_prompt = job.initial_prompt
+        if job.override_engine_options:
+            config.engine_options = job.engine_options
+        try:
+            return self.engine.transcribe(
+                job.audio,
+                language=job.language if job.language else None,
+                use_prompt=job.use_prompt,
+            )
+        finally:
+            config.initial_prompt = old_prompt
+            config.engine_options = old_options
 
 
 class InferenceScheduler:

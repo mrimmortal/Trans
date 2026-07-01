@@ -78,8 +78,17 @@ Example:
 { "type": "start" }
 ```
 
+Domain-biased example:
+
+```json
+{ "type": "start", "domain": "medical" }
+```
+
 Send when the user begins recording or when a non-interactive client begins
-sending audio.
+sending audio. `domain` is optional. When present, it must match one of the
+server-owned domain profiles exposed by `/api/config` and the WebSocket
+`hello`/`ready` messages. A selected profile supplies prompt and hotword biasing
+for the session; it does not perform correction or rewrite final text.
 
 ### stop
 
@@ -358,7 +367,8 @@ Example:
 ```
 
 Client handling: Store `sessionId`/`clientId`, inspect limits/settings if needed,
-and wait for `ready` before marking the session ready.
+inspect `domainProfiles` if the client offers domain selection, and wait for
+`ready` before marking the session ready.
 
 ### ready
 
@@ -378,6 +388,8 @@ Example:
 ```
 
 Client handling: Enable recording controls and allow `start`.
+If `domainProfiles` is present, clients may include one of those names in the
+next `start` command.
 
 ### status
 
@@ -389,6 +401,7 @@ Example:
 {
   "type": "status",
   "sessionId": "session-id",
+  "domain": "medical",
   "state": "recording",
   "activeClientId": "session-id",
   "queueDepth": 0.64,
@@ -401,7 +414,8 @@ Example:
 }
 ```
 
-Client handling: Update UI state, queue indicators, and diagnostics.
+Client handling: Update UI state, queue indicators, selected domain display,
+and diagnostics.
 
 ### realtime
 
@@ -456,6 +470,7 @@ Example:
 {
   "type": "timeline",
   "sessionId": "session-id",
+  "domain": "medical",
   "event": "recording_started",
   "segmentId": 1,
   "timestamp": 1234567890.0,
@@ -463,7 +478,8 @@ Example:
 }
 ```
 
-Client handling: Use for event logs, timing views, and diagnostics.
+Client handling: Use for event logs, timing views, selected-domain diagnostics,
+and troubleshooting.
 
 ### clear
 
@@ -524,8 +540,20 @@ Admission error example:
 }
 ```
 
+Unknown domain example:
+
+```json
+{
+  "type": "error",
+  "sessionId": "session-id",
+  "where": "domain",
+  "message": "Unknown domain profile: medical-specialty"
+}
+```
+
 Client handling: Stop recording for fatal/admission errors. For packet errors,
-fix client encoding before retrying.
+fix client encoding before retrying. For domain errors, choose one of the
+advertised `domainProfiles` or omit `domain`.
 
 ### pong
 
@@ -670,6 +698,8 @@ Recommended backoff:
 - Send JSON control messages as text frames.
 - Send audio packets as binary frames.
 - Send `{"type":"start"}` before the first audio packet.
+- Optionally include a domain profile name in `start`, for example
+  `{"type":"start","domain":"medical"}`.
 - Convert audio to mono `pcm_s16le` where practical.
 - Use 40 ms chunks by default.
 - Include `sampleRate`, `channels`, `format`, `frames`, `sentAt`, `sequence`,

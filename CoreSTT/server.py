@@ -60,6 +60,7 @@ from CoreSTT.server.audio import (
 )
 from CoreSTT.server.cli import parse_args, parse_float_tuple, settings_from_args
 from CoreSTT.server.connection import ConnectionManager
+from CoreSTT.server.domain_profiles import load_domain_profiles
 from CoreSTT.server.inference import (
     FairInferenceQueue,
     InferenceJob,
@@ -79,8 +80,26 @@ from CoreSTT.server.timeline import (
 
 
 LOGGER = logging.getLogger("corestt.fastapi")
+TERMINAL_LOGGER = logging.getLogger("uvicorn.error")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 INDEX_PATH = STATIC_DIR / "index.html"
+
+
+def _domain_engine_options(options, hotwords):
+    merged = dict(options or {})
+    if hotwords:
+        merged["hotwords"] = hotwords
+    else:
+        merged.pop("hotwords", None)
+    return merged or None
+
+
+def _log_stream_started(session_id, domain_name):
+    active_domain = domain_name or "default"
+    message = "session %s streaming started domain=%s"
+    LOGGER.info(message, session_id, active_domain)
+    if TERMINAL_LOGGER is not LOGGER:
+        TERMINAL_LOGGER.info(message, session_id, active_domain)
 
 
 class VoiceActivityDetector:
@@ -141,6 +160,7 @@ class RealtimeSession:
         self.recording_sample_count = 0
         self.prebuffer = collections.deque()
         self.prebuffer_sample_count = 0
+        self.domain_name = None
         self.dropped_audio_chunks = 0
         self.rejected_audio_chunks = 0
         self.coalesced_realtime = 0
@@ -388,6 +408,7 @@ class RealtimeSession:
             message = {
                 "type": "status",
                 "sessionId": self.session_id,
+                "domain": self.domain_name,
                 "state": state,
                 "activeClientId": self.session_id if self.streaming else None,
                 "queueDepth": round(queue_depth, 3),
@@ -404,6 +425,7 @@ class RealtimeSession:
         with self.lock:
             return {
                 "sessionId": self.session_id,
+                "domain": self.domain_name,
                 "streaming": self.streaming,
                 "recording": self.recording,
                 "state": self.status,
@@ -588,6 +610,7 @@ class RecorderBackedRealtimeSession:
         self.queue_delay = {"realtime": RunningStats(), "final": RunningStats()}
         self.inference_duration = {"realtime": RunningStats(), "final": RunningStats()}
         self.total_latency = {"realtime": RunningStats(), "final": RunningStats()}
+        self.domain_name = None
         self.recorder = self._create_recorder()
         self.text_thread = threading.Thread(
             target=self._text_worker,
@@ -696,16 +719,58 @@ class RecorderBackedRealtimeSession:
             config[callback_key] = self._on_realtime_text
         return recorder_factory(**config)
 
-    def start_streaming(self):
+    def start_streaming(self, domain_profile=None, domain_name=None):
+        if domain_profile is not None or domain_name is not None:
+            self.apply_domain_profile(domain_profile, domain_name)
         with self.lock:
             self.streaming = True
+            active_domain = self.domain_name or "default"
             self.status = (
                 "wakeword_wait"
                 if self.settings.wake_word_enabled()
                 and self.settings.wake_word_activation_delay <= 0
                 else "listening"
             )
+        _log_stream_started(self.session_id, active_domain)
         self.publish_status(self.status)
+
+    def apply_domain_profile(self, profile, domain_name):
+        with self.lock:
+            if self.streaming:
+                raise ValueError("Domain can only be changed before streaming starts.")
+            if self.domain_name == domain_name:
+                return
+            self.generation += 1
+            self.settings.initial_prompt = profile.initial_prompt if profile else self.settings.initial_prompt
+            self.settings.initial_prompt_realtime = (
+                profile.initial_prompt_realtime if profile else self.settings.initial_prompt_realtime
+            )
+            if profile is not None:
+                self.settings.transcription_engine_options = _domain_engine_options(
+                    self.settings.transcription_engine_options,
+                    profile.hotwords,
+                )
+                if self.settings.realtime_transcription_engine_options is not None:
+                    self.settings.realtime_transcription_engine_options = _domain_engine_options(
+                        self.settings.realtime_transcription_engine_options,
+                        profile.hotwords,
+                    )
+            self.domain_name = domain_name
+
+        old_recorder = self.recorder
+        try:
+            old_recorder.shutdown()
+        except Exception:
+            LOGGER.debug("Recorder shutdown failed during domain switch for %s", self.session_id, exc_info=True)
+        if self.text_thread is not None:
+            self.text_thread.join(timeout=3)
+        self.recorder = self._create_recorder()
+        self.text_thread = threading.Thread(
+            target=self._text_worker,
+            name=f"CoreSTTSessionText-{self.session_id}",
+            daemon=True,
+        )
+        self.text_thread.start()
 
     def stop_streaming(self):
         with self.lock:
@@ -839,6 +904,7 @@ class RecorderBackedRealtimeSession:
             message = {
                 "type": "status",
                 "sessionId": self.session_id,
+                "domain": self.domain_name,
                 "state": state,
                 "timestamp": time.time(),
                 "activeClientId": self.session_id if self.streaming else None,
@@ -866,6 +932,7 @@ class RecorderBackedRealtimeSession:
             recording = bool(getattr(self.recorder, "is_recording", False))
         return {
             "sessionId": self.session_id,
+            "domain": self.domain_name,
             "streaming": streaming,
             "recording": recording,
             "state": state,
@@ -1365,6 +1432,7 @@ class RecorderBackedRealtimeSession:
         payload = {
             "type": "timeline",
             "sessionId": self.session_id,
+            "domain": self.domain_name,
             "event": event,
             "timestamp": timestamp,
             "timestampIso": timestamp_iso(timestamp),
@@ -1626,6 +1694,9 @@ class CoreSTTService:
         self._pending_recorder_results = {}
         self._pending_recorder_lock = threading.Lock()
         self.recorder_factory = recorder_factory
+        self.domain_profiles = load_domain_profiles(
+            self._resolve_domain_profiles_path(settings.domain_profiles_path)
+        )
         factory = scheduler_factory or InferenceScheduler
         self.scheduler = factory(
             settings,
@@ -1634,6 +1705,15 @@ class CoreSTTService:
             self._on_scheduler_error,
         )
         self.ready_thread = None
+
+    @staticmethod
+    def _resolve_domain_profiles_path(path):
+        if not path:
+            return None
+        profile_path = Path(path)
+        if profile_path.is_absolute():
+            return profile_path
+        return Path(__file__).resolve().parent / profile_path
 
     def start(self, loop):
         self.manager.bind_loop(loop)
@@ -1689,6 +1769,18 @@ class CoreSTTService:
 
     def session_count(self):
         return self.sessions.count()
+
+    def domain_profile_names(self):
+        return self.domain_profiles.names()
+
+    def resolve_domain_profile(self, requested_domain):
+        domain_name = requested_domain if requested_domain is not None else self.settings.default_domain
+        if not domain_name:
+            return None, None
+        profile = self.domain_profiles.get(domain_name)
+        if profile is None:
+            raise ValueError(f"Unknown domain profile: {domain_name}")
+        return str(domain_name), profile
 
     def active_speaker_count(self):
         return self.sessions.active_speaker_count()
@@ -1822,6 +1914,19 @@ class CoreSTTService:
             sequence=0,
             generation=generation,
             created_at=time.monotonic(),
+            initial_prompt=(
+                session.settings.initial_prompt_realtime
+                if kind == "realtime"
+                else session.settings.initial_prompt
+            ),
+            override_initial_prompt=session.domain_name is not None,
+            engine_options=(
+                session.settings.realtime_transcription_engine_options
+                if kind == "realtime"
+                and session.settings.realtime_transcription_engine_options is not None
+                else session.settings.transcription_engine_options
+            ),
+            override_engine_options=session.domain_name is not None,
             deadline_at=(
                 time.monotonic() + (self.settings.max_realtime_queue_age_ms / 1000.0)
                 if kind == "realtime"
@@ -1902,6 +2007,7 @@ class CoreSTTService:
             "type": "ready",
             "settings": self.settings.public_dict(),
             "limits": self.limits_dict(),
+            "domainProfiles": self.domain_profile_names(),
             "runtimeSettings": self.runtime_settings_contract(),
             "ok": self.scheduler.healthy(),
         }
@@ -1998,6 +2104,7 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
             "settings": settings.public_dict(),
             "limits": service.limits_dict(),
             "supportedEngines": get_supported_transcription_engines(),
+            "domainProfiles": service.domain_profile_names(),
             "runtimeSettings": service.runtime_settings_contract(),
         })
 
@@ -2043,6 +2150,7 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
             "settings": settings.public_dict(),
             "limits": service.limits_dict(),
             "supportedEngines": get_supported_transcription_engines(),
+            "domainProfiles": service.domain_profile_names(),
             "runtimeSettings": service.runtime_settings_contract(),
         }))
         if service.ready.is_set():
@@ -2051,6 +2159,7 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
                 "sessionId": session_id,
                 "settings": settings.public_dict(),
                 "limits": service.limits_dict(),
+                "domainProfiles": service.domain_profile_names(),
                 "runtimeSettings": service.runtime_settings_contract(),
                 "ok": service.scheduler.healthy(),
             }))
@@ -2111,7 +2220,18 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
 
                     command = data.get("type")
                     if command == "start":
-                        session.start_streaming()
+                        try:
+                            domain_name, domain_profile = service.resolve_domain_profile(
+                                data.get("domain")
+                            )
+                            session.start_streaming(domain_profile, domain_name)
+                        except ValueError as exc:
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "sessionId": session_id,
+                                "message": str(exc),
+                                "where": "domain",
+                            }))
                     elif command == "stop":
                         session.stop_streaming()
                     elif command == "clear":

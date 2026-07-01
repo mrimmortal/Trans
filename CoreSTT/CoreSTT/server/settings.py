@@ -101,7 +101,9 @@ STARTUP_ONLY_SETTINGS = {
     "beam_size",
     "beam_size_realtime",
     "compute_type",
+    "default_domain",
     "device",
+    "domain_profiles_path",
     "download_root",
     "gpu_device_index",
     "host",
@@ -168,6 +170,8 @@ BOOL_SETTINGS = {
 
 OPTIONAL_STRING_SETTINGS = {
     "download_root",
+    "default_domain",
+    "domain_profiles_path",
     "initial_prompt",
     "initial_prompt_realtime",
     "openwakeword_model_paths",
@@ -195,6 +199,8 @@ class ServerSettings:
     realtime_transcription_engine: Optional[str] = None
     transcription_engine_options: Optional[Dict[str, Any]] = None
     realtime_transcription_engine_options: Optional[Dict[str, Any]] = None
+    domain_profiles_path: str = "domain_profiles.json"
+    default_domain: Optional[str] = None
     download_root: Optional[str] = None
     compute_type: str = "default"
     device: str = "cuda"

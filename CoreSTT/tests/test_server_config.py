@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from protocol import encode_audio_packet
 import server
@@ -12,6 +14,7 @@ from server import (
     parse_args,
     settings_from_args,
 )
+from CoreSTT.server.domain_profiles import DomainProfileError, load_domain_profiles
 
 
 class FakeScheduler:
@@ -38,6 +41,40 @@ class FakeScheduler:
 
     def cancel_session(self, session_id):
         pass
+
+
+class FakeRecorder:
+    instances = []
+
+    def __init__(self, **config):
+        self.config = config
+        self.is_recording = False
+        self.is_shut_down = False
+        FakeRecorder.instances.append(self)
+
+    def flush_buffered_audio(self):
+        pass
+
+    def abort(self):
+        pass
+
+    def shutdown(self):
+        self.is_shut_down = True
+
+    def feed_audio(self, *_args, **_kwargs):
+        pass
+
+    def text(self):
+        return ""
+
+
+class CaptureManager(ConnectionManager):
+    def __init__(self):
+        super().__init__()
+        self.messages = []
+
+    def publish_session(self, session_id, message):
+        self.messages.append((session_id, message))
 
 
 class ServerConfigTest(unittest.TestCase):
@@ -106,6 +143,10 @@ class ServerConfigTest(unittest.TestCase):
             "faster-whisper",
             "--realtime-engine",
             "parakeet",
+            "--domain-profiles-path",
+            "profiles.json",
+            "--default-domain",
+            "medical",
             "--wake-words",
             "jarvis",
         ])
@@ -116,10 +157,60 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(settings.port, 8090)
         self.assertEqual(settings.transcription_engine, "faster_whisper")
         self.assertEqual(settings.realtime_transcription_engine, "parakeet")
+        self.assertEqual(settings.domain_profiles_path, "profiles.json")
+        self.assertEqual(settings.default_domain, "medical")
         self.assertEqual(settings.batch_size, 1)
         self.assertEqual(settings.realtime_batch_size, 1)
         self.assertEqual(settings.wakeword_backend, "pvporcupine")
         self.assertTrue(settings.wake_word_enabled())
+
+    def test_load_domain_profiles_validates_profiles_and_hotwords(self):
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                """
+                {
+                  "profiles": {
+                    "medical": {
+                      "initial_prompt": "Medical final prompt.",
+                      "initial_prompt_realtime": "Medical realtime prompt.",
+                      "hotwords": ["hypertension", "metformin"]
+                    },
+                    "legal": {
+                      "initial_prompt": null,
+                      "initial_prompt_realtime": null,
+                      "hotwords": "affidavit plaintiff"
+                    }
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            profiles = load_domain_profiles(path)
+
+        self.assertEqual(sorted(profiles.names()), ["legal", "medical"])
+        self.assertEqual(profiles.get("medical").hotwords, ["hypertension", "metformin"])
+        self.assertEqual(profiles.get("legal").hotwords, "affidavit plaintiff")
+
+    def test_load_domain_profiles_rejects_invalid_profiles_object(self):
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text('{"profiles": []}', encoding="utf-8")
+
+            with self.assertRaisesRegex(DomainProfileError, "profiles"):
+                load_domain_profiles(path)
+
+    def test_load_domain_profiles_rejects_invalid_hotwords(self):
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                '{"profiles": {"medical": {"hotwords": [123]}}}',
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(DomainProfileError, "hotwords"):
+                load_domain_profiles(path)
 
     def test_update_settings_splits_applied_rejected_and_startup_only(self):
         service = CoreSTTService(
@@ -177,10 +268,166 @@ class ServerConfigTest(unittest.TestCase):
 
         self.assertEqual(index_response.status_code, 200)
         self.assertIn("CoreSTT WebSocket Integration", index_response.text)
+        self.assertIn('id="domainSelect"', index_response.text)
+        self.assertIn("selectedDomain", index_response.text)
+        self.assertIn("startCommand.domain", index_response.text)
         self.assertEqual(health_response.status_code, 200)
         self.assertTrue(health_response.json()["ok"])
         self.assertEqual(config_response.status_code, 200)
         self.assertIn("faster_whisper", config_response.json()["supportedEngines"])
+
+    def test_config_exposes_domain_profile_names(self):
+        from fastapi.testclient import TestClient
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                '{"profiles": {"medical": {"hotwords": ["metformin"]}, "general": {}}}',
+                encoding="utf-8",
+            )
+            app = create_app(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+
+            with TestClient(app) as client:
+                config_response = client.get("/api/config")
+
+        self.assertEqual(config_response.status_code, 200)
+        self.assertEqual(config_response.json()["domainProfiles"], ["general", "medical"])
+
+    def test_websocket_start_rejects_unknown_domain(self):
+        from fastapi.testclient import TestClient
+
+        FakeRecorder.instances = []
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                '{"profiles": {"medical": {"hotwords": ["metformin"]}}}',
+                encoding="utf-8",
+            )
+            app = create_app(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+
+            with TestClient(app) as client:
+                with client.websocket_connect("/ws/transcribe") as websocket:
+                    websocket.receive_json()
+                    websocket.receive_json()
+                    websocket.send_json({"type": "start", "domain": "unknown"})
+                    message = websocket.receive_json()
+
+        self.assertEqual(message["type"], "error")
+        self.assertEqual(message["where"], "domain")
+        self.assertIn("unknown", message["message"])
+        self.assertTrue(FakeRecorder.instances)
+        self.assertFalse(any(recorder.config.get("initial_prompt") for recorder in FakeRecorder.instances))
+
+    def test_websocket_start_applies_domain_profile_to_session_recorder(self):
+        from fastapi.testclient import TestClient
+
+        FakeRecorder.instances = []
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                """
+                {
+                  "profiles": {
+                    "medical": {
+                      "initial_prompt": "Medical final prompt.",
+                      "initial_prompt_realtime": "Medical realtime prompt.",
+                      "hotwords": ["hypertension", "metformin"]
+                    }
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+            app = create_app(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+
+            with TestClient(app) as client:
+                with client.websocket_connect("/ws/transcribe") as websocket:
+                    websocket.receive_json()
+                    websocket.receive_json()
+                    websocket.send_json({"type": "start", "domain": "medical"})
+                    status = websocket.receive_json()
+                    websocket.send_json({"type": "metrics"})
+                    metrics = websocket.receive_json()
+
+        self.assertEqual(status["type"], "status")
+        self.assertEqual(status["domain"], "medical")
+        self.assertEqual(metrics["metrics"]["domain"], "medical")
+        recorder = FakeRecorder.instances[-1]
+        self.assertEqual(recorder.config["initial_prompt"], "Medical final prompt.")
+        self.assertEqual(recorder.config["initial_prompt_realtime"], "Medical realtime prompt.")
+        self.assertEqual(
+            recorder.config["transcription_engine_options"]["hotwords"],
+            ["hypertension", "metformin"],
+        )
+
+    def test_timeline_events_include_domain_for_logs(self):
+        FakeRecorder.instances = []
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                '{"profiles": {"medical": {"hotwords": ["metformin"]}}}',
+                encoding="utf-8",
+            )
+            manager = CaptureManager()
+            service = CoreSTTService(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                manager,
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+            session = service.admit_session("session-1")
+            domain_name, domain_profile = service.resolve_domain_profile("medical")
+            session.start_streaming(domain_profile, domain_name)
+
+            session._publish_timeline_event("domain_log_probe")
+
+            service.remove_session("session-1")
+
+        timeline_messages = [
+            message for _session_id, message in manager.messages
+            if message.get("type") == "timeline"
+        ]
+        self.assertTrue(timeline_messages)
+        self.assertEqual(timeline_messages[-1]["domain"], "medical")
+
+    def test_start_streaming_logs_domain_profile(self):
+        FakeRecorder.instances = []
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                '{"profiles": {"medical": {"hotwords": ["metformin"]}}}',
+                encoding="utf-8",
+            )
+            service = CoreSTTService(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                CaptureManager(),
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+            session = service.admit_session("session-1")
+            domain_name, domain_profile = service.resolve_domain_profile("medical")
+
+            with self.assertLogs("uvicorn.error", level="INFO") as logs:
+                session.start_streaming(domain_profile, domain_name)
+
+            service.remove_session("session-1")
+
+        self.assertIn(
+            "session session-1 streaming started domain=medical",
+            "\n".join(logs.output),
+        )
 
 
 if __name__ == "__main__":
