@@ -2,6 +2,27 @@
 
 Keep entries compact and useful for future continuation.
 
+## 2026-07-08 - Add Audio Processing Context Doc
+
+Changed:
+- Added `docs/AUDIO_PROCESSING.md` with the current audio packet flow,
+  internal sample assumptions, realtime/final paths, tuning knobs, validation
+  commands, and boundaries.
+- Expanded `docs/AUDIO_PROCESSING.md` with project-specific audio terminology.
+- Narrowed `docs/AUDIO_PROCESSING.md` to terminology and settings used by the
+  current faster-whisper flow.
+- Updated `docs/WEBSOCKET_CLIENT_CONTRACT.md` examples and error handling to
+  show domain profile fields consistently.
+- Added domain profile management API support with `GET`, `PUT`, and `DELETE`
+  `/api/domain-profiles`, persisted profile updates, and
+  `domain_profiles_updated` websocket broadcasts.
+- Updated `AI_CONTEXT.md`, `docs/MODULE_MAP.md`, and
+  `docs/WEBSOCKET_CLIENT_CONTRACT.md` for the profile management API.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 16 tests.
+
 ## 2026-07-01 - Add Domain Prompt And Hotword Profiles
 
 Changed:

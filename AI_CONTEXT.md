@@ -40,6 +40,7 @@ commands as local validation.
 - Package import: `from CoreSTT import AudioToTextRecorder`
 - Server: `cd CoreSTT && python server.py --host 127.0.0.1 --port 8020 --device cpu`
 - Server HTTP endpoints: `/`, `/health`, `/api/config`, `/api/metrics`
+- Domain profile HTTP endpoint: `/api/domain-profiles`
 - Streaming endpoint: `WS /ws/transcribe`
 - Optional domain-biased streaming: send `{"type":"start","domain":"medical"}`
   after the WebSocket is ready.
@@ -80,6 +81,8 @@ See `docs/COMMANDS.md`.
   expectations unless intentionally changing the browser/server contract.
 - Preserve domain profile selection semantics: profiles are server-owned,
   selected on `start`, and unknown domains are rejected before streaming.
+- Domain profile edits are exposed through `/api/domain-profiles`; they affect
+  future streams and should preserve validation/persistence behavior.
 - Use `docs/WEBSOCKET_CLIENT_CONTRACT.md` as the integration contract for
   browser, desktop, mobile, CLI, and backend websocket clients.
 - Preserve `CoreSTT/server.py` compatibility exports including

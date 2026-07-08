@@ -23,6 +23,13 @@ class DomainProfile:
     initial_prompt_realtime: Optional[str] = None
     hotwords: Hotwords = None
 
+    def to_dict(self):
+        return {
+            "initial_prompt": self.initial_prompt,
+            "initial_prompt_realtime": self.initial_prompt_realtime,
+            "hotwords": self.hotwords,
+        }
+
 
 class DomainProfiles:
     def __init__(self, profiles: Dict[str, DomainProfile]):
@@ -35,6 +42,26 @@ class DomainProfiles:
         if name is None:
             return None
         return self._profiles.get(str(name))
+
+    def to_dict(self):
+        return {
+            name: self._profiles[name].to_dict()
+            for name in self.names()
+        }
+
+    def upsert(self, name, raw_profile):
+        profile_name = _profile_name(name)
+        if raw_profile is None:
+            raw_profile = {}
+        if not isinstance(raw_profile, dict):
+            raise DomainProfileError(f"domain profile '{profile_name}' must be a JSON object")
+        profile = _parse_profile(profile_name, raw_profile)
+        self._profiles[profile_name] = profile
+        return profile
+
+    def delete(self, name):
+        profile_name = _profile_name(name)
+        return self._profiles.pop(profile_name, None) is not None
 
 
 def load_domain_profiles(path):
@@ -58,8 +85,7 @@ def load_domain_profiles(path):
 
     profiles = {}
     for name, raw_profile in data["profiles"].items():
-        if not isinstance(name, str) or not name.strip():
-            raise DomainProfileError("domain profile names must be non-empty strings")
+        name = _profile_name(name)
         if raw_profile is None:
             raw_profile = {}
         if not isinstance(raw_profile, dict):
@@ -67,6 +93,28 @@ def load_domain_profiles(path):
         profiles[name] = _parse_profile(name, raw_profile)
 
     return DomainProfiles(profiles)
+
+
+def save_domain_profiles(path, profiles: DomainProfiles):
+    """
+    Persists domain profiles to JSON.
+    """
+    if not path:
+        raise DomainProfileError("domain profiles path is not configured")
+
+    profile_path = Path(path)
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    data = {"profiles": profiles.to_dict()}
+    profile_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _profile_name(name):
+    if not isinstance(name, str) or not name.strip():
+        raise DomainProfileError("domain profile names must be non-empty strings")
+    return name.strip()
 
 
 def _parse_profile(name, raw_profile):

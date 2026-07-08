@@ -1,4 +1,5 @@
 import unittest
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -72,9 +73,13 @@ class CaptureManager(ConnectionManager):
     def __init__(self):
         super().__init__()
         self.messages = []
+        self.broadcasts = []
 
     def publish_session(self, session_id, message):
         self.messages.append((session_id, message))
+
+    def publish_all(self, message):
+        self.broadcasts.append(message)
 
 
 class ServerConfigTest(unittest.TestCase):
@@ -296,6 +301,116 @@ class ServerConfigTest(unittest.TestCase):
 
         self.assertEqual(config_response.status_code, 200)
         self.assertEqual(config_response.json()["domainProfiles"], ["general", "medical"])
+
+    def test_get_domain_profiles_returns_editable_profile_details(self):
+        from fastapi.testclient import TestClient
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                """
+                {
+                  "profiles": {
+                    "medical": {
+                      "initial_prompt": "Medical final prompt.",
+                      "initial_prompt_realtime": "Medical realtime prompt.",
+                      "hotwords": ["hypertension", "metformin"]
+                    }
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+            app = create_app(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+
+            with TestClient(app) as client:
+                response = client.get("/api/domain-profiles")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "profiles": {
+                "medical": {
+                    "initial_prompt": "Medical final prompt.",
+                    "initial_prompt_realtime": "Medical realtime prompt.",
+                    "hotwords": ["hypertension", "metformin"],
+                }
+            },
+            "domainProfiles": ["medical"],
+        })
+
+    def test_put_domain_profile_updates_file_and_broadcasts_names(self):
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text('{"profiles": {"general": {}}}', encoding="utf-8")
+            manager = CaptureManager()
+            service = CoreSTTService(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                manager,
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+
+            profile = service.update_domain_profile("medical", {
+                "initial_prompt": "Medical final prompt.",
+                "initial_prompt_realtime": "Medical realtime prompt.",
+                "hotwords": ["hypertension", "metformin"],
+            })
+
+            saved = json.loads(path.read_text(encoding="utf-8"))
+
+        self.assertEqual(profile["hotwords"], ["hypertension", "metformin"])
+        self.assertEqual(saved["profiles"]["medical"]["initial_prompt"], "Medical final prompt.")
+        self.assertEqual(
+            manager.broadcasts[-1],
+            {
+                "type": "domain_profiles_updated",
+                "domainProfiles": ["general", "medical"],
+                "profiles": {
+                    "general": {
+                        "initial_prompt": None,
+                        "initial_prompt_realtime": None,
+                        "hotwords": None,
+                    },
+                    "medical": {
+                        "initial_prompt": "Medical final prompt.",
+                        "initial_prompt_realtime": "Medical realtime prompt.",
+                        "hotwords": ["hypertension", "metformin"],
+                    },
+                },
+            },
+        )
+
+    def test_domain_profile_api_validates_updates_and_deletes_profiles(self):
+        from fastapi.testclient import TestClient
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                '{"profiles": {"medical": {"hotwords": ["metformin"]}}}',
+                encoding="utf-8",
+            )
+            app = create_app(
+                ServerSettings(model_warmup=False, domain_profiles_path=str(path)),
+                scheduler_factory=FakeScheduler,
+                recorder_factory=FakeRecorder,
+            )
+
+            with TestClient(app) as client:
+                invalid = client.put(
+                    "/api/domain-profiles/legal",
+                    json={"hotwords": [123]},
+                )
+                deleted = client.delete("/api/domain-profiles/medical")
+                after_delete = client.get("/api/domain-profiles")
+
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.json()["domainProfiles"], [])
+        self.assertEqual(after_delete.json(), {"profiles": {}, "domainProfiles": []})
 
     def test_websocket_start_rejects_unknown_domain(self):
         from fastapi.testclient import TestClient

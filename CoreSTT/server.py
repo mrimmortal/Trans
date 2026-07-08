@@ -60,7 +60,11 @@ from CoreSTT.server.audio import (
 )
 from CoreSTT.server.cli import parse_args, parse_float_tuple, settings_from_args
 from CoreSTT.server.connection import ConnectionManager
-from CoreSTT.server.domain_profiles import load_domain_profiles
+from CoreSTT.server.domain_profiles import (
+    DomainProfileError,
+    load_domain_profiles,
+    save_domain_profiles,
+)
 from CoreSTT.server.inference import (
     FairInferenceQueue,
     InferenceJob,
@@ -1694,8 +1698,12 @@ class CoreSTTService:
         self._pending_recorder_results = {}
         self._pending_recorder_lock = threading.Lock()
         self.recorder_factory = recorder_factory
+        self.domain_profiles_path = self._resolve_domain_profiles_path(
+            settings.domain_profiles_path
+        )
+        self.domain_profiles_lock = threading.RLock()
         self.domain_profiles = load_domain_profiles(
-            self._resolve_domain_profiles_path(settings.domain_profiles_path)
+            self.domain_profiles_path
         )
         factory = scheduler_factory or InferenceScheduler
         self.scheduler = factory(
@@ -1771,13 +1779,47 @@ class CoreSTTService:
         return self.sessions.count()
 
     def domain_profile_names(self):
-        return self.domain_profiles.names()
+        with self.domain_profiles_lock:
+            return self.domain_profiles.names()
+
+    def domain_profiles_payload(self):
+        with self.domain_profiles_lock:
+            return {
+                "profiles": self.domain_profiles.to_dict(),
+                "domainProfiles": self.domain_profiles.names(),
+            }
+
+    def _domain_profiles_updated_message(self):
+        payload = self.domain_profiles_payload()
+        return {
+            "type": "domain_profiles_updated",
+            "domainProfiles": payload["domainProfiles"],
+            "profiles": payload["profiles"],
+        }
+
+    def update_domain_profile(self, name, profile_data):
+        with self.domain_profiles_lock:
+            profile = self.domain_profiles.upsert(name, profile_data)
+            save_domain_profiles(self.domain_profiles_path, self.domain_profiles)
+            result = profile.to_dict()
+        self.manager.publish_all(self._domain_profiles_updated_message())
+        return result
+
+    def delete_domain_profile(self, name):
+        with self.domain_profiles_lock:
+            deleted = self.domain_profiles.delete(name)
+            if not deleted:
+                raise ValueError(f"Unknown domain profile: {name}")
+            save_domain_profiles(self.domain_profiles_path, self.domain_profiles)
+        self.manager.publish_all(self._domain_profiles_updated_message())
+        return self.domain_profiles_payload()
 
     def resolve_domain_profile(self, requested_domain):
         domain_name = requested_domain if requested_domain is not None else self.settings.default_domain
         if not domain_name:
             return None, None
-        profile = self.domain_profiles.get(domain_name)
+        with self.domain_profiles_lock:
+            profile = self.domain_profiles.get(domain_name)
         if profile is None:
             raise ValueError(f"Unknown domain profile: {domain_name}")
         return str(domain_name), profile
@@ -2107,6 +2149,34 @@ def create_app(settings: Optional[ServerSettings] = None, scheduler_factory=None
             "domainProfiles": service.domain_profile_names(),
             "runtimeSettings": service.runtime_settings_contract(),
         })
+
+    @app.get("/api/domain-profiles")
+    async def domain_profiles():
+        return JSONResponse(service.domain_profiles_payload())
+
+    @app.put("/api/domain-profiles/{name}")
+    async def update_domain_profile(name: str, payload: dict):
+        try:
+            profile = service.update_domain_profile(name, payload)
+        except DomainProfileError as exc:
+            return JSONResponse(
+                {"error": str(exc)},
+                status_code=400,
+            )
+        return JSONResponse({
+            "profile": profile,
+            **service.domain_profiles_payload(),
+        })
+
+    @app.delete("/api/domain-profiles/{name}")
+    async def delete_domain_profile(name: str):
+        try:
+            return JSONResponse(service.delete_domain_profile(name))
+        except ValueError as exc:
+            return JSONResponse(
+                {"error": str(exc)},
+                status_code=404,
+            )
 
     @app.patch("/api/config")
     async def update_config(payload: dict):

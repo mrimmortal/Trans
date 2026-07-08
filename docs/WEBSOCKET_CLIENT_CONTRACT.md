@@ -53,6 +53,9 @@ connect -> hello -> ready -> start -> send audio -> realtime/final -> stop -> cl
 
 Audio is allowed only after the socket is open and the client has sent `start`.
 Clients should wait for `ready` before presenting the stream as ready to users.
+If domain profiles are edited while a client is connected, the server may send
+`domain_profiles_updated`; clients should refresh domain-selection controls for
+future `start` commands.
 
 ## Client to Server Message Types
 
@@ -143,6 +146,89 @@ Example:
 
 Send for diagnostics, stress testing, or client-side monitoring. Do not send at
 very high frequency from production clients.
+
+## Domain Profile HTTP API
+
+Domain profiles are server-owned transcription hints. Clients can list and edit
+them through HTTP, then select a profile by name in the WebSocket `start`
+command. Profile edits affect future streams; clients should not expect an
+active stream to change domain behavior mid-recording.
+
+### GET /api/domain-profiles
+
+Purpose: Return editable profile details and the sorted list of profile names.
+
+Example response:
+
+```json
+{
+  "domainProfiles": ["general", "medical"],
+  "profiles": {
+    "general": {
+      "initial_prompt": null,
+      "initial_prompt_realtime": null,
+      "hotwords": null
+    },
+    "medical": {
+      "initial_prompt": "This is medical dictation.",
+      "initial_prompt_realtime": "Medical dictation.",
+      "hotwords": ["hypertension", "metformin"]
+    }
+  }
+}
+```
+
+### PUT /api/domain-profiles/{name}
+
+Purpose: Create or replace one profile.
+
+Example request:
+
+```json
+{
+  "initial_prompt": "This is legal dictation.",
+  "initial_prompt_realtime": "Legal dictation.",
+  "hotwords": ["affidavit", "plaintiff"]
+}
+```
+
+Rules:
+
+- `{name}` must be a non-empty profile name.
+- `initial_prompt` and `initial_prompt_realtime` may be strings or `null`.
+- `hotwords` may be a string, a list of strings, or omitted.
+- Invalid profile payloads return HTTP `400`.
+
+Example response:
+
+```json
+{
+  "profile": {
+    "initial_prompt": "This is legal dictation.",
+    "initial_prompt_realtime": "Legal dictation.",
+    "hotwords": ["affidavit", "plaintiff"]
+  },
+  "domainProfiles": ["general", "legal", "medical"],
+  "profiles": {
+    "legal": {
+      "initial_prompt": "This is legal dictation.",
+      "initial_prompt_realtime": "Legal dictation.",
+      "hotwords": ["affidavit", "plaintiff"]
+    }
+  }
+}
+```
+
+### DELETE /api/domain-profiles/{name}
+
+Purpose: Delete one profile.
+
+Unknown profile names return HTTP `404`. Successful deletes return the same
+shape as `GET /api/domain-profiles`.
+
+Production deployments should protect profile-write endpoints with the same
+authorization policy used for runtime configuration, because prompts and
+hotwords can strongly influence transcription output.
 
 ## Binary Audio Packet Format
 
@@ -362,6 +448,7 @@ Example:
   "settings": {},
   "limits": {},
   "supportedEngines": [],
+  "domainProfiles": ["general", "medical"],
   "runtimeSettings": {}
 }
 ```
@@ -383,6 +470,7 @@ Example:
   "ok": true,
   "settings": {},
   "limits": {},
+  "domainProfiles": ["general", "medical"],
   "runtimeSettings": {}
 }
 ```
@@ -583,6 +671,7 @@ Example:
   "sessionId": "session-id",
   "metrics": {
     "sessionId": "session-id",
+    "domain": "medical",
     "streaming": true,
     "state": "recording"
   }
@@ -591,6 +680,30 @@ Example:
 
 Client handling: Use for diagnostics and operational dashboards, not transcript
 rendering.
+
+### domain_profiles_updated
+
+Purpose: Notify connected clients that editable domain profile data changed.
+
+Example:
+
+```json
+{
+  "type": "domain_profiles_updated",
+  "domainProfiles": ["general", "medical"],
+  "profiles": {
+    "medical": {
+      "initial_prompt": "This is medical dictation.",
+      "initial_prompt_realtime": "Medical dictation.",
+      "hotwords": ["hypertension", "metformin"]
+    }
+  }
+}
+```
+
+Client handling: Refresh domain-selection controls and any profile editing UI.
+Do not change an active stream's selected domain; send the desired domain in the
+next `start` command.
 
 ## Cross-Platform Integration Notes
 
@@ -674,6 +787,8 @@ Clients should treat `warning` and `error` differently:
   audio until the packet bug is fixed.
 - `error` with `where: "command"`: client sent invalid JSON or an unknown
   command; fix the control message before retrying.
+- `error` with `where: "domain"`: client requested an unknown domain profile;
+  choose one of the advertised `domainProfiles` or omit `domain`.
 
 On socket close:
 
@@ -694,12 +809,14 @@ Recommended backoff:
 - Open `ws://127.0.0.1:8020/ws/transcribe` locally or
   `wss://<host>/ws/transcribe` in production.
 - Handle `hello`, `ready`, `status`, `realtime`, `final`, `timeline`, `clear`,
-  `warning`, `error`, `pong`, and `metrics`.
+  `warning`, `error`, `pong`, `metrics`, and `domain_profiles_updated`.
 - Send JSON control messages as text frames.
 - Send audio packets as binary frames.
 - Send `{"type":"start"}` before the first audio packet.
 - Optionally include a domain profile name in `start`, for example
   `{"type":"start","domain":"medical"}`.
+- Use `GET /api/domain-profiles` when the client needs editable profile
+  details, not just names.
 - Convert audio to mono `pcm_s16le` where practical.
 - Use 40 ms chunks by default.
 - Include `sampleRate`, `channels`, `format`, `frames`, `sentAt`, `sequence`,

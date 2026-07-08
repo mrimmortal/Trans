@@ -1,20 +1,82 @@
 {
   "profiles": {
     "general": {
+      "hotwords": [],
       "initial_prompt": null,
-      "initial_prompt_realtime": null,
-      "hotwords": []
+      "initial_prompt_realtime": null
     },
     "medical": {
-      "initial_prompt": "This is medical dictation. Preserve clinical terminology, medication names, diagnoses, symptoms, anatomy terms, lab values, and abbreviations.",
-      "initial_prompt_realtime": "Medical dictation. Prefer clinical terminology and medication names.",
       "hotwords": [
         "hypertension",
         "metformin",
         "dyspnea",
         "myocardial infarction",
         "hemoglobin A1c"
-      ]
+      ],
+      "initial_prompt": "This is medical dictation. Preserve clinical terminology, medication names, diagnoses, symptoms, anatomy terms, lab values, and abbreviations.",
+      "initial_prompt_realtime": "Medical dictation. Prefer clinical terminology and medication names."
+    },
+    "medical_en_clinical": {
+      "hotwords": [
+        "hypertension",
+        "diabetes mellitus",
+        "type 2 diabetes",
+        "metformin",
+        "atorvastatin",
+        "amlodipine",
+        "telmisartan",
+        "rosuvastatin",
+        "pantoprazole",
+        "insulin",
+        "myocardial infarction",
+        "angina",
+        "dyspnea",
+        "tachycardia",
+        "bradycardia",
+        "palpitations",
+        "syncope",
+        "edema",
+        "auscultation",
+        "pneumonia",
+        "COPD",
+        "asthma",
+        "stroke",
+        "seizure",
+        "GERD",
+        "chronic kidney disease",
+        "UTI",
+        "creatinine",
+        "eGFR",
+        "hemoglobin",
+        "HbA1c",
+        "CBC",
+        "RBC",
+        "WBC",
+        "platelets",
+        "ESR",
+        "CRP",
+        "LDL",
+        "HDL",
+        "TSH",
+        "ECG",
+        "X-ray",
+        "CT scan",
+        "MRI",
+        "ultrasound",
+        "blood pressure",
+        "BP",
+        "HR",
+        "SpO2",
+        "mmHg",
+        "bpm",
+        "OD",
+        "BD",
+        "TDS",
+        "SOS",
+        "stat"
+      ],
+      "initial_prompt": "This is English medical dictation. Transcribe exactly what is spoken using accurate clinical terminology. Preserve medication names, diagnoses, symptoms, anatomy, procedures, lab values, units, abbreviations, and acronyms. Prefer standard medical spellings such as hypertension, diabetes mellitus, myocardial infarction, dyspnea, metformin, atorvastatin, HbA1c, eGFR, CBC, ECG, BP, HR, SpO2. Do not translate. Do not summarize. Do not add information that was not spoken.",
+      "initial_prompt_realtime": "English medical dictation. Use accurate clinical terminology, medication names, diagnoses, lab values, units, and abbreviations. Do not translate or summarize."
     }
   }
 }
