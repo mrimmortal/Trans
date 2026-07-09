@@ -27,6 +27,8 @@ def parse_args(argv=None):
     parser.add_argument("--realtime-engine", "--realtime-transcription-engine", dest="realtime_transcription_engine")
     parser.add_argument("--engine-options", dest="transcription_engine_options")
     parser.add_argument("--realtime-engine-options", dest="realtime_transcription_engine_options")
+    parser.add_argument("--domain-profiles-path", default="domain_profiles.json")
+    parser.add_argument("--default-domain")
     parser.add_argument("--download-root")
     parser.add_argument("--compute-type", default="default")
     parser.add_argument("--device", default="cuda")
@@ -120,6 +122,8 @@ def settings_from_args(args):
             args.realtime_transcription_engine_options,
             "--realtime-engine-options",
         ),
+        domain_profiles_path=args.domain_profiles_path,
+        default_domain=args.default_domain,
         download_root=args.download_root,
         compute_type=args.compute_type,
         device=args.device,

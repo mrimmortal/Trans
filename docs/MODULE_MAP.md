@@ -11,6 +11,7 @@ Use this file to avoid scanning the full repo.
 | ASR engine adapters | `CoreSTT/CoreSTT/transcription_engines/` | To verify | Use the existing factory/adapter pattern before adding engines or options. |
 | FastAPI server public entrypoint | `CoreSTT/server.py` | `CoreSTT/tests/test_server_config.py`, `CoreSTT/tests/test_server_protocol.py` | Public compatibility surface, HTTP endpoints, websocket sessions, service wiring, and script entrypoint. |
 | Server settings and CLI | `CoreSTT/CoreSTT/server/settings.py`, `CoreSTT/CoreSTT/server/cli.py` | `CoreSTT/tests/test_server_config.py` | `ServerSettings`, runtime config contracts, CLI parsing, and argument-to-settings conversion. Re-exported by `CoreSTT/server.py`. |
+| Domain profiles | `CoreSTT/CoreSTT/server/domain_profiles.py`, `CoreSTT/domain_profiles.json` | `CoreSTT/tests/test_server_config.py` | Server-owned prompt and faster-whisper hotword profiles selected by WebSocket `start.domain`, listed/edited through `/api/domain-profiles`, and broadcast to clients as `domain_profiles_updated`. |
 | Server audio helpers | `CoreSTT/CoreSTT/server/audio.py` | `CoreSTT/tests/test_server_config.py`, `CoreSTT/tests/test_server_protocol.py` | WAV loading, resampling, audio data containers, and effective device selection used by scheduler/session paths. |
 | Server timeline/metrics helpers | `CoreSTT/CoreSTT/server/timeline.py`, `CoreSTT/CoreSTT/server/stats.py`, `CoreSTT/CoreSTT/server/connection.py` | `CoreSTT/tests/test_server_config.py`, `CoreSTT/tests/test_server_protocol.py` | Segment timeline state, running statistics, and websocket connection tracking. |
 | Server inference scheduler | `CoreSTT/CoreSTT/server/inference.py` | `CoreSTT/tests/test_server_config.py`, `CoreSTT/tests/test_server_protocol.py` | Fair inference queue, shared engine worker, scheduler, and transcription executor. Preserve queue and threading behavior. |
@@ -30,6 +31,9 @@ Use this file to avoid scanning the full repo.
 - WebSocket client contract: update `docs/WEBSOCKET_CLIENT_CONTRACT.md` when
   `/ws/transcribe`, JSON control messages, binary packet layout, audio metadata
   validation, or server message shapes intentionally change.
+- Domain profile contract: keep profiles server-owned; clients select a known
+  profile name in `start.domain`, unknown domains must be rejected, and profile
+  write APIs must preserve validation and persistence behavior.
 - Config/env names: server CLI options and runtime setting names in
   `CoreSTT/server.py` and `CoreSTT/CoreSTT/server/settings.py`.
 - Server compatibility: imports from `CoreSTT/server.py` for

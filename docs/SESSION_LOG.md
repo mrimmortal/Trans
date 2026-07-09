@@ -2,6 +2,69 @@
 
 Keep entries compact and useful for future continuation.
 
+## 2026-07-09 - Compose Global And Domain Profiles
+
+Changed:
+- Added reserved `global` domain profile composition so sessions use global
+  command prompt/hotwords alone or prepend them to a selected domain profile.
+- Moved command vocabulary in `CoreSTT/domain_profiles.json` into `global` and
+  kept `medical_en_clinical` focused on medical terminology.
+- Added focused server config tests for global-only, global-plus-domain,
+  duplicate hotword handling, and missing-global compatibility.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 19 tests.
+
+## 2026-07-08 - Add Audio Processing Context Doc
+
+Changed:
+- Added `docs/AUDIO_PROCESSING.md` with the current audio packet flow,
+  internal sample assumptions, realtime/final paths, tuning knobs, validation
+  commands, and boundaries.
+- Expanded `docs/AUDIO_PROCESSING.md` with project-specific audio terminology.
+- Narrowed `docs/AUDIO_PROCESSING.md` to terminology and settings used by the
+  current faster-whisper flow.
+- Updated `docs/WEBSOCKET_CLIENT_CONTRACT.md` examples and error handling to
+  show domain profile fields consistently.
+- Added domain profile management API support with `GET`, `PUT`, and `DELETE`
+  `/api/domain-profiles`, persisted profile updates, and
+  `domain_profiles_updated` websocket broadcasts.
+- Updated `AI_CONTEXT.md`, `docs/MODULE_MAP.md`, and
+  `docs/WEBSOCKET_CLIENT_CONTRACT.md` for the profile management API.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 16 tests.
+
+## 2026-07-01 - Add Domain Prompt And Hotword Profiles
+
+Changed:
+- Added server-owned domain profile loading from `CoreSTT/domain_profiles.json`.
+- Added WebSocket `start.domain` selection for per-session prompt and
+  faster-whisper hotword biasing.
+- Exposed available domain profile names through config/handshake payloads.
+- Included selected domain names in status, metrics, and timeline diagnostic
+  payloads.
+- Added browser console domain selection populated from WebSocket
+  `domainProfiles`; selected domains are sent in the `start` command and shown
+  in runtime/event diagnostics.
+- Added an INFO startup log through the uvicorn terminal logger for each stream
+  showing `domain=<name>` or `domain=default`.
+- Wired `faster_whisper` `hotwords` passthrough and documented the contract.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 13 tests.
+- `.venv/bin/python -m unittest tests/test_server_protocol.py` from `CoreSTT/`:
+  passed, 5 tests.
+- `.venv/bin/python -m unittest tests/test_faster_whisper_engine.py` from
+  `CoreSTT/`: passed, 3 tests.
+- `.venv/bin/python -m unittest tests/test_inference_worker.py` from `CoreSTT/`:
+  passed, 1 test.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 27
+  tests.
+
 ## 2026-06-13 - Bootstrap AI Context Docs
 
 Changed:

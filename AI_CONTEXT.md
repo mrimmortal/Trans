@@ -19,12 +19,15 @@ commands as local validation.
   processing, text formatting, wake-word, and transcription flow helpers.
 - `CoreSTT/CoreSTT/server/`: internal modules extracted from the FastAPI
   server for settings/CLI parsing, audio helpers, timeline tracking,
-  connection tracking, statistics, and inference scheduling.
+  connection tracking, statistics, domain profile loading, and inference
+  scheduling.
 - `CoreSTT/CoreSTT/transcription_engines/`: ASR adapter implementations and
   factory.
 - `CoreSTT/server.py`: public FastAPI/uvicorn browser streaming server,
   compatibility exports, and script entrypoint.
 - `CoreSTT/protocol.py`: binary browser audio packet and config parsing helpers.
+- `CoreSTT/domain_profiles.json`: server-owned transcription domain profiles
+  for per-session prompt and faster-whisper hotword biasing.
 - `CoreSTT/static/index.html`: browser console UI.
 - `docs/WEBSOCKET_CLIENT_CONTRACT.md`: standardized client request/input
   contract for `WS /ws/transcribe`; read before building non-browser clients.
@@ -37,7 +40,10 @@ commands as local validation.
 - Package import: `from CoreSTT import AudioToTextRecorder`
 - Server: `cd CoreSTT && python server.py --host 127.0.0.1 --port 8020 --device cpu`
 - Server HTTP endpoints: `/`, `/health`, `/api/config`, `/api/metrics`
+- Domain profile HTTP endpoint: `/api/domain-profiles`
 - Streaming endpoint: `WS /ws/transcribe`
+- Optional domain-biased streaming: send `{"type":"start","domain":"medical"}`
+  after the WebSocket is ready.
 
 ## What To Read First
 
@@ -73,6 +79,10 @@ See `docs/COMMANDS.md`.
   user explicitly asks for a breaking API change.
 - Preserve binary packet behavior in `CoreSTT/protocol.py` and websocket server
   expectations unless intentionally changing the browser/server contract.
+- Preserve domain profile selection semantics: profiles are server-owned,
+  selected on `start`, and unknown domains are rejected before streaming.
+- Domain profile edits are exposed through `/api/domain-profiles`; they affect
+  future streams and should preserve validation/persistence behavior.
 - Use `docs/WEBSOCKET_CLIENT_CONTRACT.md` as the integration contract for
   browser, desktop, mobile, CLI, and backend websocket clients.
 - Preserve `CoreSTT/server.py` compatibility exports including

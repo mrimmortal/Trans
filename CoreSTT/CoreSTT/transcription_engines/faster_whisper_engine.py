@@ -67,6 +67,9 @@ class FasterWhisperEngine(BaseTranscriptionEngine):
         }
         if self.config.batch_size > 0:
             kwargs["batch_size"] = self.config.batch_size
+        hotwords = self._get_hotwords()
+        if hotwords:
+            kwargs["hotwords"] = hotwords
 
         segments, info = self.model.transcribe(audio, **kwargs)
         text = " ".join(segment.text for segment in segments).strip()
@@ -77,3 +80,13 @@ class FasterWhisperEngine(BaseTranscriptionEngine):
                 language_probability=getattr(info, "language_probability", 0.0),
             ),
         )
+
+    def _get_hotwords(self):
+        options = self.config.engine_options or {}
+        hotwords = options.get("hotwords")
+        if isinstance(hotwords, str):
+            return hotwords.strip() or None
+        if isinstance(hotwords, (list, tuple)):
+            words = [word.strip() for word in hotwords if isinstance(word, str) and word.strip()]
+            return " ".join(words) or None
+        return None

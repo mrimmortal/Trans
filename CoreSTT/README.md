@@ -95,6 +95,23 @@ recorder.feed_audio(audio_bytes, original_sample_rate=48000)
 text = recorder.text()
 ```
 
+## Domain Profiles
+
+The browser/WebSocket server can bias transcription for named domains using
+`domain_profiles.json`. Profiles provide final/realtime prompts and
+`faster_whisper` hotwords without changing model weights.
+
+Example client start command:
+
+```json
+{ "type": "start", "domain": "medical" }
+```
+
+The bundled `medical` profile includes clinical prompt text and example
+hotwords such as `hypertension`, `metformin`, `dyspnea`, `myocardial
+infarction`, and `hemoglobin A1c`. Unknown domains are rejected before
+streaming starts.
+
 ## Default Model Path
 
 The server uses:
@@ -115,6 +132,8 @@ For better accuracy, use a larger model and GPU when available.
 - Realtime job coalescing and stale interim update dropping.
 - Configurable final/realtime engines, models, prompts, beam sizes, batch sizes,
   VAD timing, wake-word settings, and queue limits.
+- Server-owned domain profiles for per-session prompts and faster-whisper
+  hotwords.
 - Named tuning profiles for Parakeet latency/quality tradeoffs.
 - Wake-word states and timeline events when wake words are enabled.
 - Runtime config update endpoint for active-session-safe and new-session-only settings.

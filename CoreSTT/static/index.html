@@ -31,7 +31,7 @@
       color: var(--text);
     }
 
-    button { font: inherit; }
+    button, select { font: inherit; }
 
     .app {
       max-width: 1180px;
@@ -153,6 +153,26 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    select {
+      width: 100%;
+      min-height: 40px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #151b22;
+      color: var(--text);
+      padding: 0 10px;
     }
 
     .kv {
@@ -312,6 +332,12 @@
           <h2>Live test client</h2>
           <p class="muted">These controls use the same socket, same start/stop/clear/ping messages, and same binary audio packet format.</p>
           <div class="control-stack">
+            <div class="field">
+              <label for="domainSelect">Domain</label>
+              <select id="domainSelect">
+                <option value="">Default</option>
+              </select>
+            </div>
             <button id="streamButton" class="primary" type="button">Start stream</button>
             <div class="button-row">
               <button id="connectButton" class="secondary" type="button">Reconnect</button>
@@ -323,6 +349,7 @@
           <div class="kv" aria-label="Runtime status">
             <div class="kv-row"><label>Endpoint</label><span id="endpointText">--</span></div>
             <div class="kv-row"><label>Sample rate</label><span id="sampleRate">--</span></div>
+            <div class="kv-row"><label>Domain</label><span id="activeDomain">Default</span></div>
             <div class="kv-row"><label>Queue</label><span id="queueDepth">0</span></div>
             <div class="kv-row"><label>State</label><span id="subtitle">Idle</span></div>
           </div>
@@ -368,7 +395,7 @@ socket.binaryType = "arraybuffer";</code></pre>
         <section class="doc-section">
           <h2>2. Client → Server messages</h2>
           <p>Control messages are sent as JSON text frames. Audio is sent as a binary frame.</p>
-          <pre><code>{ "type": "start" }   // begin server-side recorder/session
+          <pre><code>{ "type": "start", "domain": "medical" } // optional domain profile
 { "type": "stop" }    // stop server-side recorder/session
 { "type": "clear" }   // clear transcript on server/client
 { "type": "ping" }    // latency check, server replies with pong</code></pre>
@@ -420,7 +447,7 @@ pong       -> latency response</code></pre>
           <h2>6. Integration checklist for any platform</h2>
           <ul>
             <li>Open WebSocket at <code>/ws/transcribe</code>.</li>
-            <li>Send <code>{"type":"start"}</code> before audio packets.</li>
+            <li>Send <code>{"type":"start","domain":"medical"}</code> before audio packets when using a domain profile.</li>
             <li>Capture mono audio and convert it to <code>pcm_s16le</code>.</li>
             <li>Send packets using the exact metadata-length + metadata + PCM layout.</li>
             <li>Handle <code>realtime</code> for interim text and <code>final</code> for confirmed text.</li>
@@ -439,6 +466,7 @@ pong       -> latency response</code></pre>
       recordState: document.getElementById("recordState"),
       latency: document.getElementById("latency"),
       streamButton: document.getElementById("streamButton"),
+      domainSelect: document.getElementById("domainSelect"),
       clearButton: document.getElementById("clearButton"),
       connectButton: document.getElementById("connectButton"),
       copyButton: document.getElementById("copyButton"),
@@ -447,6 +475,7 @@ pong       -> latency response</code></pre>
       eventLog: document.getElementById("eventLog"),
       endpointText: document.getElementById("endpointText"),
       sampleRate: document.getElementById("sampleRate"),
+      activeDomain: document.getElementById("activeDomain"),
       queueDepth: document.getElementById("queueDepth"),
       tuningProfile: document.getElementById("tuningProfile"),
       finalModel: document.getElementById("finalModel"),
@@ -476,6 +505,9 @@ pong       -> latency response</code></pre>
       targetChunkMs: 40,
       segments: [],
       wakeEnabled: false,
+      domainProfiles: [],
+      selectedDomain: "",
+      activeDomain: "",
       lastPingAt: 0
     };
 
@@ -589,12 +621,15 @@ pong       -> latency response</code></pre>
     function handleServerMessage(message) {
       if (message.type === "hello") {
         state.clientId = message.clientId;
+        applyDomainProfiles(message.domainProfiles);
         applySettings(message.settings);
       } else if (message.type === "ready") {
+        applyDomainProfiles(message.domainProfiles);
         applySettings(message.settings);
         setServerState("Ready", "ready");
         addEvent("Recorder ready");
       } else if (message.type === "status") {
+        setActiveDomain(message.domain || state.activeDomain || state.selectedDomain);
         ui.queueDepth.textContent = String(message.queueDepth || 0);
         if (message.state) {
           const label = stateLabel(message.state);
@@ -647,6 +682,7 @@ pong       -> latency response</code></pre>
 
     function timelineDetail(message) {
       const details = [];
+      if (message.domain) details.push("Domain " + message.domain);
       if (message.segmentId) details.push("Segment " + message.segmentId);
       const segment = message.segment || {};
       if (segment.recordingStartedAt) details.push("start " + formatWallTime(segment.recordingStartedAt));
@@ -667,6 +703,41 @@ pong       -> latency response</code></pre>
       }
       if (message.reason) details.push(message.reason);
       return details.join(" - ");
+    }
+
+    function selectedDomain() {
+      return ui.domainSelect.value || "";
+    }
+
+    function setActiveDomain(domain) {
+      state.activeDomain = domain || "";
+      ui.activeDomain.textContent = state.activeDomain || "Default";
+    }
+
+    function applyDomainProfiles(profiles) {
+      if (!Array.isArray(profiles)) return;
+      const selected = selectedDomain();
+      state.domainProfiles = profiles.slice();
+      ui.domainSelect.replaceChildren();
+      const defaultOption = document.createElement("option");
+      defaultOption.value = "";
+      defaultOption.textContent = "Default";
+      ui.domainSelect.append(defaultOption);
+      for (const profile of state.domainProfiles) {
+        const name = String(profile || "").trim();
+        if (!name) continue;
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        ui.domainSelect.append(option);
+      }
+      if (selected && state.domainProfiles.includes(selected)) {
+        ui.domainSelect.value = selected;
+      } else if (selected) {
+        ui.domainSelect.value = "";
+        state.selectedDomain = "";
+        setActiveDomain("");
+      }
     }
 
     function applySettings(settings) {
@@ -806,11 +877,19 @@ pong       -> latency response</code></pre>
       }
 
       state.streaming = true;
+      state.selectedDomain = selectedDomain();
+      setActiveDomain(state.selectedDomain);
+      ui.domainSelect.disabled = true;
       ui.streamButton.classList.add("active");
       ui.streamButton.textContent = "Stop stream";
       setRecordState("Streaming", true);
-      state.socket.send(JSON.stringify({ type: "start" }));
-      addEvent("Microphone stream started");
+      const startCommand = { type: "start" };
+      if (state.selectedDomain) startCommand.domain = state.selectedDomain;
+      state.socket.send(JSON.stringify(startCommand));
+      addEvent(
+        "Microphone stream started",
+        state.selectedDomain ? "Domain " + state.selectedDomain : "Default domain"
+      );
       if (state.wakeEnabled) {
         setRecordState("Waiting for wake word", "wait");
         ui.subtitle.textContent = "Waiting for wake word";
@@ -840,12 +919,18 @@ pong       -> latency response</code></pre>
       state.audioContext = null;
       state.chunkBuffers = [];
       state.bufferedSamples = 0;
+      ui.domainSelect.disabled = false;
       ui.streamButton.classList.remove("active");
       ui.streamButton.textContent = "Start stream";
       setRecordState("Idle", "");
       ui.subtitle.textContent = "Idle";
       addEvent("Microphone stream stopped");
     }
+
+    ui.domainSelect.addEventListener("change", () => {
+      state.selectedDomain = selectedDomain();
+      setActiveDomain(state.selectedDomain);
+    });
 
     function enqueueSamples(samples) {
       if (!state.streaming || !state.socket || state.socket.readyState !== WebSocket.OPEN) return;
