@@ -2,6 +2,80 @@
 
 Keep entries compact and useful for future continuation.
 
+## 2026-07-09 - Update Radiology Domain Profile
+
+Changed:
+- Enriched `medical_radiology` hotwords and prompts with imaging modalities,
+  report sections, views, comparison terms, anatomy, findings, and impression
+  language while keeping composed profile size within limits.
+
+Validation:
+- Parsed and loaded `CoreSTT/domain_profiles.json`; confirmed
+  `medical_radiology` has 48 domain hotwords, 90 final composed hotwords,
+  48 realtime hotwords, no duplicates, and prompt sizes within limits.
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 19 tests.
+
+## 2026-07-09 - Use Domain-Only Realtime Biasing
+
+Changed:
+- Split domain profile composition so final transcription keeps `global +
+  domain`, while realtime transcription uses only the selected domain profile's
+  realtime prompt and hotwords.
+- Added focused server config assertions for domain-only realtime prompt and
+  realtime hotwords.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 19 tests.
+- Measured composed profiles to confirm final hotwords stay composed while
+  realtime hotwords are domain-only.
+
+## 2026-07-09 - Trim Composed Profile Sizes
+
+Changed:
+- Trimmed `medical_en_clinical` and `medical_prescription` hotwords so
+  effective `global + domain` compositions stay at or below 90 active hotwords.
+
+Validation:
+- Parsed and loaded `CoreSTT/domain_profiles.json`; confirmed no composed
+  domain profile exceeds 90 active hotwords and no profile has duplicate
+  hotwords.
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 19 tests.
+
+## 2026-07-09 - Enrich Medical Domain Profiles
+
+Changed:
+- Added 20 medical specialty/document profiles to `CoreSTT/domain_profiles.json`
+  including pediatrics, dermatology, ENT, ophthalmology, urology, nephrology,
+  endocrinology, psychiatry, dentistry, surgery, anesthesia, ICU, infectious
+  disease, rheumatology, physiotherapy, pathology, procedure note, referral
+  letter, follow-up note, and operative note.
+- Kept each new profile on the existing `hotwords`, `initial_prompt`, and
+  `initial_prompt_realtime` schema.
+
+Validation:
+- Parsed `CoreSTT/domain_profiles.json`, confirmed all 20 profiles exist, each
+  has at least 25 hotwords, no duplicate hotwords within profiles, and loading
+  through `load_domain_profiles` succeeds.
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 19 tests.
+
+## 2026-07-09 - Clean Domain Profile Duplicates
+
+Changed:
+- Removed redundant `command_only` profile because `global` already owns shared
+  command hotwords.
+- Cleared duplicate command hotwords from `medical_command_en` while preserving
+  its medical-command prompt.
+
+Validation:
+- Parsed `CoreSTT/domain_profiles.json` and checked duplicate JSON keys,
+  duplicate hotwords within profiles, and key command-profile overlaps.
+- Loaded profiles through `load_domain_profiles` and composed `global` with
+  `medical_command_en`.
+
 ## 2026-07-09 - Compose Global And Domain Profiles
 
 Changed:

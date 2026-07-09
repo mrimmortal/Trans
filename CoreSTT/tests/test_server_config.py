@@ -276,10 +276,7 @@ class ServerConfigTest(unittest.TestCase):
             profile.initial_prompt,
             "Global final prompt.\n\nMedical final prompt.",
         )
-        self.assertEqual(
-            profile.initial_prompt_realtime,
-            "Global realtime prompt.\n\nMedical realtime prompt.",
-        )
+        self.assertEqual(profile.initial_prompt_realtime, "Medical realtime prompt.")
         self.assertEqual(
             profile.hotwords,
             ["start bold", "undo", "metformin", "hypertension"],
@@ -594,11 +591,15 @@ class ServerConfigTest(unittest.TestCase):
         )
         self.assertEqual(
             recorder.config["initial_prompt_realtime"],
-            "Global realtime prompt.\n\nMedical realtime prompt.",
+            "Medical realtime prompt.",
         )
         self.assertEqual(
             recorder.config["transcription_engine_options"]["hotwords"],
             ["start bold", "undo", "metformin", "hypertension"],
+        )
+        self.assertEqual(
+            recorder.config["realtime_transcription_engine_options"]["hotwords"],
+            ["hypertension", "metformin"],
         )
 
     def test_timeline_events_include_domain_for_logs(self):

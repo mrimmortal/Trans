@@ -33,6 +33,11 @@ class DomainProfile:
         }
 
 
+@dataclass(frozen=True)
+class EffectiveDomainProfile(DomainProfile):
+    realtime_hotwords: Hotwords = None
+
+
 class DomainProfiles:
     def __init__(self, profiles: Dict[str, DomainProfile]):
         self._profiles = dict(profiles)
@@ -77,19 +82,17 @@ def compose_domain_profile(profiles: DomainProfiles, domain_name=None):
         return domain_profile
     if domain_profile is None:
         return global_profile
-    return DomainProfile(
+    return EffectiveDomainProfile(
         initial_prompt=_compose_prompt(
             global_profile.initial_prompt,
             domain_profile.initial_prompt,
         ),
-        initial_prompt_realtime=_compose_prompt(
-            global_profile.initial_prompt_realtime,
-            domain_profile.initial_prompt_realtime,
-        ),
+        initial_prompt_realtime=domain_profile.initial_prompt_realtime,
         hotwords=_compose_hotwords(
             global_profile.hotwords,
             domain_profile.hotwords,
         ),
+        realtime_hotwords=domain_profile.hotwords,
     )
 
 

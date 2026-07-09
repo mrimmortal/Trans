@@ -757,11 +757,10 @@ class RecorderBackedRealtimeSession:
                     self.settings.transcription_engine_options,
                     profile.hotwords,
                 )
-                if self.settings.realtime_transcription_engine_options is not None:
-                    self.settings.realtime_transcription_engine_options = _domain_engine_options(
-                        self.settings.realtime_transcription_engine_options,
-                        profile.hotwords,
-                    )
+                self.settings.realtime_transcription_engine_options = _domain_engine_options(
+                    self.settings.realtime_transcription_engine_options,
+                    getattr(profile, "realtime_hotwords", profile.hotwords),
+                )
             self.domain_name = domain_name
             self.domain_profile_applied = profile_applied
 
