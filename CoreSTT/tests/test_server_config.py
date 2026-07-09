@@ -15,7 +15,11 @@ from server import (
     parse_args,
     settings_from_args,
 )
-from CoreSTT.server.domain_profiles import DomainProfileError, load_domain_profiles
+from CoreSTT.server.domain_profiles import (
+    DomainProfileError,
+    compose_domain_profile,
+    load_domain_profiles,
+)
 
 
 class FakeScheduler:
@@ -217,6 +221,95 @@ class ServerConfigTest(unittest.TestCase):
             with self.assertRaisesRegex(DomainProfileError, "hotwords"):
                 load_domain_profiles(path)
 
+    def test_compose_domain_profile_uses_global_profile_when_no_domain_selected(self):
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                """
+                {
+                  "profiles": {
+                    "global": {
+                      "initial_prompt": "Global final prompt.",
+                      "initial_prompt_realtime": "Global realtime prompt.",
+                      "hotwords": ["start bold", "undo"]
+                    }
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            profiles = load_domain_profiles(path)
+            profile = compose_domain_profile(profiles)
+
+        self.assertEqual(profile.initial_prompt, "Global final prompt.")
+        self.assertEqual(profile.initial_prompt_realtime, "Global realtime prompt.")
+        self.assertEqual(profile.hotwords, ["start bold", "undo"])
+
+    def test_compose_domain_profile_appends_domain_to_global_profile(self):
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                """
+                {
+                  "profiles": {
+                    "global": {
+                      "initial_prompt": "Global final prompt.",
+                      "initial_prompt_realtime": "Global realtime prompt.",
+                      "hotwords": ["start bold", "undo", "metformin"]
+                    },
+                    "medical": {
+                      "initial_prompt": "Medical final prompt.",
+                      "initial_prompt_realtime": "Medical realtime prompt.",
+                      "hotwords": ["metformin", "hypertension"]
+                    }
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            profiles = load_domain_profiles(path)
+            profile = compose_domain_profile(profiles, "medical")
+
+        self.assertEqual(
+            profile.initial_prompt,
+            "Global final prompt.\n\nMedical final prompt.",
+        )
+        self.assertEqual(
+            profile.initial_prompt_realtime,
+            "Global realtime prompt.\n\nMedical realtime prompt.",
+        )
+        self.assertEqual(
+            profile.hotwords,
+            ["start bold", "undo", "metformin", "hypertension"],
+        )
+
+    def test_compose_domain_profile_without_global_preserves_domain_only_behavior(self):
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "profiles.json"
+            path.write_text(
+                """
+                {
+                  "profiles": {
+                    "medical": {
+                      "initial_prompt": "Medical final prompt.",
+                      "initial_prompt_realtime": "Medical realtime prompt.",
+                      "hotwords": ["hypertension", "metformin"]
+                    }
+                  }
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            profiles = load_domain_profiles(path)
+            profile = compose_domain_profile(profiles, "medical")
+
+        self.assertEqual(profile.initial_prompt, "Medical final prompt.")
+        self.assertEqual(profile.initial_prompt_realtime, "Medical realtime prompt.")
+        self.assertEqual(profile.hotwords, ["hypertension", "metformin"])
+
     def test_update_settings_splits_applied_rejected_and_startup_only(self):
         service = CoreSTTService(
             ServerSettings(),
@@ -311,6 +404,11 @@ class ServerConfigTest(unittest.TestCase):
                 """
                 {
                   "profiles": {
+                    "global": {
+                      "initial_prompt": "Global final prompt.",
+                      "initial_prompt_realtime": "Global realtime prompt.",
+                      "hotwords": ["start bold", "undo", "metformin"]
+                    },
                     "medical": {
                       "initial_prompt": "Medical final prompt.",
                       "initial_prompt_realtime": "Medical realtime prompt.",
@@ -333,13 +431,18 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {
             "profiles": {
+                "global": {
+                    "initial_prompt": "Global final prompt.",
+                    "initial_prompt_realtime": "Global realtime prompt.",
+                    "hotwords": ["start bold", "undo", "metformin"],
+                },
                 "medical": {
                     "initial_prompt": "Medical final prompt.",
                     "initial_prompt_realtime": "Medical realtime prompt.",
                     "hotwords": ["hypertension", "metformin"],
                 }
             },
-            "domainProfiles": ["medical"],
+            "domainProfiles": ["global", "medical"],
         })
 
     def test_put_domain_profile_updates_file_and_broadcasts_names(self):
@@ -451,6 +554,11 @@ class ServerConfigTest(unittest.TestCase):
                 """
                 {
                   "profiles": {
+                    "global": {
+                      "initial_prompt": "Global final prompt.",
+                      "initial_prompt_realtime": "Global realtime prompt.",
+                      "hotwords": ["start bold", "undo", "metformin"]
+                    },
                     "medical": {
                       "initial_prompt": "Medical final prompt.",
                       "initial_prompt_realtime": "Medical realtime prompt.",
@@ -480,11 +588,17 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(status["domain"], "medical")
         self.assertEqual(metrics["metrics"]["domain"], "medical")
         recorder = FakeRecorder.instances[-1]
-        self.assertEqual(recorder.config["initial_prompt"], "Medical final prompt.")
-        self.assertEqual(recorder.config["initial_prompt_realtime"], "Medical realtime prompt.")
+        self.assertEqual(
+            recorder.config["initial_prompt"],
+            "Global final prompt.\n\nMedical final prompt.",
+        )
+        self.assertEqual(
+            recorder.config["initial_prompt_realtime"],
+            "Global realtime prompt.\n\nMedical realtime prompt.",
+        )
         self.assertEqual(
             recorder.config["transcription_engine_options"]["hotwords"],
-            ["hypertension", "metformin"],
+            ["start bold", "undo", "metformin", "hypertension"],
         )
 
     def test_timeline_events_include_domain_for_logs(self):

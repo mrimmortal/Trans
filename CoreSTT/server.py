@@ -62,6 +62,7 @@ from CoreSTT.server.cli import parse_args, parse_float_tuple, settings_from_args
 from CoreSTT.server.connection import ConnectionManager
 from CoreSTT.server.domain_profiles import (
     DomainProfileError,
+    compose_domain_profile,
     load_domain_profiles,
     save_domain_profiles,
 )
@@ -615,6 +616,7 @@ class RecorderBackedRealtimeSession:
         self.inference_duration = {"realtime": RunningStats(), "final": RunningStats()}
         self.total_latency = {"realtime": RunningStats(), "final": RunningStats()}
         self.domain_name = None
+        self.domain_profile_applied = False
         self.recorder = self._create_recorder()
         self.text_thread = threading.Thread(
             target=self._text_worker,
@@ -742,7 +744,8 @@ class RecorderBackedRealtimeSession:
         with self.lock:
             if self.streaming:
                 raise ValueError("Domain can only be changed before streaming starts.")
-            if self.domain_name == domain_name:
+            profile_applied = profile is not None
+            if self.domain_name == domain_name and self.domain_profile_applied == profile_applied:
                 return
             self.generation += 1
             self.settings.initial_prompt = profile.initial_prompt if profile else self.settings.initial_prompt
@@ -760,6 +763,7 @@ class RecorderBackedRealtimeSession:
                         profile.hotwords,
                     )
             self.domain_name = domain_name
+            self.domain_profile_applied = profile_applied
 
         old_recorder = self.recorder
         try:
@@ -1816,13 +1820,15 @@ class CoreSTTService:
 
     def resolve_domain_profile(self, requested_domain):
         domain_name = requested_domain if requested_domain is not None else self.settings.default_domain
-        if not domain_name:
-            return None, None
         with self.domain_profiles_lock:
-            profile = self.domain_profiles.get(domain_name)
-        if profile is None:
+            if domain_name:
+                selected_profile = self.domain_profiles.get(domain_name)
+                if selected_profile is None:
+                    raise ValueError(f"Unknown domain profile: {domain_name}")
+            profile = compose_domain_profile(self.domain_profiles, domain_name)
+        if domain_name and profile is None:
             raise ValueError(f"Unknown domain profile: {domain_name}")
-        return str(domain_name), profile
+        return str(domain_name) if domain_name else None, profile
 
     def active_speaker_count(self):
         return self.sessions.active_speaker_count()
@@ -1961,14 +1967,14 @@ class CoreSTTService:
                 if kind == "realtime"
                 else session.settings.initial_prompt
             ),
-            override_initial_prompt=session.domain_name is not None,
+            override_initial_prompt=session.domain_profile_applied,
             engine_options=(
                 session.settings.realtime_transcription_engine_options
                 if kind == "realtime"
                 and session.settings.realtime_transcription_engine_options is not None
                 else session.settings.transcription_engine_options
             ),
-            override_engine_options=session.domain_name is not None,
+            override_engine_options=session.domain_profile_applied,
             deadline_at=(
                 time.monotonic() + (self.settings.max_realtime_queue_age_ms / 1000.0)
                 if kind == "realtime"

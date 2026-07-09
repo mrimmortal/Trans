@@ -9,6 +9,8 @@ from typing import Dict, List, Optional, Union
 
 
 Hotwords = Union[str, List[str]]
+GLOBAL_PROFILE_NAME = "global"
+PROMPT_SEPARATOR = "\n\n"
 
 
 class DomainProfileError(ValueError):
@@ -62,6 +64,33 @@ class DomainProfiles:
     def delete(self, name):
         profile_name = _profile_name(name)
         return self._profiles.pop(profile_name, None) is not None
+
+
+def compose_domain_profile(profiles: DomainProfiles, domain_name=None):
+    """
+    Builds the effective profile from the reserved global profile and an
+    optional selected domain profile.
+    """
+    global_profile = profiles.get(GLOBAL_PROFILE_NAME)
+    domain_profile = profiles.get(domain_name)
+    if global_profile is None:
+        return domain_profile
+    if domain_profile is None:
+        return global_profile
+    return DomainProfile(
+        initial_prompt=_compose_prompt(
+            global_profile.initial_prompt,
+            domain_profile.initial_prompt,
+        ),
+        initial_prompt_realtime=_compose_prompt(
+            global_profile.initial_prompt_realtime,
+            domain_profile.initial_prompt_realtime,
+        ),
+        hotwords=_compose_hotwords(
+            global_profile.hotwords,
+            domain_profile.hotwords,
+        ),
+    )
 
 
 def load_domain_profiles(path):
@@ -145,3 +174,29 @@ def _hotwords(value, name):
     raise DomainProfileError(
         f"domain profile '{name}' field 'hotwords' must be a string or list of strings"
     )
+
+
+def _compose_prompt(*prompts):
+    parts = [prompt.strip() for prompt in prompts if isinstance(prompt, str) and prompt.strip()]
+    return PROMPT_SEPARATOR.join(parts) if parts else None
+
+
+def _compose_hotwords(*hotword_values):
+    merged = []
+    seen = set()
+    for value in hotword_values:
+        for word in _hotword_items(value):
+            key = word.casefold()
+            if key not in seen:
+                seen.add(key)
+                merged.append(word)
+    return merged or None
+
+
+def _hotword_items(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    return [item.strip() for item in value if item.strip()]

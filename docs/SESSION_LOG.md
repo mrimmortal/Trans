@@ -2,6 +2,20 @@
 
 Keep entries compact and useful for future continuation.
 
+## 2026-07-09 - Compose Global And Domain Profiles
+
+Changed:
+- Added reserved `global` domain profile composition so sessions use global
+  command prompt/hotwords alone or prepend them to a selected domain profile.
+- Moved command vocabulary in `CoreSTT/domain_profiles.json` into `global` and
+  kept `medical_en_clinical` focused on medical terminology.
+- Added focused server config tests for global-only, global-plus-domain,
+  duplicate hotword handling, and missing-global compatibility.
+
+Validation:
+- `.venv/bin/python -m unittest tests/test_server_config.py` from `CoreSTT/`:
+  passed, 19 tests.
+
 ## 2026-07-08 - Add Audio Processing Context Doc
 
 Changed:

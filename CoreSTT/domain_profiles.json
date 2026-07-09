@@ -5,18 +5,7 @@
       "initial_prompt": null,
       "initial_prompt_realtime": null
     },
-    "medical": {
-      "hotwords": [
-        "hypertension",
-        "metformin",
-        "dyspnea",
-        "myocardial infarction",
-        "hemoglobin A1c"
-      ],
-      "initial_prompt": "This is medical dictation. Preserve clinical terminology, medication names, diagnoses, symptoms, anatomy terms, lab values, and abbreviations.",
-      "initial_prompt_realtime": "Medical dictation. Prefer clinical terminology and medication names."
-    },
-    "medical_en_clinical": {
+    "global": {
       "hotwords": [
         "start bold",
         "stop bold",
@@ -59,7 +48,24 @@
         "clear everything",
         "insert template",
         "use template",
-        "get template",
+        "get template"
+      ],
+      "initial_prompt": "This is English dictation with voice editing commands. Transcribe exactly what is spoken. Voice commands may include start bold, stop bold, start italic, stop italic, start underline, stop underline, next line, new paragraph, scratch that, undo, redo, delete last word, delete last sentence, save document, select all, clear all, start bullet list, stop bullet list, start numbered list, stop numbered list, and insert template. Do not translate. Do not summarize. Do not add information that was not spoken.",
+      "initial_prompt_realtime": "English dictation with voice editing commands. Transcribe commands exactly, such as start bold, stop bold, next line, new paragraph, scratch that, undo, delete last word, and save document."
+    },
+    "medical": {
+      "hotwords": [
+        "hypertension",
+        "metformin",
+        "dyspnea",
+        "myocardial infarction",
+        "hemoglobin A1c"
+      ],
+      "initial_prompt": "This is medical dictation. Preserve clinical terminology, medication names, diagnoses, symptoms, anatomy terms, lab values, and abbreviations.",
+      "initial_prompt_realtime": "Medical dictation. Prefer clinical terminology and medication names."
+    },
+    "medical_en_clinical": {
+      "hotwords": [
         "hypertension",
         "diabetes mellitus",
         "metformin",
@@ -73,8 +79,8 @@
         "ECG",
         "CBC"
       ],
-      "initial_prompt": "This is English medical dictation with voice editing commands. Transcribe exactly what is spoken. Preserve clinical terminology, medication names, diagnoses, symptoms, anatomy, lab values, units, abbreviations, and acronyms. Voice commands may include start bold, stop bold, start italic, stop italic, start underline, stop underline, next line, new paragraph, scratch that, undo, redo, delete last word, delete last sentence, save document, select all, clear all, start bullet list, stop bullet list, start numbered list, stop numbered list, insert template. Do not translate. Do not summarize. Do not add information that was not spoken.",
-      "initial_prompt_realtime": "English medical dictation with voice editing commands. Preserve medical terminology and transcribe commands exactly, such as start bold, stop bold, next line, new paragraph, scratch that, undo, delete last word, and save document."
+      "initial_prompt": "This is English medical dictation. Preserve clinical terminology, medication names, diagnoses, symptoms, anatomy, lab values, units, abbreviations, and acronyms.",
+      "initial_prompt_realtime": "English medical dictation. Preserve medical terminology, medication names, clinical abbreviations, and lab values."
     }
   }
 }
