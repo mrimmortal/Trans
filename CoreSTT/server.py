@@ -76,6 +76,11 @@ from CoreSTT.server.inference import (
     SchedulerTranscriptionExecutor,
     SharedEngineWorker,
 )
+from CoreSTT.server.monitoring import (
+    DIAGNOSTIC_THRESHOLDS,
+    ResourceMonitor,
+    diagnose_bottleneck,
+)
 from CoreSTT.server.stats import RunningStats
 from CoreSTT.server.timeline import (
     SegmentState,
@@ -1797,6 +1802,8 @@ class CoreSTTService:
         self._pending_recorder_results = {}
         self._pending_recorder_lock = threading.Lock()
         self.recorder_factory = recorder_factory
+        self.resource_monitor = ResourceMonitor(settings)
+        self.resource_thread = None
         self.domain_profiles_path = self._resolve_domain_profiles_path(
             settings.domain_profiles_path
         )
@@ -1805,12 +1812,21 @@ class CoreSTTService:
             self.domain_profiles_path
         )
         factory = scheduler_factory or InferenceScheduler
-        self.scheduler = factory(
-            settings,
-            self._on_inference_result,
-            self._on_scheduler_drop,
-            self._on_scheduler_error,
-        )
+        if factory is InferenceScheduler:
+            self.scheduler = factory(
+                settings,
+                self._on_inference_result,
+                self._on_scheduler_drop,
+                self._on_scheduler_error,
+                self.resource_snapshot,
+            )
+        else:
+            self.scheduler = factory(
+                settings,
+                self._on_inference_result,
+                self._on_scheduler_drop,
+                self._on_scheduler_error,
+            )
         self.ready_thread = None
 
     @staticmethod
@@ -1831,6 +1847,13 @@ class CoreSTTService:
             daemon=True,
         )
         self.ready_thread.start()
+        if self.settings.resource_monitoring_enabled:
+            self.resource_thread = threading.Thread(
+                target=self._resource_log_worker,
+                name="CoreSTTResourceMonitor",
+                daemon=True,
+            )
+            self.resource_thread.start()
 
     def stop(self):
         self.stop_event.set()
@@ -1839,6 +1862,8 @@ class CoreSTTService:
         self.scheduler.stop()
         if self.ready_thread is not None:
             self.ready_thread.join(timeout=5)
+        if self.resource_thread is not None:
+            self.resource_thread.join(timeout=5)
 
     def admit_session(self, session_id):
         if not self.sessions.reserve(session_id):
@@ -1973,8 +1998,52 @@ class CoreSTTService:
         data["ok"] = self.ready.is_set() and self.scheduler.healthy()
         data["scheduler"] = self.scheduler.snapshot()
         data["limits"] = self.limits_dict()
+        data["settings"] = self.settings.public_dict()
         data["startupErrors"] = list(self.startup_errors)
+        data["resources"] = self.resource_snapshot()
+        data["thresholds"] = DIAGNOSTIC_THRESHOLDS
+        data["diagnostics"] = diagnose_bottleneck(data)
         return data
+
+    def resource_snapshot(self):
+        if not self.settings.resource_monitoring_enabled:
+            return {
+                "timestamp": time.time(),
+                "process": {"available": False, "reason": "resource_monitoring_disabled"},
+                "system": {"available": False, "reason": "resource_monitoring_disabled"},
+                "cuda": {"available": False, "reason": "resource_monitoring_disabled"},
+            }
+        return self.resource_monitor.snapshot()
+
+    def _resource_log_worker(self):
+        while not self.stop_event.wait(
+            max(1, int(self.settings.resource_log_interval_seconds))
+        ):
+            self._log_resource_snapshot("periodic")
+
+    def _log_resource_snapshot(self, reason):
+        resources = self.resource_snapshot()
+        process = resources.get("process") or {}
+        system = resources.get("system") or {}
+        cuda = resources.get("cuda") or {}
+        LOGGER.info(
+            "resources reason=%s cpu_percent=%s process_cpu_percent=%s rss_mb=%s "
+            "system_memory_percent=%s thread_count=%s cuda_available=%s "
+            "cuda_allocated_mb=%s cuda_reserved_mb=%s cuda_free_mb=%s "
+            "cuda_total_mb=%s cuda_memory_pressure=%s",
+            reason,
+            system.get("cpuPercent"),
+            process.get("cpuPercent"),
+            process.get("rssMb"),
+            system.get("memoryPercent"),
+            process.get("threadCount"),
+            cuda.get("available"),
+            cuda.get("allocatedMb"),
+            cuda.get("reservedMb"),
+            cuda.get("freeMb"),
+            cuda.get("totalMb"),
+            cuda.get("memoryPressure"),
+        )
 
     def limits_dict(self):
         return {
@@ -2164,6 +2233,8 @@ class CoreSTTService:
             "ok": self.scheduler.healthy(),
         }
         self.manager.publish_all(ready_message)
+        if self.settings.resource_monitoring_enabled:
+            self._log_resource_snapshot("startup")
         if self.startup_errors:
             for error in self.startup_errors:
                 self.manager.publish_all(error)

@@ -384,3 +384,21 @@ Validation:
   tests.
 - `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 55
   tests.
+
+## 2026-07-14 - Add Diagnostics Dashboard and Resource Metrics
+
+Changed:
+- Added resource monitoring for process CPU/RAM, system memory/load, and
+  CUDA memory with graceful fallback.
+- Added `resources`, `thresholds`, and deterministic `diagnostics` to
+  `/api/metrics`.
+- Added resource fields and gate wait timing to per-inference logs.
+- Added an in-browser diagnostics dashboard with threshold coloring,
+  bottleneck hints, and local JSON/JSONL/CSV exports.
+- Added monitoring settings for resource collection and log interval.
+
+Validation:
+- `.venv/bin/python -m unittest tests.test_monitoring tests.test_server_config tests.test_inference_worker`
+  from `CoreSTT/`: passed, 46 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 60
+  tests.

@@ -696,6 +696,10 @@ Example:
 Client handling: Use for diagnostics and operational dashboards, not transcript
 rendering.
 
+Server-wide dashboard diagnostics are exposed through `GET /api/metrics`,
+including additive `resources`, `thresholds`, and `diagnostics` fields. This
+does not change the WebSocket `metrics` reply shape.
+
 ### domain_profiles_updated
 
 Purpose: Notify connected clients that editable domain profile data changed.

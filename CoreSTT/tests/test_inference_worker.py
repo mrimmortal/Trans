@@ -132,6 +132,25 @@ class SharedEngineWorkerTest(unittest.TestCase):
             OneJobQueue(self._job("final", "session-a", 1)),
             FakeEngine,
             results.append,
+            resource_snapshot_provider=lambda: {
+                "process": {
+                    "cpuPercent": 11,
+                    "rssMb": 222,
+                    "threadCount": 3,
+                },
+                "system": {
+                    "cpuPercent": 44,
+                    "memoryPercent": 55,
+                },
+                "cuda": {
+                    "available": False,
+                    "allocatedMb": None,
+                    "reservedMb": None,
+                    "freeMb": None,
+                    "totalMb": None,
+                    "memoryPressure": None,
+                },
+            },
         )
 
         with self.assertLogs("corestt.fastapi", level="INFO") as logs:
@@ -147,9 +166,17 @@ class SharedEngineWorkerTest(unittest.TestCase):
             "queue_delay=",
             "inference_duration=",
             "total_latency=",
+            "gate_wait=",
+            "cpu_percent=44",
+            "process_cpu_percent=11",
+            "rss_mb=222",
+            "system_memory_percent=55",
+            "thread_count=3",
+            "cuda_available=False",
         ):
             self.assertIn(field, log)
         self.assertEqual(len(results), 1)
+        self.assertIn("gateWait", worker.snapshot())
 
     def test_final_submission_cancels_matching_queued_realtime_job(self):
         dropped = []

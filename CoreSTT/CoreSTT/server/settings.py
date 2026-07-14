@@ -62,6 +62,8 @@ ACTIVE_RUNTIME_SETTINGS = {
     "max_realtime_queue_age_ms",
     "max_sessions",
     "realtime_degradation_threshold_ms",
+    "resource_log_interval_seconds",
+    "resource_monitoring_enabled",
 }
 
 NEW_SESSION_RUNTIME_SETTINGS = {
@@ -85,6 +87,9 @@ NEW_SESSION_RUNTIME_SETTINGS = {
     "realtime_processing_pause",
     "realtime_transcription_enabled",
     "realtime_transcription_use_syllable_boundaries",
+    "resource_log_interval_seconds",
+    "resource_metrics_include_cuda",
+    "resource_monitoring_enabled",
     "silero_sensitivity",
     "vad_energy_threshold",
     "wake_word_activation_delay",
@@ -147,6 +152,7 @@ INT_SETTINGS = {
     "port",
     "realtime_batch_size",
     "realtime_degradation_threshold_ms",
+    "resource_log_interval_seconds",
     "webrtc_sensitivity",
 }
 
@@ -175,6 +181,8 @@ BOOL_SETTINGS = {
     "normalize_audio",
     "realtime_transcription_enabled",
     "realtime_transcription_use_syllable_boundaries",
+    "resource_metrics_include_cuda",
+    "resource_monitoring_enabled",
     "single_gpu_inference_gate",
     "use_main_model_for_realtime",
     "use_recorder_backed_realtime_session",
@@ -267,6 +275,9 @@ class ServerSettings:
     max_final_queue_depth_per_session: int = 8
     max_global_inference_queue_depth: int = 64
     realtime_degradation_threshold_ms: int = 1500
+    resource_monitoring_enabled: bool = True
+    resource_log_interval_seconds: int = 30
+    resource_metrics_include_cuda: bool = True
     realtime_min_audio_seconds: float = 0.8
     realtime_max_audio_seconds: float = 5.0
     vad_energy_threshold: float = 250.0
@@ -290,6 +301,8 @@ class ServerSettings:
             raise ValueError("cpu_threads must be a positive integer or None")
         if self.num_workers <= 0:
             raise ValueError("num_workers must be a positive integer")
+        if self.resource_log_interval_seconds <= 0:
+            raise ValueError("resource_log_interval_seconds must be a positive integer")
 
     def public_dict(self):
         data = asdict(self)

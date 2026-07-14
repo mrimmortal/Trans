@@ -304,6 +304,92 @@
     .event time { color: var(--muted); }
     .event small { display: block; color: var(--muted); margin-top: 2px; }
 
+    .diagnostics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+    }
+
+    .diagnostic-card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #12161c;
+      padding: 12px;
+      min-height: 132px;
+    }
+
+    .diagnostic-card.normal { border-color: rgba(87, 214, 141, 0.35); }
+    .diagnostic-card.warn { border-color: rgba(241, 189, 90, 0.55); }
+    .diagnostic-card.critical { border-color: rgba(255, 107, 107, 0.65); }
+    .diagnostic-card.unavailable { border-color: rgba(154, 166, 178, 0.35); }
+
+    .diagnostic-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .diagnostic-title {
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .severity {
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-size: 11px;
+      color: var(--bg);
+      background: var(--green);
+    }
+
+    .severity.warn { background: var(--amber); }
+    .severity.critical { background: var(--red); color: #1b0f12; }
+    .severity.unavailable { background: var(--muted); }
+
+    .metric-list {
+      display: grid;
+      gap: 5px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--soft);
+      font-size: 12px;
+    }
+
+    .metric-list li {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--soft);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .metric-list span:last-child {
+      color: var(--text);
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .diagnostics-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .diagnostics-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
     @media (max-width: 900px) {
       .app { padding: 16px; }
       header { flex-direction: column; }
@@ -381,6 +467,57 @@
           <h2>Transcript</h2>
           <div id="transcript" class="transcript">
             <div class="empty">No transcript yet. Start the stream and speak.</div>
+          </div>
+        </section>
+
+        <section class="panel" aria-label="Diagnostics dashboard">
+          <h2>Diagnostics</h2>
+          <div class="diagnostics-meta">
+            <span>Updated <span id="diagnosticsUpdated">--</span></span>
+            <span>Samples <span id="diagnosticsSamples">0</span></span>
+            <span>Bottleneck <span id="diagnosticsBottleneck">unknown</span></span>
+          </div>
+          <div class="diagnostics-grid">
+            <article id="diagHardware" class="diagnostic-card unavailable">
+              <div class="diagnostic-head">
+                <span class="diagnostic-title">Hardware</span>
+                <span id="diagHardwareSeverity" class="severity unavailable">n/a</span>
+              </div>
+              <ul id="diagHardwareMetrics" class="metric-list"></ul>
+            </article>
+            <article id="diagCuda" class="diagnostic-card unavailable">
+              <div class="diagnostic-head">
+                <span class="diagnostic-title">CUDA</span>
+                <span id="diagCudaSeverity" class="severity unavailable">n/a</span>
+              </div>
+              <ul id="diagCudaMetrics" class="metric-list"></ul>
+            </article>
+            <article id="diagQueues" class="diagnostic-card unavailable">
+              <div class="diagnostic-head">
+                <span class="diagnostic-title">Queues</span>
+                <span id="diagQueuesSeverity" class="severity unavailable">n/a</span>
+              </div>
+              <ul id="diagQueuesMetrics" class="metric-list"></ul>
+            </article>
+            <article id="diagLatency" class="diagnostic-card unavailable">
+              <div class="diagnostic-head">
+                <span class="diagnostic-title">Latency</span>
+                <span id="diagLatencySeverity" class="severity unavailable">n/a</span>
+              </div>
+              <ul id="diagLatencyMetrics" class="metric-list"></ul>
+            </article>
+            <article id="diagBottleneck" class="diagnostic-card unavailable">
+              <div class="diagnostic-head">
+                <span class="diagnostic-title">Bottleneck</span>
+                <span id="diagBottleneckSeverity" class="severity unavailable">n/a</span>
+              </div>
+              <ul id="diagBottleneckMetrics" class="metric-list"></ul>
+            </article>
+          </div>
+          <div class="diagnostics-actions">
+            <button id="exportSnapshotButton" class="secondary" type="button">Export Snapshot JSON</button>
+            <button id="exportJsonlButton" class="secondary" type="button">Export Session Log JSONL</button>
+            <button id="exportCsvButton" class="secondary" type="button">Export CSV</button>
           </div>
         </section>
 
@@ -485,7 +622,28 @@ pong       -> latency response</code></pre>
       cadenceInfo: document.getElementById("cadenceInfo"),
       vadInfo: document.getElementById("vadInfo"),
       wakeInfo: document.getElementById("wakeInfo"),
-      decodeInfo: document.getElementById("decodeInfo")
+      decodeInfo: document.getElementById("decodeInfo"),
+      diagnosticsUpdated: document.getElementById("diagnosticsUpdated"),
+      diagnosticsSamples: document.getElementById("diagnosticsSamples"),
+      diagnosticsBottleneck: document.getElementById("diagnosticsBottleneck"),
+      diagHardware: document.getElementById("diagHardware"),
+      diagHardwareSeverity: document.getElementById("diagHardwareSeverity"),
+      diagHardwareMetrics: document.getElementById("diagHardwareMetrics"),
+      diagCuda: document.getElementById("diagCuda"),
+      diagCudaSeverity: document.getElementById("diagCudaSeverity"),
+      diagCudaMetrics: document.getElementById("diagCudaMetrics"),
+      diagQueues: document.getElementById("diagQueues"),
+      diagQueuesSeverity: document.getElementById("diagQueuesSeverity"),
+      diagQueuesMetrics: document.getElementById("diagQueuesMetrics"),
+      diagLatency: document.getElementById("diagLatency"),
+      diagLatencySeverity: document.getElementById("diagLatencySeverity"),
+      diagLatencyMetrics: document.getElementById("diagLatencyMetrics"),
+      diagBottleneck: document.getElementById("diagBottleneck"),
+      diagBottleneckSeverity: document.getElementById("diagBottleneckSeverity"),
+      diagBottleneckMetrics: document.getElementById("diagBottleneckMetrics"),
+      exportSnapshotButton: document.getElementById("exportSnapshotButton"),
+      exportJsonlButton: document.getElementById("exportJsonlButton"),
+      exportCsvButton: document.getElementById("exportCsvButton")
     };
 
     const state = {
@@ -508,7 +666,30 @@ pong       -> latency response</code></pre>
       domainProfiles: [],
       selectedDomain: "",
       activeDomain: "",
-      lastPingAt: 0
+      lastPingAt: 0,
+      latestMetrics: null,
+      diagnosticsSamples: []
+    };
+
+    const DEFAULT_THRESHOLDS = {
+      cpuPercent: { warn: 75, critical: 90 },
+      systemMemoryPercent: { warn: 80, critical: 92 },
+      cudaMemoryPressure: { warn: 80, critical: 92 },
+      cudaFreeMb: { warnBelow: 1500, criticalBelow: 750 },
+      queueDelayP95Ms: {
+        realtime: { warn: 500, critical: 1500 },
+        final: { warn: 1000, critical: 3000 }
+      },
+      inferenceDurationP95Ms: {
+        realtime: { warn: 800, critical: 2000 },
+        final: { warn: 3000, critical: 8000 }
+      },
+      totalLatencyP95Ms: {
+        realtime: { warn: 1500, critical: 3000 },
+        final: { warn: 5000, critical: 12000 }
+      },
+      workerBusyRatio: { warn: 0.75, critical: 0.90 },
+      rejectedJobs: { warn: 1, critical: 5 }
     };
 
     function wsUrl() {
@@ -772,6 +953,280 @@ pong       -> latency response</code></pre>
       return number.toFixed(number < 1 ? 2 : 1) + "s";
     }
 
+    function formatNumber(value, digits = 1, suffix = "") {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return "--";
+      return number.toFixed(digits) + suffix;
+    }
+
+    function metricValue(source, path, fallback = undefined) {
+      let current = source;
+      for (const key of path.split(".")) {
+        if (current == null || typeof current !== "object" || !(key in current)) return fallback;
+        current = current[key];
+      }
+      return current;
+    }
+
+    function maxMetric(...values) {
+      const numbers = values.map(Number).filter(Number.isFinite);
+      return numbers.length ? Math.max(...numbers) : 0;
+    }
+
+    function severityFromValue(value, threshold, invert = false) {
+      const number = Number(value);
+      if (!Number.isFinite(number) || !threshold) return "unavailable";
+      if (invert) {
+        if (number <= threshold.criticalBelow) return "critical";
+        if (number <= threshold.warnBelow) return "warn";
+        return "normal";
+      }
+      if (number >= threshold.critical) return "critical";
+      if (number >= threshold.warn) return "warn";
+      return "normal";
+    }
+
+    function worstSeverity(...values) {
+      if (values.includes("critical")) return "critical";
+      if (values.includes("warn")) return "warn";
+      if (values.includes("normal")) return "normal";
+      return "unavailable";
+    }
+
+    function increasingAcrossSamples(path) {
+      if (state.diagnosticsSamples.length < 4) return false;
+      const recent = state.diagnosticsSamples.slice(-4).map(sample => Number(metricValue(sample.metrics, path, 0)));
+      if (recent.some(value => !Number.isFinite(value))) return false;
+      return recent[0] < recent[1] && recent[1] < recent[2] && recent[2] < recent[3];
+    }
+
+    function setCard(card, badge, severity) {
+      card.className = "diagnostic-card " + severity;
+      badge.className = "severity " + severity;
+      badge.textContent = severity === "unavailable" ? "n/a" : severity;
+    }
+
+    function renderMetricList(list, rows) {
+      list.replaceChildren();
+      for (const [label, value] of rows) {
+        const item = document.createElement("li");
+        const left = document.createElement("span");
+        const right = document.createElement("span");
+        left.textContent = label;
+        right.textContent = value;
+        item.append(left, right);
+        list.append(item);
+      }
+    }
+
+    async function pollDiagnostics() {
+      try {
+        const response = await fetch("/api/metrics", { cache: "no-store" });
+        if (!response.ok) throw new Error("metrics " + response.status);
+        const metrics = await response.json();
+        state.latestMetrics = metrics;
+        state.diagnosticsSamples.push({
+          capturedAt: new Date().toISOString(),
+          metrics
+        });
+        while (state.diagnosticsSamples.length > 1000) state.diagnosticsSamples.shift();
+        renderDiagnostics(metrics);
+      } catch (error) {
+        addEvent("Diagnostics metrics failed: " + error.message);
+      }
+    }
+
+    function renderDiagnostics(metrics) {
+      const thresholds = metrics.thresholds || DEFAULT_THRESHOLDS;
+      const resources = metrics.resources || {};
+      const process = resources.process || {};
+      const system = resources.system || {};
+      const cuda = resources.cuda || {};
+      const scheduler = metrics.scheduler || {};
+      const queues = scheduler.queues || {};
+      const workers = scheduler.workers || {};
+      const mainWorker = workers.main || {};
+      const realtimeWorker = workers.realtime || {};
+      const diagnostics = metrics.diagnostics || {};
+      const finalP95Queue = metricValue(mainWorker, "queueDelay.p95Ms", 0);
+      const realtimeP95Queue = metricValue(realtimeWorker, "queueDelay.p95Ms", 0);
+      const finalP95Inference = metricValue(mainWorker, "inferenceDuration.p95Ms", 0);
+      const realtimeP95Inference = metricValue(realtimeWorker, "inferenceDuration.p95Ms", 0);
+      const finalP95Latency = metricValue(mainWorker, "totalLatency.p95Ms", 0);
+      const realtimeP95Latency = metricValue(realtimeWorker, "totalLatency.p95Ms", 0);
+      const mainQueue = queues.main || {};
+      const realtimeQueue = queues.realtime || {};
+      const cpuSeverity = severityFromValue(
+        maxMetric(process.cpuPercent, system.cpuPercent),
+        thresholds.cpuPercent
+      );
+      const memorySeverity = severityFromValue(system.memoryPercent, thresholds.systemMemoryPercent);
+      const cudaPressureSeverity = cuda.available
+        ? severityFromValue(cuda.memoryPressure, thresholds.cudaMemoryPressure)
+        : "unavailable";
+      const cudaFreeSeverity = cuda.available
+        ? severityFromValue(cuda.freeMb, thresholds.cudaFreeMb, true)
+        : "unavailable";
+      const queueSeverity = worstSeverity(
+        severityFromValue(finalP95Queue, thresholds.queueDelayP95Ms.final),
+        severityFromValue(realtimeP95Queue, thresholds.queueDelayP95Ms.realtime),
+        severityFromValue(maxMetric(mainQueue.rejectedJobs, realtimeQueue.rejectedJobs), thresholds.rejectedJobs),
+        increasingAcrossSamples("scheduler.queues.realtime.coalescedRealtime") ? "warn" : "normal",
+        increasingAcrossSamples("scheduler.queues.realtime.staleRealtimeDropped") ? "warn" : "normal"
+      );
+      const latencySeverity = worstSeverity(
+        severityFromValue(finalP95Inference, thresholds.inferenceDurationP95Ms.final),
+        severityFromValue(realtimeP95Inference, thresholds.inferenceDurationP95Ms.realtime),
+        severityFromValue(finalP95Latency, thresholds.totalLatencyP95Ms.final),
+        severityFromValue(realtimeP95Latency, thresholds.totalLatencyP95Ms.realtime),
+        severityFromValue(maxMetric(mainWorker.busyRatio, realtimeWorker.busyRatio), thresholds.workerBusyRatio)
+      );
+      const hardwareSeverity = worstSeverity(cpuSeverity, memorySeverity);
+      const cudaSeverity = worstSeverity(cudaPressureSeverity, cudaFreeSeverity);
+      const bottleneckSeverity = diagnostics.likelyBottleneck && diagnostics.likelyBottleneck !== "unknown"
+        ? worstSeverity(hardwareSeverity, cudaSeverity, queueSeverity, latencySeverity)
+        : "unavailable";
+
+      setCard(ui.diagHardware, ui.diagHardwareSeverity, hardwareSeverity);
+      setCard(ui.diagCuda, ui.diagCudaSeverity, cudaSeverity);
+      setCard(ui.diagQueues, ui.diagQueuesSeverity, queueSeverity);
+      setCard(ui.diagLatency, ui.diagLatencySeverity, latencySeverity);
+      setCard(ui.diagBottleneck, ui.diagBottleneckSeverity, bottleneckSeverity);
+
+      renderMetricList(ui.diagHardwareMetrics, [
+        ["CPU", formatNumber(system.cpuPercent, 1, "%")],
+        ["Process CPU", formatNumber(process.cpuPercent, 1, "%")],
+        ["RSS", formatNumber(process.rssMb, 1, " MB")],
+        ["Memory", formatNumber(system.memoryPercent, 1, "%")],
+        ["Threads", formatNumber(process.threadCount, 0)]
+      ]);
+      renderMetricList(ui.diagCudaMetrics, [
+        ["Available", cuda.available ? "yes" : "no"],
+        ["Device", cuda.deviceName || "--"],
+        ["Allocated", formatNumber(cuda.allocatedMb, 1, " MB")],
+        ["Reserved", formatNumber(cuda.reservedMb, 1, " MB")],
+        ["Free", formatNumber(cuda.freeMb, 1, " MB")],
+        ["Pressure", formatNumber(cuda.memoryPressure, 1, "%")]
+      ]);
+      renderMetricList(ui.diagQueuesMetrics, [
+        ["Sessions", String(metrics.activeSessions || 0)],
+        ["Speakers", String(metrics.activeSpeakers || 0)],
+        ["Final queued", String(mainQueue.queued || 0)],
+        ["Realtime queued", String(realtimeQueue.queued || 0)],
+        ["Rejected", String((mainQueue.rejectedJobs || 0) + (realtimeQueue.rejectedJobs || 0))],
+        ["Coalesced RT", String(realtimeQueue.coalescedRealtime || 0)],
+        ["Stale RT", String(realtimeQueue.staleRealtimeDropped || 0)]
+      ]);
+      renderMetricList(ui.diagLatencyMetrics, [
+        ["Final q p95", formatNumber(finalP95Queue, 0, " ms")],
+        ["RT q p95", formatNumber(realtimeP95Queue, 0, " ms")],
+        ["Final inf p95", formatNumber(finalP95Inference, 0, " ms")],
+        ["RT inf p95", formatNumber(realtimeP95Inference, 0, " ms")],
+        ["Final lat p95", formatNumber(finalP95Latency, 0, " ms")],
+        ["RT lat p95", formatNumber(realtimeP95Latency, 0, " ms")]
+      ]);
+      renderMetricList(ui.diagBottleneckMetrics, [
+        ["Likely", diagnostics.likelyBottleneck || "unknown"],
+        ["Signals", (diagnostics.signals || []).slice(0, 2).join("; ") || "--"],
+        ["Action", diagnostics.recommendedAction || "--"]
+      ]);
+
+      ui.diagnosticsUpdated.textContent = new Date().toLocaleTimeString();
+      ui.diagnosticsSamples.textContent = String(state.diagnosticsSamples.length);
+      ui.diagnosticsBottleneck.textContent = diagnostics.likelyBottleneck || "unknown";
+    }
+
+    function timestampSlug() {
+      const date = new Date();
+      const pad = value => String(value).padStart(2, "0");
+      return [
+        date.getFullYear(),
+        pad(date.getMonth() + 1),
+        pad(date.getDate()),
+        "-",
+        pad(date.getHours()),
+        pad(date.getMinutes()),
+        pad(date.getSeconds())
+      ].join("");
+    }
+
+    function downloadText(filename, text, type) {
+      const blob = new Blob([text], { type });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportSnapshot() {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        settings: state.latestMetrics ? state.latestMetrics.settings : undefined,
+        thresholds: state.latestMetrics ? state.latestMetrics.thresholds : DEFAULT_THRESHOLDS,
+        diagnostics: state.latestMetrics ? state.latestMetrics.diagnostics : undefined,
+        metrics: state.latestMetrics
+      };
+      downloadText(
+        "corestt-diagnostics-snapshot-" + timestampSlug() + ".json",
+        JSON.stringify(payload, null, 2),
+        "application/json"
+      );
+    }
+
+    function exportJsonl() {
+      const lines = state.diagnosticsSamples.map(sample => JSON.stringify(sample));
+      downloadText(
+        "corestt-diagnostics-session-" + timestampSlug() + ".jsonl",
+        lines.join("\n") + (lines.length ? "\n" : ""),
+        "application/x-ndjson"
+      );
+    }
+
+    function exportCsv() {
+      const headers = [
+        "capturedAt", "cpuPercent", "processCpuPercent", "rssMb",
+        "systemMemoryPercent", "cudaAvailable", "cudaMemoryPressure",
+        "cudaFreeMb", "finalQueueP95Ms", "realtimeQueueP95Ms",
+        "finalInferenceP95Ms", "realtimeInferenceP95Ms",
+        "finalLatencyP95Ms", "realtimeLatencyP95Ms", "likelyBottleneck"
+      ];
+      const rows = state.diagnosticsSamples.map(sample => {
+        const metrics = sample.metrics || {};
+        return [
+          sample.capturedAt,
+          metricValue(metrics, "resources.system.cpuPercent", ""),
+          metricValue(metrics, "resources.process.cpuPercent", ""),
+          metricValue(metrics, "resources.process.rssMb", ""),
+          metricValue(metrics, "resources.system.memoryPercent", ""),
+          metricValue(metrics, "resources.cuda.available", ""),
+          metricValue(metrics, "resources.cuda.memoryPressure", ""),
+          metricValue(metrics, "resources.cuda.freeMb", ""),
+          metricValue(metrics, "scheduler.workers.main.queueDelay.p95Ms", ""),
+          metricValue(metrics, "scheduler.workers.realtime.queueDelay.p95Ms", ""),
+          metricValue(metrics, "scheduler.workers.main.inferenceDuration.p95Ms", ""),
+          metricValue(metrics, "scheduler.workers.realtime.inferenceDuration.p95Ms", ""),
+          metricValue(metrics, "scheduler.workers.main.totalLatency.p95Ms", ""),
+          metricValue(metrics, "scheduler.workers.realtime.totalLatency.p95Ms", ""),
+          metricValue(metrics, "diagnostics.likelyBottleneck", "")
+        ];
+      });
+      const csv = [headers, ...rows].map(row => row.map(csvCell).join(",")).join("\n");
+      downloadText(
+        "corestt-diagnostics-session-" + timestampSlug() + ".csv",
+        csv + "\n",
+        "text/csv"
+      );
+    }
+
+    function csvCell(value) {
+      const text = String(value == null ? "" : value);
+      return /[",\n]/.test(text) ? "\"" + text.replaceAll("\"", "\"\"") + "\"" : text;
+    }
+
     function upsertSegment(id, text, final, details = {}) {
       const segmentId = Number(id);
       let segment = state.segments.find(item => item.id === segmentId);
@@ -997,6 +1452,9 @@ pong       -> latency response</code></pre>
     });
 
     ui.connectButton.addEventListener("click", () => connectSocket().catch(error => addEvent(error.message)));
+    ui.exportSnapshotButton.addEventListener("click", exportSnapshot);
+    ui.exportJsonlButton.addEventListener("click", exportJsonl);
+    ui.exportCsvButton.addEventListener("click", exportCsv);
 
     ui.copyButton.addEventListener("click", async () => {
       const text = state.segments.map(segment => segment.text).join("\n").trim();
@@ -1012,7 +1470,10 @@ pong       -> latency response</code></pre>
       }
     }, 2500);
 
+    setInterval(pollDiagnostics, 2000);
+
     connectSocket().catch(() => {});
+    pollDiagnostics();
     renderTranscript();
   </script>
 </body>

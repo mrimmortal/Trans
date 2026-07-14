@@ -80,6 +80,9 @@ commands as local validation.
 - `realtime_transcription_enabled` defaults to true. Disabling it stops
   the interim realtime transcription pipeline but keeps speech detection,
   final-utterance buffering, and final transcription active.
+- `/api/metrics` includes additive resource and diagnostic fields for the
+  browser diagnostics dashboard. The dashboard polls every two seconds and can
+  export local JSON, JSONL, or CSV samples.
 - PyAudio may require PortAudio on macOS before installing requirements.
 - `.venv`, `__pycache__`, generated assets, model downloads, and secrets are
   not AI-edit targets unless explicitly requested.

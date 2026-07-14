@@ -58,7 +58,8 @@ Useful endpoints:
 - `GET /health`: readiness, active sessions, scheduler health, and startup errors.
 - `GET /api/config`: public settings, limits, supported engines, and runtime setting contract.
 - `PATCH /api/config`: update supported runtime settings.
-- `GET /api/metrics`: session, scheduler, queue, latency, and limit metrics.
+- `GET /api/metrics`: session, scheduler, queue, latency, resource,
+  diagnostic, and limit metrics.
 - `WS /ws/transcribe`: browser audio streaming websocket.
 
 ## Use In Your Project
@@ -152,4 +153,7 @@ final-utterance buffering, and final transcription active.
 - Named tuning profiles for Parakeet latency/quality tradeoffs.
 - Wake-word states and timeline events when wake words are enabled.
 - Runtime config update endpoint for active-session-safe and new-session-only settings.
-- Metrics for sessions, queues, inference latency, scheduler health, and dropped work.
+- Metrics for sessions, queues, inference latency, resource pressure,
+  scheduler health, and dropped work.
+- Browser diagnostics dashboard with threshold coloring, bottleneck hints, and
+  local JSON/JSONL/CSV export.

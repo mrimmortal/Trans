@@ -96,6 +96,17 @@ def parse_args(argv=None):
     parser.add_argument("--max-final-queue-depth-per-session", type=int, default=settings_defaults.max_final_queue_depth_per_session)
     parser.add_argument("--max-global-inference-queue-depth", type=int, default=settings_defaults.max_global_inference_queue_depth)
     parser.add_argument("--realtime-degradation-threshold-ms", type=int, default=settings_defaults.realtime_degradation_threshold_ms)
+    parser.add_argument(
+        "--resource-monitoring",
+        action=argparse.BooleanOptionalAction,
+        default=settings_defaults.resource_monitoring_enabled,
+    )
+    parser.add_argument("--resource-log-interval-seconds", type=int, default=settings_defaults.resource_log_interval_seconds)
+    parser.add_argument(
+        "--resource-metrics-include-cuda",
+        action=argparse.BooleanOptionalAction,
+        default=settings_defaults.resource_metrics_include_cuda,
+    )
     parser.add_argument("--realtime-min-audio-seconds", type=float, default=settings_defaults.realtime_min_audio_seconds)
     parser.add_argument("--realtime-max-audio-seconds", type=float, default=settings_defaults.realtime_max_audio_seconds)
     parser.add_argument("--vad-energy-threshold", type=float, default=settings_defaults.vad_energy_threshold)
@@ -219,6 +230,9 @@ def settings_from_args(args):
         max_final_queue_depth_per_session=args.max_final_queue_depth_per_session,
         max_global_inference_queue_depth=args.max_global_inference_queue_depth,
         realtime_degradation_threshold_ms=args.realtime_degradation_threshold_ms,
+        resource_monitoring_enabled=args.resource_monitoring,
+        resource_log_interval_seconds=args.resource_log_interval_seconds,
+        resource_metrics_include_cuda=args.resource_metrics_include_cuda,
         realtime_min_audio_seconds=args.realtime_min_audio_seconds,
         realtime_max_audio_seconds=args.realtime_max_audio_seconds,
         vad_energy_threshold=args.vad_energy_threshold,

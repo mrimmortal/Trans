@@ -49,6 +49,7 @@ class InferenceResult:
     queue_delay: float
     inference_duration: float
     total_latency: float
+    gate_wait_duration: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -339,6 +340,7 @@ class SharedEngineWorker:
         result_callback: Callable[[InferenceResult], None],
         error_callback: Optional[Callable[[str, Exception], None]] = None,
         execution_gate: Optional[InferenceExecutionGate] = None,
+        resource_snapshot_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ):
         self.name = name
         self.settings = settings
@@ -347,6 +349,7 @@ class SharedEngineWorker:
         self.result_callback = result_callback
         self.error_callback = error_callback
         self.execution_gate = execution_gate
+        self.resource_snapshot_provider = resource_snapshot_provider
         self.ready = threading.Event()
         self.stop_event = threading.Event()
         self.thread = None
@@ -359,6 +362,7 @@ class SharedEngineWorker:
         self.queue_delay = RunningStats()
         self.inference_duration = RunningStats()
         self.total_latency = RunningStats()
+        self.gate_wait_duration = RunningStats()
 
     def start(self):
         self.thread = threading.Thread(
@@ -386,6 +390,7 @@ class SharedEngineWorker:
             "queueDelay": self.queue_delay.snapshot_ms(),
             "inferenceDuration": self.inference_duration.snapshot_ms(),
             "totalLatency": self.total_latency.snapshot_ms(),
+            "gateWait": self.gate_wait_duration.snapshot_ms(),
         }
 
     def _worker(self):
@@ -406,13 +411,16 @@ class SharedEngineWorker:
                 break
 
             gate_acquired = False
+            gate_wait_duration = 0.0
             started_at = time.monotonic()
             text = ""
             error = None
 
             try:
                 if self.execution_gate is not None:
+                    gate_wait_started_at = time.monotonic()
                     gate_acquired = self.execution_gate.acquire(job.kind, self.stop_event)
+                    gate_wait_duration = max(0.0, time.monotonic() - gate_wait_started_at)
                     if not gate_acquired:
                         break
                 started_at = time.monotonic()
@@ -437,6 +445,7 @@ class SharedEngineWorker:
             self.queue_delay.record(queue_delay)
             self.inference_duration.record(inference_duration)
             self.total_latency.record(total_latency)
+            self.gate_wait_duration.record(gate_wait_duration)
             config = getattr(self.engine, "config", None)
             model = getattr(config, "model", None) or (
                 self.settings.model if job.kind == "final" else self.settings.realtime_model
@@ -447,10 +456,18 @@ class SharedEngineWorker:
                 audio_duration = len(job.audio) / float(job.sample_rate)
             except (TypeError, ZeroDivisionError):
                 audio_duration = 0.0
+            resources = self._resource_snapshot()
+            process = resources.get("process") or {}
+            system = resources.get("system") or {}
+            cuda = resources.get("cuda") or {}
             LOGGER.info(
                 "inference kind=%s model=%s device=%s compute_type=%s "
                 "audio_duration=%.3f queue_delay=%.3f inference_duration=%.3f "
-                "total_latency=%.3f status=%s request_id=%s",
+                "total_latency=%.3f gate_wait=%.3f cpu_percent=%s "
+                "process_cpu_percent=%s rss_mb=%s system_memory_percent=%s "
+                "thread_count=%s cuda_available=%s cuda_allocated_mb=%s "
+                "cuda_reserved_mb=%s cuda_free_mb=%s cuda_total_mb=%s "
+                "cuda_memory_pressure=%s status=%s request_id=%s",
                 job.kind,
                 model,
                 device,
@@ -459,6 +476,18 @@ class SharedEngineWorker:
                 queue_delay,
                 inference_duration,
                 total_latency,
+                gate_wait_duration,
+                system.get("cpuPercent"),
+                process.get("cpuPercent"),
+                process.get("rssMb"),
+                system.get("memoryPercent"),
+                process.get("threadCount"),
+                cuda.get("available"),
+                cuda.get("allocatedMb"),
+                cuda.get("reservedMb"),
+                cuda.get("freeMb"),
+                cuda.get("totalMb"),
+                cuda.get("memoryPressure"),
                 "error" if error else "ok",
                 job.request_id,
             )
@@ -478,8 +507,18 @@ class SharedEngineWorker:
                     queue_delay=queue_delay,
                     inference_duration=inference_duration,
                     total_latency=total_latency,
+                    gate_wait_duration=gate_wait_duration,
                 )
             )
+
+    def _resource_snapshot(self):
+        if self.resource_snapshot_provider is None:
+            return {}
+        try:
+            return self.resource_snapshot_provider() or {}
+        except Exception:
+            LOGGER.debug("Resource snapshot failed for %s", self.name, exc_info=True)
+            return {}
 
     def _warmup(self):
         if not self.settings.model_warmup or self.engine is None:
@@ -526,6 +565,7 @@ class InferenceScheduler:
         result_callback: Callable[[InferenceResult], None],
         drop_callback: Optional[Callable[[InferenceJob, str, str], None]] = None,
         error_callback: Optional[Callable[[str, Exception], None]] = None,
+        resource_snapshot_provider: Optional[Callable[[], Dict[str, Any]]] = None,
     ):
         if settings.use_main_model_for_realtime:
             raise ValueError(
@@ -535,6 +575,7 @@ class InferenceScheduler:
         self.result_callback = result_callback
         self.drop_callback = drop_callback
         self.error_callback = error_callback
+        self.resource_snapshot_provider = resource_snapshot_provider
         self.main_queue = FairInferenceQueue("main", settings, drop_callback)
         self.realtime_queue = (
             self.main_queue
@@ -550,6 +591,7 @@ class InferenceScheduler:
             result_callback,
             error_callback,
             self.execution_gate,
+            self.resource_snapshot_provider,
         )
         self.realtime_worker = None
         if not settings.use_main_model_for_realtime:
@@ -561,6 +603,7 @@ class InferenceScheduler:
                 result_callback,
                 error_callback,
                 self.execution_gate,
+                self.resource_snapshot_provider,
             )
 
     def start(self):
