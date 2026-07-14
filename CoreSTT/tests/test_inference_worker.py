@@ -116,7 +116,28 @@ class SharedEngineWorkerTest(unittest.TestCase):
         self.assertEqual(queue.snapshot()["queued"], 0)
         self.assertEqual(dropped, [(realtime, "superseded_by_final", "test")])
 
-    def test_worker_logs_required_job_performance_fields(self):
+    def _resource_snapshot(self):
+        return {
+            "process": {
+                "cpuPercent": 11,
+                "rssMb": 222,
+                "threadCount": 3,
+            },
+            "system": {
+                "cpuPercent": 44,
+                "memoryPercent": 55,
+            },
+            "cuda": {
+                "available": False,
+                "allocatedMb": None,
+                "reservedMb": None,
+                "freeMb": None,
+                "totalMb": None,
+                "memoryPressure": None,
+            },
+        }
+
+    def test_worker_does_not_log_job_performance_fields_by_default(self):
         class OneJobQueue:
             def __init__(self, job):
                 self.job = job
@@ -132,25 +153,38 @@ class SharedEngineWorkerTest(unittest.TestCase):
             OneJobQueue(self._job("final", "session-a", 1)),
             FakeEngine,
             results.append,
-            resource_snapshot_provider=lambda: {
-                "process": {
-                    "cpuPercent": 11,
-                    "rssMb": 222,
-                    "threadCount": 3,
-                },
-                "system": {
-                    "cpuPercent": 44,
-                    "memoryPercent": 55,
-                },
-                "cuda": {
-                    "available": False,
-                    "allocatedMb": None,
-                    "reservedMb": None,
-                    "freeMb": None,
-                    "totalMb": None,
-                    "memoryPressure": None,
-                },
-            },
+            resource_snapshot_provider=self._resource_snapshot,
+        )
+
+        with patch("CoreSTT.server.inference.LOGGER.info") as log_info:
+            worker._worker()
+
+        log_info.assert_not_called()
+        self.assertEqual(len(results), 1)
+        self.assertIn("gateWait", worker.snapshot())
+
+    def test_worker_logs_resource_fields_when_diagnostic_logging_enabled(self):
+        class OneJobQueue:
+            def __init__(self, job):
+                self.job = job
+
+            def get(self):
+                job, self.job = self.job, None
+                return job
+
+        results = []
+        worker = SharedEngineWorker(
+            "main",
+            ServerSettings(
+                model_warmup=False,
+                device="cpu",
+                compute_type="int8",
+                diagnostic_logging_enabled=True,
+            ),
+            OneJobQueue(self._job("final", "session-a", 1)),
+            FakeEngine,
+            results.append,
+            resource_snapshot_provider=self._resource_snapshot,
         )
 
         with self.assertLogs("corestt.fastapi", level="INFO") as logs:
@@ -176,7 +210,6 @@ class SharedEngineWorkerTest(unittest.TestCase):
         ):
             self.assertIn(field, log)
         self.assertEqual(len(results), 1)
-        self.assertIn("gateWait", worker.snapshot())
 
     def test_final_submission_cancels_matching_queued_realtime_job(self):
         dropped = []

@@ -158,17 +158,20 @@ class ServerConfigTest(unittest.TestCase):
             settings.resource_log_interval_seconds,
             defaults.resource_log_interval_seconds,
         )
+        self.assertFalse(settings.diagnostic_logging_enabled)
 
     def test_startup_performance_controls_parse_from_cli(self):
         settings = settings_from_args(parse_args([
             "--cpu-threads",
             "4",
+            "--diagnostic-logging",
             "--num-workers",
             "2",
             "--no-single-gpu-inference-gate",
         ]))
 
         self.assertEqual(settings.cpu_threads, 4)
+        self.assertTrue(settings.diagnostic_logging_enabled)
         self.assertEqual(settings.num_workers, 2)
         self.assertFalse(settings.single_gpu_inference_gate)
 
@@ -570,6 +573,7 @@ class ServerConfigTest(unittest.TestCase):
 
         result = service.update_settings({
             "max_sessions": 12,
+            "diagnostic_logging_enabled": True,
             "resource_monitoring_enabled": False,
             "min_length_of_recording": 0.4,
             "model": "base.en",
@@ -581,6 +585,10 @@ class ServerConfigTest(unittest.TestCase):
         })
 
         self.assertEqual(result["applied"]["max_sessions"]["appliesTo"], "active_sessions")
+        self.assertEqual(
+            result["applied"]["diagnostic_logging_enabled"]["appliesTo"],
+            "active_sessions",
+        )
         self.assertEqual(
             result["applied"]["resource_monitoring_enabled"]["appliesTo"],
             "active_sessions",
@@ -643,6 +651,8 @@ class ServerConfigTest(unittest.TestCase):
         self.assertIn('id="exportSnapshotButton"', index_response.text)
         self.assertIn('id="diagnosticsLogBody"', index_response.text)
         self.assertIn("Realtime diagnostics log", index_response.text)
+        self.assertIn("Diagnostics polling disabled by diagnostic_logging_enabled.", index_response.text)
+        self.assertIn("initializeDiagnostics", index_response.text)
         self.assertIn("corestt-diagnostics-session-", index_response.text)
         self.assertEqual(health_response.status_code, 200)
         self.assertTrue(health_response.json()["ok"])
@@ -658,6 +668,14 @@ class ServerConfigTest(unittest.TestCase):
         self.assertIn("diagnostics", metrics_payload)
         self.assertIn("thresholds", metrics_payload)
         self.assertIn("settings", metrics_payload)
+        self.assertEqual(
+            metrics_payload["resources"]["system"]["reason"],
+            "diagnostic_logging_disabled",
+        )
+        self.assertEqual(
+            metrics_payload["diagnostics"]["likelyBottleneck"],
+            "unknown",
+        )
 
     def test_config_exposes_domain_profile_names(self):
         from fastapi.testclient import TestClient

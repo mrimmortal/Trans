@@ -1847,7 +1847,10 @@ class CoreSTTService:
             daemon=True,
         )
         self.ready_thread.start()
-        if self.settings.resource_monitoring_enabled:
+        if (
+            self.settings.resource_monitoring_enabled
+            and self.settings.diagnostic_logging_enabled
+        ):
             self.resource_thread = threading.Thread(
                 target=self._resource_log_worker,
                 name="CoreSTTResourceMonitor",
@@ -2000,20 +2003,32 @@ class CoreSTTService:
         data["limits"] = self.limits_dict()
         data["settings"] = self.settings.public_dict()
         data["startupErrors"] = list(self.startup_errors)
-        data["resources"] = self.resource_snapshot()
         data["thresholds"] = DIAGNOSTIC_THRESHOLDS
-        data["diagnostics"] = diagnose_bottleneck(data)
+        if self.settings.diagnostic_logging_enabled:
+            data["resources"] = self.resource_snapshot()
+            data["diagnostics"] = diagnose_bottleneck(data)
+        else:
+            data["resources"] = self._disabled_resource_snapshot("diagnostic_logging_disabled")
+            data["diagnostics"] = {
+                "likelyBottleneck": "unknown",
+                "signals": ["Diagnostics disabled"],
+                "recommendedAction": "Enable diagnostic_logging_enabled to collect diagnostics.",
+            }
         return data
 
     def resource_snapshot(self):
         if not self.settings.resource_monitoring_enabled:
-            return {
-                "timestamp": time.time(),
-                "process": {"available": False, "reason": "resource_monitoring_disabled"},
-                "system": {"available": False, "reason": "resource_monitoring_disabled"},
-                "cuda": {"available": False, "reason": "resource_monitoring_disabled"},
-            }
+            return self._disabled_resource_snapshot("resource_monitoring_disabled")
         return self.resource_monitor.snapshot()
+
+    @staticmethod
+    def _disabled_resource_snapshot(reason):
+        return {
+            "timestamp": time.time(),
+            "process": {"available": False, "reason": reason},
+            "system": {"available": False, "reason": reason},
+            "cuda": {"available": False, "reason": reason},
+        }
 
     def _resource_log_worker(self):
         while not self.stop_event.wait(
@@ -2233,7 +2248,10 @@ class CoreSTTService:
             "ok": self.scheduler.healthy(),
         }
         self.manager.publish_all(ready_message)
-        if self.settings.resource_monitoring_enabled:
+        if (
+            self.settings.resource_monitoring_enabled
+            and self.settings.diagnostic_logging_enabled
+        ):
             self._log_resource_snapshot("startup")
         if self.startup_errors:
             for error in self.startup_errors:

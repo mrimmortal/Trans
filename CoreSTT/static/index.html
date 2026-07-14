@@ -722,7 +722,9 @@ pong       -> latency response</code></pre>
       activeDomain: "",
       lastPingAt: 0,
       latestMetrics: null,
-      diagnosticsSamples: []
+      diagnosticsSamples: [],
+      diagnosticsEnabled: false,
+      diagnosticsPollInterval: null
     };
 
     const DEFAULT_THRESHOLDS = {
@@ -1080,6 +1082,7 @@ pong       -> latency response</code></pre>
     }
 
     async function pollDiagnostics() {
+      if (!state.diagnosticsEnabled) return;
       try {
         const response = await fetch("/api/metrics", { cache: "no-store" });
         if (!response.ok) throw new Error("metrics " + response.status);
@@ -1094,6 +1097,56 @@ pong       -> latency response</code></pre>
       } catch (error) {
         addEvent("Diagnostics metrics failed: " + error.message);
       }
+    }
+
+    async function initializeDiagnostics() {
+      try {
+        const response = await fetch("/api/config", { cache: "no-store" });
+        if (!response.ok) throw new Error("config " + response.status);
+        const config = await response.json();
+        state.diagnosticsEnabled = Boolean(
+          config.settings && config.settings.diagnostic_logging_enabled
+        );
+      } catch (error) {
+        state.diagnosticsEnabled = false;
+        addEvent("Diagnostics config failed: " + error.message);
+      }
+
+      if (!state.diagnosticsEnabled) {
+        renderDiagnosticsDisabled();
+        return;
+      }
+
+      await pollDiagnostics();
+      state.diagnosticsPollInterval = setInterval(pollDiagnostics, 2000);
+    }
+
+    function renderDiagnosticsDisabled() {
+      state.latestMetrics = null;
+      state.diagnosticsSamples = [];
+      setCard(ui.diagHardware, ui.diagHardwareSeverity, "unavailable");
+      setCard(ui.diagCuda, ui.diagCudaSeverity, "unavailable");
+      setCard(ui.diagQueues, ui.diagQueuesSeverity, "unavailable");
+      setCard(ui.diagLatency, ui.diagLatencySeverity, "unavailable");
+      setCard(ui.diagBottleneck, ui.diagBottleneckSeverity, "unavailable");
+      renderMetricList(ui.diagHardwareMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
+      renderMetricList(ui.diagCudaMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
+      renderMetricList(ui.diagQueuesMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
+      renderMetricList(ui.diagLatencyMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
+      renderMetricList(ui.diagBottleneckMetrics, [
+        ["Likely", "unknown"],
+        ["Action", "Set diagnostic_logging_enabled=true and reload the page"]
+      ]);
+      ui.diagnosticsUpdated.textContent = "disabled";
+      ui.diagnosticsSamples.textContent = "0";
+      ui.diagnosticsBottleneck.textContent = "disabled";
+      ui.diagnosticsLogBody.replaceChildren();
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 8;
+      cell.textContent = "Diagnostics polling disabled by diagnostic_logging_enabled.";
+      row.append(cell);
+      ui.diagnosticsLogBody.append(row);
     }
 
     function renderDiagnostics(metrics) {
@@ -1576,10 +1629,8 @@ pong       -> latency response</code></pre>
       }
     }, 2500);
 
-    setInterval(pollDiagnostics, 2000);
-
     connectSocket().catch(() => {});
-    pollDiagnostics();
+    initializeDiagnostics();
     renderTranscript();
   </script>
 </body>

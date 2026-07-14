@@ -157,3 +157,6 @@ final-utterance buffering, and final transcription active.
   scheduler health, and dropped work.
 - Browser diagnostics dashboard with threshold coloring, bottleneck hints, and
   local JSON/JSONL/CSV export.
+- Optional terminal performance/resource logs and dashboard diagnostics polling
+  with `--diagnostic-logging`; diagnostics stay off by default for lowest
+  overhead.

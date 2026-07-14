@@ -456,41 +456,42 @@ class SharedEngineWorker:
                 audio_duration = len(job.audio) / float(job.sample_rate)
             except (TypeError, ZeroDivisionError):
                 audio_duration = 0.0
-            resources = self._resource_snapshot()
-            process = resources.get("process") or {}
-            system = resources.get("system") or {}
-            cuda = resources.get("cuda") or {}
-            LOGGER.info(
-                "inference kind=%s model=%s device=%s compute_type=%s "
-                "audio_duration=%.3f queue_delay=%.3f inference_duration=%.3f "
-                "total_latency=%.3f gate_wait=%.3f cpu_percent=%s "
-                "process_cpu_percent=%s rss_mb=%s system_memory_percent=%s "
-                "thread_count=%s cuda_available=%s cuda_allocated_mb=%s "
-                "cuda_reserved_mb=%s cuda_free_mb=%s cuda_total_mb=%s "
-                "cuda_memory_pressure=%s status=%s request_id=%s",
-                job.kind,
-                model,
-                device,
-                compute_type,
-                audio_duration,
-                queue_delay,
-                inference_duration,
-                total_latency,
-                gate_wait_duration,
-                system.get("cpuPercent"),
-                process.get("cpuPercent"),
-                process.get("rssMb"),
-                system.get("memoryPercent"),
-                process.get("threadCount"),
-                cuda.get("available"),
-                cuda.get("allocatedMb"),
-                cuda.get("reservedMb"),
-                cuda.get("freeMb"),
-                cuda.get("totalMb"),
-                cuda.get("memoryPressure"),
-                "error" if error else "ok",
-                job.request_id,
-            )
+            if self.settings.diagnostic_logging_enabled:
+                resources = self._resource_snapshot()
+                process = resources.get("process") or {}
+                system = resources.get("system") or {}
+                cuda = resources.get("cuda") or {}
+                LOGGER.info(
+                    "inference kind=%s model=%s device=%s compute_type=%s "
+                    "audio_duration=%.3f queue_delay=%.3f inference_duration=%.3f "
+                    "total_latency=%.3f gate_wait=%.3f cpu_percent=%s "
+                    "process_cpu_percent=%s rss_mb=%s system_memory_percent=%s "
+                    "thread_count=%s cuda_available=%s cuda_allocated_mb=%s "
+                    "cuda_reserved_mb=%s cuda_free_mb=%s cuda_total_mb=%s "
+                    "cuda_memory_pressure=%s status=%s request_id=%s",
+                    job.kind,
+                    model,
+                    device,
+                    compute_type,
+                    audio_duration,
+                    queue_delay,
+                    inference_duration,
+                    total_latency,
+                    gate_wait_duration,
+                    system.get("cpuPercent"),
+                    process.get("cpuPercent"),
+                    process.get("rssMb"),
+                    system.get("memoryPercent"),
+                    process.get("threadCount"),
+                    cuda.get("available"),
+                    cuda.get("allocatedMb"),
+                    cuda.get("reservedMb"),
+                    cuda.get("freeMb"),
+                    cuda.get("totalMb"),
+                    cuda.get("memoryPressure"),
+                    "error" if error else "ok",
+                    job.request_id,
+                )
             self.result_callback(
                 InferenceResult(
                     request_id=job.request_id,

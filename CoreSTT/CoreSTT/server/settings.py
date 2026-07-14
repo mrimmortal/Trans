@@ -54,6 +54,7 @@ TUNING_PROFILES = {
 }
 
 ACTIVE_RUNTIME_SETTINGS = {
+    "diagnostic_logging_enabled",
     "log_level",
     "max_active_speakers",
     "max_audio_packet_bytes",
@@ -177,6 +178,7 @@ FLOAT_SETTINGS = {
 }
 
 BOOL_SETTINGS = {
+    "diagnostic_logging_enabled",
     "model_warmup",
     "normalize_audio",
     "realtime_transcription_enabled",
@@ -227,6 +229,7 @@ class ServerSettings:
     download_root: Optional[str] = None
     compute_type: str = "default"
     cpu_threads: Optional[int] = None
+    diagnostic_logging_enabled: bool = False
     num_workers: int = 1
     single_gpu_inference_gate: bool = True
     device: str = "cuda"

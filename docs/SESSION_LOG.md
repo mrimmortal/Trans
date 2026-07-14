@@ -417,3 +417,25 @@ Validation:
   passed, 33 tests.
 - `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 60
   tests.
+
+## 2026-07-14 - Add Diagnostic Logging Toggle
+
+Changed:
+- Added `diagnostic_logging_enabled`, default false.
+- Added CLI `--diagnostic-logging`/`--no-diagnostic-logging`.
+- Dashboard and `/api/metrics` remain available with the flag off.
+- Startup/periodic resource logs and per-inference CPU/RAM/CUDA log fields are
+  emitted only when diagnostic logging is enabled.
+- Per-inference terminal performance logs are also emitted only when diagnostic
+  logging is enabled.
+- Dashboard diagnostics polling and expensive `/api/metrics` resource
+  collection/diagnosis are disabled when diagnostic logging is disabled.
+
+Validation:
+- `.venv/bin/python -m unittest tests.test_server_config tests.test_inference_worker`
+  from `CoreSTT/`: passed, 43 tests.
+- `.venv/bin/python -m unittest tests.test_server_config tests.test_inference_worker tests.test_monitoring`
+  from `CoreSTT/`: passed, 47 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 61
+  tests.
+- `git diff --check`: passed.

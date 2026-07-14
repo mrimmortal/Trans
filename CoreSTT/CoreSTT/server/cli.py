@@ -33,6 +33,11 @@ def parse_args(argv=None):
     parser.add_argument("--download-root", default=settings_defaults.download_root)
     parser.add_argument("--compute-type", default=settings_defaults.compute_type)
     parser.add_argument("--cpu-threads", type=int, default=settings_defaults.cpu_threads)
+    parser.add_argument(
+        "--diagnostic-logging",
+        action=argparse.BooleanOptionalAction,
+        default=settings_defaults.diagnostic_logging_enabled,
+    )
     parser.add_argument("--num-workers", type=int, default=settings_defaults.num_workers)
     parser.add_argument(
         "--single-gpu-inference-gate",
@@ -178,6 +183,7 @@ def settings_from_args(args):
         download_root=args.download_root,
         compute_type=args.compute_type,
         cpu_threads=args.cpu_threads,
+        diagnostic_logging_enabled=args.diagnostic_logging,
         num_workers=args.num_workers,
         single_gpu_inference_gate=args.single_gpu_inference_gate,
         device=args.device,
