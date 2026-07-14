@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import numpy as np
+
 from protocol import encode_audio_packet
 import server
 from server import (
@@ -87,6 +89,156 @@ class CaptureManager(ConnectionManager):
 
 
 class ServerConfigTest(unittest.TestCase):
+    def test_default_settings_separate_realtime_and_final_tuning(self):
+        settings = settings_from_args(parse_args([]))
+
+        self.assertEqual(settings.model, "small.en")
+        self.assertEqual(settings.realtime_model, "tiny.en")
+        self.assertEqual(settings.beam_size, 3)
+        self.assertEqual(settings.batch_size, 1)
+        self.assertEqual(settings.beam_size_realtime, 1)
+        self.assertEqual(settings.realtime_batch_size, 1)
+        self.assertEqual(settings.realtime_processing_pause, 0.6)
+        self.assertEqual(settings.realtime_min_audio_seconds, 0.8)
+        self.assertEqual(settings.realtime_max_audio_seconds, 5.0)
+        self.assertEqual(settings.post_speech_silence_duration, 0.7)
+        self.assertTrue(settings.vad_filter_final)
+        self.assertFalse(settings.vad_filter_realtime)
+        self.assertTrue(settings.public_dict()["vad_filter"])
+
+    def test_vad_flags_are_independent_and_legacy_alias_disables_both(self):
+        split = settings_from_args(parse_args([
+            "--no-vad-filter-final",
+            "--vad-filter-realtime",
+        ]))
+        legacy = settings_from_args(parse_args(["--no-vad-filter"]))
+
+        self.assertFalse(split.vad_filter_final)
+        self.assertTrue(split.vad_filter_realtime)
+        self.assertFalse(legacy.vad_filter_final)
+        self.assertFalse(legacy.vad_filter_realtime)
+        legacy_settings = ServerSettings(vad_filter=False)
+        self.assertFalse(legacy_settings.vad_filter_final)
+        self.assertFalse(legacy_settings.vad_filter_realtime)
+
+    def test_fixed_models_reject_incompatible_overrides(self):
+        with self.assertRaisesRegex(SystemExit, "small.en"):
+            settings_from_args(parse_args(["--model", "base.en"]))
+        with self.assertRaisesRegex(SystemExit, "tiny.en"):
+            settings_from_args(parse_args(["--realtime-model", "base.en"]))
+
+    def test_device_and_compute_type_remain_configurable(self):
+        settings = settings_from_args(parse_args([
+            "--device",
+            "cpu",
+            "--compute-type",
+            "int8",
+        ]))
+
+        self.assertEqual(settings.device, "cpu")
+        self.assertEqual(settings.compute_type, "int8")
+
+    def test_startup_performance_controls_parse_from_cli(self):
+        settings = settings_from_args(parse_args([
+            "--cpu-threads",
+            "4",
+            "--num-workers",
+            "2",
+            "--no-single-gpu-inference-gate",
+        ]))
+
+        self.assertEqual(settings.cpu_threads, 4)
+        self.assertEqual(settings.num_workers, 2)
+        self.assertFalse(settings.single_gpu_inference_gate)
+
+    def test_service_uses_direct_realtime_session_by_default(self):
+        service = CoreSTTService(
+            ServerSettings(),
+            CaptureManager(),
+            scheduler_factory=FakeScheduler,
+        )
+
+        session = service.admit_session("session-1")
+        try:
+            self.assertIsInstance(session, server.RealtimeSession)
+        finally:
+            service.remove_session("session-1")
+
+    def test_direct_session_keeps_bounded_realtime_and_complete_final_audio(self):
+        service = CoreSTTService(
+            ServerSettings(
+                min_length_of_recording=0.0,
+                realtime_max_audio_seconds=0.001,
+            ),
+            CaptureManager(),
+            scheduler_factory=FakeScheduler,
+        )
+        session = service.admit_session("session-1")
+        first = np.arange(12, dtype=np.int16)
+        second = np.arange(12, 24, dtype=np.int16)
+
+        with session.lock:
+            session._start_recording_locked(1.0)
+            session._append_recording_samples_locked(first)
+            session._append_recording_samples_locked(second)
+            realtime_audio = session._frames_to_float32(session.realtime_frames)
+            final_job = session._finish_recording_locked("test")
+
+        self.assertEqual(session.realtime_sample_count, 0)
+        self.assertEqual(realtime_audio.size, 16)
+        np.testing.assert_array_equal(
+            np.rint(realtime_audio * 32768).astype(np.int16),
+            np.arange(8, 24, dtype=np.int16),
+        )
+        self.assertEqual(final_job.audio.size, 24)
+        np.testing.assert_array_equal(
+            np.rint(final_job.audio * 32768).astype(np.int16),
+            np.arange(24, dtype=np.int16),
+        )
+        service.remove_session("session-1")
+
+    def test_direct_session_discards_realtime_after_final_result(self):
+        manager = CaptureManager()
+        service = CoreSTTService(
+            ServerSettings(),
+            manager,
+            scheduler_factory=FakeScheduler,
+        )
+        session = service.admit_session("session-1")
+
+        def result(kind, text, sequence=0):
+            return server.InferenceResult(
+                request_id=f"{kind}-request",
+                session_id="session-1",
+                kind=kind,
+                segment_id=1,
+                sequence=sequence,
+                generation=session.generation,
+                text=text,
+                error=None,
+                created_at=1.0,
+                started_at=1.1,
+                completed_at=1.2,
+                queue_delay=0.1,
+                inference_duration=0.1,
+                total_latency=0.2,
+            )
+
+        session.handle_inference_result(result("final", "final text"))
+        with session.lock:
+            session.recording = True
+            session.active_segment_id = 1
+        session.handle_inference_result(result("realtime", "late text", sequence=1))
+
+        transcript_types = [
+            message["type"]
+            for _session_id, message in manager.messages
+            if message.get("type") in ("realtime", "final")
+        ]
+        self.assertEqual(transcript_types, ["final"])
+        self.assertEqual(session.stale_realtime_discarded, 1)
+        service.remove_session("session-1")
+
     def test_server_module_preserves_public_compatibility_exports(self):
         expected_names = [
             "ACTIVE_RUNTIME_SETTINGS",
@@ -99,6 +251,7 @@ class ServerConfigTest(unittest.TestCase):
             "DICT_SETTINGS",
             "FairInferenceQueue",
             "FLOAT_SETTINGS",
+            "InferenceExecutionGate",
             "InferenceJob",
             "InferenceResult",
             "InferenceScheduler",
@@ -318,12 +471,21 @@ class ServerConfigTest(unittest.TestCase):
             "max_sessions": 12,
             "min_length_of_recording": 0.4,
             "model": "base.en",
+            "cpu_threads": 4,
+            "num_workers": 2,
+            "single_gpu_inference_gate": False,
             "unknown": "value",
         })
 
         self.assertEqual(result["applied"]["max_sessions"]["appliesTo"], "active_sessions")
         self.assertEqual(result["applied"]["min_length_of_recording"]["appliesTo"], "new_sessions")
         self.assertEqual(result["rejected"]["model"]["reason"], "startup_only")
+        self.assertEqual(result["rejected"]["cpu_threads"]["reason"], "startup_only")
+        self.assertEqual(result["rejected"]["num_workers"]["reason"], "startup_only")
+        self.assertEqual(
+            result["rejected"]["single_gpu_inference_gate"]["reason"],
+            "startup_only",
+        )
         self.assertEqual(result["rejected"]["unknown"]["reason"], "unknown")
         self.assertEqual(service.settings.max_sessions, 12)
 
@@ -370,6 +532,10 @@ class ServerConfigTest(unittest.TestCase):
         self.assertTrue(health_response.json()["ok"])
         self.assertEqual(config_response.status_code, 200)
         self.assertIn("faster_whisper", config_response.json()["supportedEngines"])
+        settings_payload = config_response.json()["settings"]
+        self.assertFalse(settings_payload["vad_filter_realtime"])
+        self.assertTrue(settings_payload["vad_filter_final"])
+        self.assertTrue(settings_payload["vad_filter"])
 
     def test_config_exposes_domain_profile_names(self):
         from fastapi.testclient import TestClient

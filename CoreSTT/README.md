@@ -116,22 +116,31 @@ streaming starts.
 
 The server uses:
 
-- final model: `small.en`
-- realtime model: `tiny.en`
+- final model: `small.en` (fixed for final jobs)
+- realtime model: `tiny.en` (fixed for realtime jobs)
 - backend: `faster_whisper`
 - device: `cuda` by default, with server-side fallback to CPU when CUDA is not available
+- Faster-Whisper VAD: enabled for final jobs and disabled for realtime jobs
 
-For better accuracy, use a larger model and GPU when available.
+`device` and `compute_type` remain configurable. The production WebSocket
+pipeline loads both models once at startup and reuses them across sessions.
+Faster-Whisper startup controls include `--cpu-threads`, `--num-workers`, and
+`--single-gpu-inference-gate`/`--no-single-gpu-inference-gate` for tuning CPU
+threading and same-GPU final/realtime contention.
 
 ## Server Features
 
 - FastAPI app served on one port.
 - Multi-session websocket admission with `--max-sessions`.
 - Active speaker throttling with `--max-active-speakers`.
-- Shared main/realtime inference workers with fair per-session queueing.
-- Realtime job coalescing and stale interim update dropping.
-- Configurable final/realtime engines, models, prompts, beam sizes, batch sizes,
-  VAD timing, wake-word settings, and queue limits.
+- Dedicated final/realtime inference workers with final-priority scheduling.
+- Optional same-GPU inference gating so queued final jobs block new realtime
+  inference until final work drains.
+- Realtime job coalescing, segment-aware cancellation, and stale interim update dropping.
+- `RealtimeSession` production pipeline with a bounded five-second realtime
+  ring buffer and a separate complete final-utterance buffer.
+- Configurable final/realtime engines, prompts, beam sizes, batch sizes, VAD
+  timing, wake-word settings, device/compute settings, and queue limits.
 - Server-owned domain profiles for per-session prompts and faster-whisper
   hotwords.
 - Named tuning profiles for Parakeet latency/quality tradeoffs.

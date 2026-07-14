@@ -298,3 +298,37 @@ Validation:
 Next:
 - Run a full setup with the relevant OS script when dependency downloads are
   approved.
+
+## 2026-07-13 - Separate Realtime and Final Transcription
+
+Changed:
+- Made `RealtimeSession` the default WebSocket production pipeline and retained
+  `RecorderBackedRealtimeSession` as an explicit opt-in.
+- Fixed realtime/final model roles to `tiny.en`/`small.en`, split their
+  Faster-Whisper VAD settings, and applied the requested latency defaults.
+- Added a bounded realtime ring buffer, complete final buffer, targeted
+  realtime cancellation, final-priority scheduling, late-result suppression,
+  and per-job performance logging.
+- Preserved WebSocket message and audio packet contracts, including a
+  deprecated shared VAD settings alias.
+
+Validation:
+- Focused inference, server configuration, and protocol tests passed (37
+  tests).
+- Full `.venv/bin/python -m unittest discover tests` passed (45 tests).
+
+## 2026-07-14 - Add Faster-Whisper Startup Speed Controls
+
+Changed:
+- Added startup-only `cpu_threads`, `num_workers`, and
+  `single_gpu_inference_gate` settings with CLI flags.
+- Passed thread/worker controls into Faster-Whisper model construction.
+- Added a same-GPU inference gate so queued or active final work blocks new
+  realtime inference while allowing running realtime inference to finish.
+- Added focused config, scheduler, gate, and Faster-Whisper adapter tests.
+
+Validation:
+- `.venv/bin/python -m unittest tests.test_server_config tests.test_inference_worker tests.test_faster_whisper_engine`
+  from `CoreSTT/`: passed, 40 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 50
+  tests.

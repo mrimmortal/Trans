@@ -68,6 +68,7 @@ from CoreSTT.server.domain_profiles import (
 )
 from CoreSTT.server.inference import (
     FairInferenceQueue,
+    InferenceExecutionGate,
     InferenceJob,
     InferenceResult,
     InferenceScheduler,
@@ -132,7 +133,10 @@ class VoiceActivityDetector:
                 for start in range(0, usable, frame_samples):
                     frame = samples[start:start + frame_samples]
                     checked_frames += 1
-                    if self.vad.is_speech(frame.astype(np.int16).tobytes(), SERVER_SAMPLE_RATE):
+                    if self.vad.is_speech(
+                        np.asarray(frame, dtype=np.int16).tobytes(),
+                        SERVER_SAMPLE_RATE,
+                    ):
                         speech_frames += 1
                 if checked_frames:
                     return speech_frames / checked_frames >= 0.25
@@ -163,9 +167,14 @@ class RealtimeSession:
         self.recording_started_at = 0.0
         self.recording_frames: List[Any] = []
         self.recording_sample_count = 0
+        self.realtime_frames: Deque[Any] = collections.deque()
+        self.realtime_sample_count = 0
         self.prebuffer = collections.deque()
         self.prebuffer_sample_count = 0
         self.domain_name = None
+        self.domain_profile_applied = False
+        self.finalizing_segment_ids = set()
+        self.finalized_segment_ids = set()
         self.dropped_audio_chunks = 0
         self.rejected_audio_chunks = 0
         self.coalesced_realtime = 0
@@ -182,7 +191,9 @@ class RealtimeSession:
         self.inference_duration = {"realtime": RunningStats(), "final": RunningStats()}
         self.total_latency = {"realtime": RunningStats(), "final": RunningStats()}
 
-    def start_streaming(self):
+    def start_streaming(self, domain_profile=None, domain_name=None):
+        if domain_profile is not None or domain_name is not None:
+            self.apply_domain_profile(domain_profile, domain_name)
         with self.lock:
             self.streaming = True
             self.status = (
@@ -191,7 +202,31 @@ class RealtimeSession:
                 and self.settings.wake_word_activation_delay <= 0
                 else "listening"
             )
+            active_domain = self.domain_name or "default"
+        _log_stream_started(self.session_id, active_domain)
         self.publish_status(self.status)
+
+    def apply_domain_profile(self, profile, domain_name):
+        with self.lock:
+            if self.streaming:
+                raise ValueError("Domain can only be changed before streaming starts.")
+            profile_applied = profile is not None
+            if self.domain_name == domain_name and self.domain_profile_applied == profile_applied:
+                return
+            self.generation += 1
+            if profile is not None:
+                self.settings.initial_prompt = profile.initial_prompt
+                self.settings.initial_prompt_realtime = profile.initial_prompt_realtime
+                self.settings.transcription_engine_options = _domain_engine_options(
+                    self.settings.transcription_engine_options,
+                    profile.hotwords,
+                )
+                self.settings.realtime_transcription_engine_options = _domain_engine_options(
+                    self.settings.realtime_transcription_engine_options,
+                    getattr(profile, "realtime_hotwords", profile.hotwords),
+                )
+            self.domain_name = domain_name
+            self.domain_profile_applied = profile_applied
 
     def stop_streaming(self):
         jobs = []
@@ -213,8 +248,12 @@ class RealtimeSession:
             self.recording = False
             self.recording_frames = []
             self.recording_sample_count = 0
+            self.realtime_frames.clear()
+            self.realtime_sample_count = 0
             self.prebuffer.clear()
             self.prebuffer_sample_count = 0
+            self.finalizing_segment_ids.clear()
+            self.finalized_segment_ids.clear()
             self.timeline.reset()
         self.service.scheduler.cancel_session(self.session_id)
         self.service.deactivate_speaker(self.session_id)
@@ -225,8 +264,12 @@ class RealtimeSession:
             self.recording = False
             self.recording_frames = []
             self.recording_sample_count = 0
+            self.realtime_frames.clear()
+            self.realtime_sample_count = 0
             self.prebuffer.clear()
             self.prebuffer_sample_count = 0
+            self.finalizing_segment_ids.clear()
+            self.finalized_segment_ids.clear()
             self.active_segment_id = None
             self.latest_realtime_sequence = 0
             next_segment = self.segment_state.reset()
@@ -262,14 +305,12 @@ class RealtimeSession:
                     self.rejected_audio_chunks += 1
                     return False, "Server active speaker limit reached; audio chunk was ignored."
                 self._start_recording_locked(now)
-                self.recording_frames.append(samples.copy())
-                self.recording_sample_count += int(samples.size)
+                self._append_recording_samples_locked(samples)
                 self.last_speech_at = now
                 self.status = "recording"
                 warnings.append(None)
             else:
-                self.recording_frames.append(samples.copy())
-                self.recording_sample_count += int(samples.size)
+                self._append_recording_samples_locked(samples)
                 if speech:
                     self.last_speech_at = now
 
@@ -313,7 +354,9 @@ class RealtimeSession:
 
             if result.kind == "realtime":
                 if (
-                    not self.recording
+                    result.segment_id in self.finalizing_segment_ids
+                    or result.segment_id in self.finalized_segment_ids
+                    or not self.recording
                     or result.segment_id != self.active_segment_id
                     or result.sequence < self.latest_realtime_sequence
                 ):
@@ -321,6 +364,8 @@ class RealtimeSession:
                     return
                 self.realtime_completed += 1
             else:
+                self.finalizing_segment_ids.discard(result.segment_id)
+                self.finalized_segment_ids.add(result.segment_id)
                 self.final_completed += 1
 
             self.queue_delay[result.kind].record(result.queue_delay)
@@ -348,6 +393,7 @@ class RealtimeSession:
             "type": result.kind,
             "sessionId": self.session_id,
             "segmentId": result.segment_id,
+            "sequence": result.sequence,
             "text": result.text,
             "timestamp": event_timestamp,
             "timestampIso": timestamp_iso(event_timestamp),
@@ -370,7 +416,7 @@ class RealtimeSession:
                 self.coalesced_realtime += 1
             elif reason == "stale" and job.kind == "realtime":
                 self.stale_realtime_discarded += 1
-            elif reason == "cancelled":
+            elif reason in ("cancelled", "superseded_by_final"):
                 self.cancelled_jobs += 1
 
     def on_submit_result(self, job: InferenceJob, result: QueueSubmitResult):
@@ -388,6 +434,8 @@ class RealtimeSession:
                 self.realtime_rejected += 1
             else:
                 self.final_rejected += 1
+                self.finalizing_segment_ids.discard(job.segment_id)
+                self.finalized_segment_ids.add(job.segment_id)
                 if "final queue" in result.reason:
                     self.final_queue_full += 1
 
@@ -468,8 +516,11 @@ class RealtimeSession:
         self.recording_started_at = now
         self.last_speech_at = now
         self.last_realtime_submit_at = 0.0
-        self.recording_frames = [frame.copy() for frame in self.prebuffer]
+        self.recording_frames = list(self.prebuffer)
         self.recording_sample_count = sum(int(frame.size) for frame in self.recording_frames)
+        self.realtime_frames = collections.deque(self.prebuffer)
+        self.realtime_sample_count = self.recording_sample_count
+        self._trim_realtime_buffer_locked()
         self.timeline.mark_recording_started(
             self.active_segment_id,
             actual_preroll_seconds=self.prebuffer_sample_count / float(SERVER_SAMPLE_RATE),
@@ -481,9 +532,11 @@ class RealtimeSession:
     def _finish_recording_locked(self, reason):
         if not self.recording and not self.recording_frames:
             return None
-        audio = self._recording_audio_float32_locked()
-        recording_seconds = audio.size / float(SERVER_SAMPLE_RATE) if audio is not None else 0.0
         segment_id = self.active_segment_id
+        if segment_id is not None:
+            self.finalizing_segment_ids.add(segment_id)
+        audio = self._frames_to_float32(self.recording_frames)
+        recording_seconds = audio.size / float(SERVER_SAMPLE_RATE) if audio is not None else 0.0
         self.timeline.mark_recording_ended(
             reason,
             segment_id=segment_id,
@@ -493,13 +546,18 @@ class RealtimeSession:
         self.recording = False
         self.recording_frames = []
         self.recording_sample_count = 0
+        self.realtime_frames.clear()
+        self.realtime_sample_count = 0
         self.active_segment_id = None
         self.last_realtime_submit_at = 0.0
         self.status = self._waiting_state_locked()
         self.service.deactivate_speaker(self.session_id)
         if audio is None or recording_seconds < self.settings.min_length_of_recording:
+            if segment_id is not None:
+                self.finalizing_segment_ids.discard(segment_id)
+                self.finalized_segment_ids.add(segment_id)
             return None
-        segment_id = self.segment_state.final()
+        final_segment_id = self.segment_state.final()
         return InferenceJob(
             request_id=uuid.uuid4().hex,
             session_id=self.session_id,
@@ -507,10 +565,14 @@ class RealtimeSession:
             audio=audio,
             language=self.settings.language,
             use_prompt=True,
-            segment_id=segment_id,
+            segment_id=final_segment_id,
             sequence=0,
             generation=self.generation,
             created_at=time.monotonic(),
+            initial_prompt=self.settings.initial_prompt,
+            override_initial_prompt=self.domain_profile_applied,
+            engine_options=self.settings.transcription_engine_options,
+            override_engine_options=self.domain_profile_applied,
         )
 
     def _maybe_create_realtime_job_locked(self, now):
@@ -519,7 +581,10 @@ class RealtimeSession:
             return None
         if self.recording_sample_count < int(self.settings.realtime_min_audio_seconds * SERVER_SAMPLE_RATE):
             return None
-        audio = self._recording_audio_float32_locked(max_seconds=self.settings.realtime_max_audio_seconds)
+        segment_id = self.active_segment_id or self.segment_state.realtime()
+        if segment_id in self.finalizing_segment_ids or segment_id in self.finalized_segment_ids:
+            return None
+        audio = self._frames_to_float32(self.realtime_frames)
         if audio is None or audio.size == 0:
             return None
         self.latest_realtime_sequence += 1
@@ -531,42 +596,61 @@ class RealtimeSession:
             audio=audio,
             language=self.settings.language,
             use_prompt=True,
-            segment_id=self.active_segment_id or self.segment_state.realtime(),
+            segment_id=segment_id,
             sequence=self.latest_realtime_sequence,
             generation=self.generation,
             created_at=time.monotonic(),
             deadline_at=time.monotonic() + (self.settings.max_realtime_queue_age_ms / 1000.0),
+            initial_prompt=self.settings.initial_prompt_realtime,
+            override_initial_prompt=self.domain_profile_applied,
+            engine_options=(
+                self.settings.realtime_transcription_engine_options
+                if self.settings.realtime_transcription_engine_options is not None
+                else self.settings.transcription_engine_options
+            ),
+            override_engine_options=self.domain_profile_applied,
         )
 
     def _append_prebuffer_locked(self, samples):
         if samples is None or samples.size == 0:
             return
-        self.prebuffer.append(samples.copy())
+        self.prebuffer.append(samples)
         self.prebuffer_sample_count += int(samples.size)
         max_samples = int(self.settings.pre_recording_buffer_duration * SERVER_SAMPLE_RATE)
         while max_samples >= 0 and self.prebuffer_sample_count > max_samples and self.prebuffer:
             dropped = self.prebuffer.popleft()
             self.prebuffer_sample_count -= int(dropped.size)
 
-    def _recording_audio_float32_locked(self, max_seconds=None):
-        if not self.recording_frames:
+    def _append_recording_samples_locked(self, samples):
+        if samples is None or samples.size == 0:
+            return
+        self.recording_frames.append(samples)
+        self.recording_sample_count += int(samples.size)
+        self.realtime_frames.append(samples)
+        self.realtime_sample_count += int(samples.size)
+        self._trim_realtime_buffer_locked()
+
+    def _trim_realtime_buffer_locked(self):
+        max_samples = max(0, int(self.settings.realtime_max_audio_seconds * SERVER_SAMPLE_RATE))
+        while self.realtime_sample_count > max_samples and self.realtime_frames:
+            overflow = self.realtime_sample_count - max_samples
+            oldest = self.realtime_frames[0]
+            if int(oldest.size) <= overflow:
+                self.realtime_frames.popleft()
+                self.realtime_sample_count -= int(oldest.size)
+                continue
+            self.realtime_frames[0] = oldest[overflow:]
+            self.realtime_sample_count -= overflow
+
+    @staticmethod
+    def _frames_to_float32(frames):
+        if not frames:
             return None
-        frames = self.recording_frames
-        if max_seconds is not None and max_seconds > 0:
-            max_samples = int(max_seconds * SERVER_SAMPLE_RATE)
-            total = 0
-            selected = []
-            for frame in reversed(frames):
-                selected.append(frame)
-                total += int(frame.size)
-                if total >= max_samples:
-                    break
-            frames = list(reversed(selected))
-        audio_int16 = np.concatenate(frames).astype(np.int16)
-        if max_seconds is not None and max_seconds > 0:
-            max_samples = int(max_seconds * SERVER_SAMPLE_RATE)
-            if audio_int16.size > max_samples:
-                audio_int16 = audio_int16[-max_samples:]
+        audio_int16 = (
+            np.asarray(frames[0], dtype=np.int16)
+            if len(frames) == 1
+            else np.concatenate(tuple(frames))
+        )
         return audio_int16.astype(np.float32) / INT16_MAX_ABS_VALUE
 
     def _waiting_state_locked(self, streaming=None):
@@ -659,7 +743,7 @@ class RecorderBackedRealtimeSession:
             "beam_size_realtime": self.settings.beam_size_realtime,
             "batch_size": self.settings.batch_size,
             "realtime_batch_size": self.settings.realtime_batch_size,
-            "faster_whisper_vad_filter": self.settings.vad_filter,
+            "faster_whisper_vad_filter": self.settings.vad_filter_final,
             "normalize_audio": self.settings.normalize_audio,
             "enable_realtime_transcription": True,
             "use_main_model_for_realtime": self.settings.use_main_model_for_realtime,
@@ -872,7 +956,7 @@ class RecorderBackedRealtimeSession:
             self.coalesced_realtime += 1
         elif reason == "stale" and job.kind == "realtime":
             self.stale_realtime_discarded += 1
-        elif reason == "cancelled":
+        elif reason in ("cancelled", "superseded_by_final"):
             self.cancelled_jobs += 1
         self.service.fail_pending_recorder_transcription(
             job.request_id,
@@ -1749,7 +1833,14 @@ class CoreSTTService:
             return None
         session = None
         try:
-            session = RecorderBackedRealtimeSession(self, session_id)
+            use_recorder_backed = (
+                self.settings.use_recorder_backed_realtime_session
+                or self.recorder_factory is not None
+            )
+            session_type = (
+                RecorderBackedRealtimeSession if use_recorder_backed else RealtimeSession
+            )
+            session = session_type(self, session_id)
             if not self.sessions.add(session):
                 session.close()
                 return None

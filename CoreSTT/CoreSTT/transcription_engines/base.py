@@ -36,6 +36,8 @@ class TranscriptionEngineConfig:
     model: str
     download_root: Optional[str] = None
     compute_type: str = "default"
+    cpu_threads: Optional[int] = None
+    num_workers: int = 1
     gpu_device_index: Union[int, List[int]] = 0
     device: str = "cpu"
     beam_size: int = 5

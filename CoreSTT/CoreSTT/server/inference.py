@@ -58,6 +58,51 @@ class QueueSubmitResult:
     coalesced: bool = False
 
 
+class InferenceExecutionGate:
+    def __init__(self, final_work_pending: Optional[Callable[[], bool]] = None):
+        self.final_work_pending = final_work_pending or (lambda: False)
+        self._condition = threading.Condition()
+        self._active_final = 0
+        self._active_realtime = 0
+        self._waiting_final = 0
+
+    def acquire(self, kind, stop_event=None):
+        if kind not in ("final", "realtime"):
+            return True
+
+        with self._condition:
+            if kind == "final":
+                self._waiting_final += 1
+                try:
+                    while self._active_realtime or self._active_final:
+                        if stop_event is not None and stop_event.is_set():
+                            return False
+                        self._condition.wait(timeout=0.1)
+                    self._active_final += 1
+                    return True
+                finally:
+                    self._waiting_final -= 1
+
+            while (
+                self._active_final
+                or self._waiting_final
+                or self.final_work_pending()
+            ):
+                if stop_event is not None and stop_event.is_set():
+                    return False
+                self._condition.wait(timeout=0.1)
+            self._active_realtime += 1
+            return True
+
+    def release(self, kind):
+        with self._condition:
+            if kind == "final" and self._active_final:
+                self._active_final -= 1
+            elif kind == "realtime" and self._active_realtime:
+                self._active_realtime -= 1
+            self._condition.notify_all()
+
+
 class FairInferenceQueue:
     def __init__(self, name, settings: ServerSettings, drop_callback=None):
         self.name = name
@@ -130,9 +175,13 @@ class FairInferenceQueue:
                 while not self._closed:
                     job = None
                     now = time.monotonic()
+                    prefer_final = any(
+                        state["final"] for state in self._sessions.values()
+                    )
                     while self._ordered_sessions:
-                        session_id = self._ordered_sessions.popleft()
-                        self._queued_session_ids.discard(session_id)
+                        session_id = self._pop_next_session_locked(prefer_final)
+                        if session_id is None:
+                            break
                         state = self._sessions.get(session_id)
                         if state is None:
                             continue
@@ -195,6 +244,27 @@ class FairInferenceQueue:
             self._condition.notify_all()
         self._notify_drops(dropped)
 
+    def has_final_work(self):
+        with self._condition:
+            return any(state["final"] for state in self._sessions.values())
+
+    def cancel_realtime(self, session_id, segment_id):
+        dropped = []
+        with self._condition:
+            state = self._sessions.get(session_id)
+            if state is None:
+                return 0
+            job = state["realtime"]
+            if job is None or job.segment_id != segment_id:
+                return 0
+            state["realtime"] = None
+            self._total_queued -= 1
+            dropped.append((job, "superseded_by_final"))
+            self._cleanup_session_locked(session_id)
+            self._condition.notify_all()
+        self._notify_drops(dropped)
+        return len(dropped)
+
     def close(self):
         with self._condition:
             self._closed = True
@@ -223,6 +293,21 @@ class FairInferenceQueue:
         if session_id not in self._queued_session_ids:
             self._queued_session_ids.add(session_id)
             self._ordered_sessions.append(session_id)
+
+    def _pop_next_session_locked(self, prefer_final):
+        candidate_count = len(self._ordered_sessions)
+        for _ in range(candidate_count):
+            session_id = self._ordered_sessions.popleft()
+            state = self._sessions.get(session_id)
+            if state is None:
+                self._queued_session_ids.discard(session_id)
+                continue
+            if prefer_final and not state["final"]:
+                self._ordered_sessions.append(session_id)
+                continue
+            self._queued_session_ids.discard(session_id)
+            return session_id
+        return None
 
     def _session_has_work_locked(self, session_id):
         state = self._sessions.get(session_id)
@@ -253,6 +338,7 @@ class SharedEngineWorker:
         engine_factory: Callable[[], Any],
         result_callback: Callable[[InferenceResult], None],
         error_callback: Optional[Callable[[str, Exception], None]] = None,
+        execution_gate: Optional[InferenceExecutionGate] = None,
     ):
         self.name = name
         self.settings = settings
@@ -260,6 +346,7 @@ class SharedEngineWorker:
         self.engine_factory = engine_factory
         self.result_callback = result_callback
         self.error_callback = error_callback
+        self.execution_gate = execution_gate
         self.ready = threading.Event()
         self.stop_event = threading.Event()
         self.thread = None
@@ -318,11 +405,17 @@ class SharedEngineWorker:
             if job is None:
                 break
 
+            gate_acquired = False
             started_at = time.monotonic()
             text = ""
             error = None
 
             try:
+                if self.execution_gate is not None:
+                    gate_acquired = self.execution_gate.acquire(job.kind, self.stop_event)
+                    if not gate_acquired:
+                        break
+                started_at = time.monotonic()
                 if self.engine is None:
                     raise RuntimeError(f"{self.name} inference engine is unavailable")
                 result = self._transcribe(job)
@@ -332,6 +425,9 @@ class SharedEngineWorker:
                 self.failed_jobs += 1
                 error = str(exc)
                 LOGGER.exception("Inference job failed: %s", job.request_id)
+            finally:
+                if gate_acquired and self.execution_gate is not None:
+                    self.execution_gate.release(job.kind)
 
             completed_at = time.monotonic()
             queue_delay = max(0.0, started_at - job.created_at)
@@ -341,6 +437,31 @@ class SharedEngineWorker:
             self.queue_delay.record(queue_delay)
             self.inference_duration.record(inference_duration)
             self.total_latency.record(total_latency)
+            config = getattr(self.engine, "config", None)
+            model = getattr(config, "model", None) or (
+                self.settings.model if job.kind == "final" else self.settings.realtime_model
+            )
+            device = getattr(config, "device", None) or effective_device(self.settings.device)
+            compute_type = getattr(config, "compute_type", None) or self.settings.compute_type
+            try:
+                audio_duration = len(job.audio) / float(job.sample_rate)
+            except (TypeError, ZeroDivisionError):
+                audio_duration = 0.0
+            LOGGER.info(
+                "inference kind=%s model=%s device=%s compute_type=%s "
+                "audio_duration=%.3f queue_delay=%.3f inference_duration=%.3f "
+                "total_latency=%.3f status=%s request_id=%s",
+                job.kind,
+                model,
+                device,
+                compute_type,
+                audio_duration,
+                queue_delay,
+                inference_duration,
+                total_latency,
+                "error" if error else "ok",
+                job.request_id,
+            )
             self.result_callback(
                 InferenceResult(
                     request_id=job.request_id,
@@ -406,6 +527,10 @@ class InferenceScheduler:
         drop_callback: Optional[Callable[[InferenceJob, str, str], None]] = None,
         error_callback: Optional[Callable[[str, Exception], None]] = None,
     ):
+        if settings.use_main_model_for_realtime:
+            raise ValueError(
+                "use_main_model_for_realtime is disabled because realtime and final use separate fixed models"
+            )
         self.settings = settings
         self.result_callback = result_callback
         self.drop_callback = drop_callback
@@ -416,6 +541,7 @@ class InferenceScheduler:
             if settings.use_main_model_for_realtime
             else FairInferenceQueue("realtime", settings, drop_callback)
         )
+        self.execution_gate = self._create_execution_gate()
         self.main_worker = SharedEngineWorker(
             "main",
             settings,
@@ -423,6 +549,7 @@ class InferenceScheduler:
             self._create_main_engine,
             result_callback,
             error_callback,
+            self.execution_gate,
         )
         self.realtime_worker = None
         if not settings.use_main_model_for_realtime:
@@ -433,6 +560,7 @@ class InferenceScheduler:
                 self._create_realtime_engine,
                 result_callback,
                 error_callback,
+                self.execution_gate,
             )
 
     def start(self):
@@ -465,6 +593,8 @@ class InferenceScheduler:
         return True
 
     def submit(self, job: InferenceJob):
+        if job.kind == "final":
+            self.realtime_queue.cancel_realtime(job.session_id, job.segment_id)
         if job.kind == "realtime" and not self.settings.use_main_model_for_realtime:
             return self.realtime_queue.submit(job)
         return self.main_queue.submit(job)
@@ -481,6 +611,7 @@ class InferenceScheduler:
                 if self.settings.use_main_model_for_realtime
                 else "balanced-main-plus-realtime"
             ),
+            "singleGpuInferenceGate": self.execution_gate is not None,
             "queues": {"main": self.main_queue.snapshot()},
             "workers": {"main": self.main_worker.snapshot()},
         }
@@ -502,12 +633,14 @@ class InferenceScheduler:
                 model=self.settings.model,
                 download_root=self.settings.download_root,
                 compute_type=self.settings.compute_type,
+                cpu_threads=self.settings.cpu_threads,
+                num_workers=self.settings.num_workers,
                 gpu_device_index=self.settings.gpu_device_index,
                 device=effective_device(self.settings.device),
                 beam_size=self.settings.beam_size,
                 initial_prompt=self.settings.initial_prompt,
                 batch_size=self.settings.batch_size,
-                vad_filter=self.settings.vad_filter,
+                vad_filter=self.settings.vad_filter_final,
                 normalize_audio=self.settings.normalize_audio,
                 engine_options=self.settings.transcription_engine_options,
             ),
@@ -526,12 +659,14 @@ class InferenceScheduler:
                 model=self.settings.realtime_model or self.settings.model,
                 download_root=self.settings.download_root,
                 compute_type=self.settings.compute_type,
+                cpu_threads=self.settings.cpu_threads,
+                num_workers=self.settings.num_workers,
                 gpu_device_index=self.settings.gpu_device_index,
                 device=effective_device(self.settings.device),
                 beam_size=self.settings.beam_size_realtime,
                 initial_prompt=self.settings.initial_prompt_realtime,
                 batch_size=self.settings.realtime_batch_size,
-                vad_filter=self.settings.vad_filter,
+                vad_filter=self.settings.vad_filter_realtime,
                 normalize_audio=self.settings.normalize_audio,
                 engine_options=(
                     self.settings.realtime_transcription_engine_options
@@ -540,6 +675,15 @@ class InferenceScheduler:
                 ),
             ),
         )
+
+    def _create_execution_gate(self):
+        if not self.settings.single_gpu_inference_gate:
+            return None
+        if self.realtime_queue is self.main_queue:
+            return None
+        if str(effective_device(self.settings.device)).lower() != "cuda":
+            return None
+        return InferenceExecutionGate(final_work_pending=self.main_queue.has_final_work)
 
 
 class SchedulerTranscriptionExecutor:

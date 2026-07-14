@@ -3,13 +3,13 @@ from typing import Any, Dict, Optional, Tuple
 
 
 BASE_TUNING_DEFAULTS = {
-    "beam_size": 5,
-    "beam_size_realtime": 3,
-    "batch_size": 16,
-    "realtime_batch_size": 16,
-    "realtime_processing_pause": 0.02,
+    "beam_size": 3,
+    "beam_size_realtime": 1,
+    "batch_size": 1,
+    "realtime_batch_size": 1,
+    "realtime_processing_pause": 0.6,
     "min_length_of_recording": 0.2,
-    "post_speech_silence_duration": 0.55,
+    "post_speech_silence_duration": 0.7,
     "early_transcription_on_silence": 0.2,
 }
 
@@ -101,6 +101,7 @@ STARTUP_ONLY_SETTINGS = {
     "beam_size",
     "beam_size_realtime",
     "compute_type",
+    "cpu_threads",
     "default_domain",
     "device",
     "domain_profiles_path",
@@ -111,15 +112,21 @@ STARTUP_ONLY_SETTINGS = {
     "model",
     "model_warmup",
     "normalize_audio",
+    "num_workers",
     "port",
     "realtime_model",
     "realtime_transcription_engine",
     "realtime_transcription_engine_options",
+    "single_gpu_inference_gate",
     "transcription_engine",
     "transcription_engine_options",
     "tuning_description",
     "tuning_profile",
     "use_main_model_for_realtime",
+    "use_recorder_backed_realtime_session",
+    "vad_filter",
+    "vad_filter_final",
+    "vad_filter_realtime",
 }
 
 INT_SETTINGS = {
@@ -127,6 +134,7 @@ INT_SETTINGS = {
     "batch_size",
     "beam_size",
     "beam_size_realtime",
+    "cpu_threads",
     "gpu_device_index",
     "max_active_speakers",
     "max_audio_packet_bytes",
@@ -134,6 +142,7 @@ INT_SETTINGS = {
     "max_global_inference_queue_depth",
     "max_realtime_queue_age_ms",
     "max_sessions",
+    "num_workers",
     "port",
     "realtime_batch_size",
     "realtime_degradation_threshold_ms",
@@ -164,8 +173,12 @@ BOOL_SETTINGS = {
     "model_warmup",
     "normalize_audio",
     "realtime_transcription_use_syllable_boundaries",
+    "single_gpu_inference_gate",
     "use_main_model_for_realtime",
+    "use_recorder_backed_realtime_session",
     "vad_filter",
+    "vad_filter_final",
+    "vad_filter_realtime",
 }
 
 OPTIONAL_STRING_SETTINGS = {
@@ -203,21 +216,26 @@ class ServerSettings:
     default_domain: Optional[str] = None
     download_root: Optional[str] = None
     compute_type: str = "default"
+    cpu_threads: Optional[int] = None
+    num_workers: int = 1
+    single_gpu_inference_gate: bool = True
     device: str = "cuda"
     gpu_device_index: int = 0
-    beam_size: int = 5
-    beam_size_realtime: int = 3
-    batch_size: int = 16
-    realtime_batch_size: int = 16
-    vad_filter: bool = True
+    beam_size: int = 3
+    beam_size_realtime: int = 1
+    batch_size: int = 1
+    realtime_batch_size: int = 1
+    vad_filter_final: bool = True
+    vad_filter_realtime: bool = False
+    vad_filter: Optional[bool] = None
     normalize_audio: bool = False
     realtime_callback: str = "update"
     min_length_of_recording: float = 0.2
     min_gap_between_recordings: float = 0.0
-    post_speech_silence_duration: float = 0.55
+    post_speech_silence_duration: float = 0.7
     silero_sensitivity: float = 0.05
     webrtc_sensitivity: int = 3
-    realtime_processing_pause: float = 0.02
+    realtime_processing_pause: float = 0.6
     realtime_transcription_use_syllable_boundaries: bool = False
     realtime_boundary_detector_sensitivity: float = 0.6
     realtime_boundary_followup_delays: Tuple[float, ...] = (0.05, 0.2)
@@ -234,6 +252,7 @@ class ServerSettings:
     wake_word_buffer_duration: float = 0.1
     wake_word_followup_window: float = 0.0
     use_main_model_for_realtime: bool = False
+    use_recorder_backed_realtime_session: bool = False
     audio_queue_size: int = 128
     max_audio_packet_bytes: int = 512 * 1024
     log_level: str = "INFO"
@@ -245,16 +264,37 @@ class ServerSettings:
     max_final_queue_depth_per_session: int = 8
     max_global_inference_queue_depth: int = 64
     realtime_degradation_threshold_ms: int = 1500
-    realtime_min_audio_seconds: float = 0.25
-    realtime_max_audio_seconds: float = 20.0
+    realtime_min_audio_seconds: float = 0.8
+    realtime_max_audio_seconds: float = 5.0
     vad_energy_threshold: float = 250.0
     model_warmup: bool = True
+
+    def __post_init__(self):
+        if self.vad_filter is not None:
+            if not isinstance(self.vad_filter, bool):
+                raise ValueError("vad_filter must be a boolean")
+            self.vad_filter_final = self.vad_filter
+            self.vad_filter_realtime = self.vad_filter
+        if self.model != "small.en":
+            raise ValueError("model is fixed to small.en for final transcription")
+        if self.realtime_model != "tiny.en":
+            raise ValueError("realtime_model is fixed to tiny.en for realtime transcription")
+        if self.use_main_model_for_realtime:
+            raise ValueError(
+                "use_main_model_for_realtime is disabled because realtime and final use separate fixed models"
+            )
+        if self.cpu_threads is not None and self.cpu_threads <= 0:
+            raise ValueError("cpu_threads must be a positive integer or None")
+        if self.num_workers <= 0:
+            raise ValueError("num_workers must be a positive integer")
 
     def public_dict(self):
         data = asdict(self)
         data.pop("transcription_engine_options", None)
         data.pop("realtime_transcription_engine_options", None)
         data["wake_word_enabled"] = self.wake_word_enabled()
+        # Deprecated compatibility alias for clients that predate split VAD settings.
+        data["vad_filter"] = self.vad_filter_final
         return data
 
     def wake_word_enabled(self):

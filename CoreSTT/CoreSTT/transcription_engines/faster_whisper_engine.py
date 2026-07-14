@@ -42,13 +42,17 @@ class FasterWhisperEngine(BaseTranscriptionEngine):
         """
         super().__init__(config)
         faster_whisper, batched_inference_pipeline = _load_faster_whisper()
-        model = faster_whisper.WhisperModel(
-            model_size_or_path=self.config.model,
-            device=self.config.device,
-            compute_type=self.config.compute_type,
-            device_index=self.config.gpu_device_index,
-            download_root=self.config.download_root,
-        )
+        model_kwargs = {
+            "model_size_or_path": self.config.model,
+            "device": self.config.device,
+            "compute_type": self.config.compute_type,
+            "device_index": self.config.gpu_device_index,
+            "download_root": self.config.download_root,
+            "num_workers": self.config.num_workers,
+        }
+        if self.config.cpu_threads is not None:
+            model_kwargs["cpu_threads"] = self.config.cpu_threads
+        model = faster_whisper.WhisperModel(**model_kwargs)
         if self.config.batch_size > 0:
             model = batched_inference_pipeline(model=model)
         self.model = model

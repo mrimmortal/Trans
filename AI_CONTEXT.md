@@ -65,6 +65,18 @@ commands as local validation.
   global `python` executable.
 - Default README server configuration uses final model `small.en`, realtime
   model `tiny.en`, backend `faster_whisper`, and CUDA with fallback to CPU.
+  Model roles are fixed; device and compute type remain configurable.
+- Production WebSocket sessions use `RealtimeSession`; the recorder-backed
+  session is opt-in. Realtime audio uses WebRTC speech detection, a bounded
+  five-second ring buffer, and Faster-Whisper VAD disabled. Final jobs retain
+  the complete utterance and enable Faster-Whisper VAD.
+- Final and realtime engines load once at startup. Final jobs have scheduler
+  priority, cancel queued realtime work for the same segment, and suppress late
+  realtime results after finalization.
+- Faster-Whisper startup controls include `cpu_threads`, `num_workers`, and a
+  same-GPU inference gate. The gate is enabled by default only for effective
+  CUDA scheduling and blocks new realtime inference while final work is queued
+  or active.
 - PyAudio may require PortAudio on macOS before installing requirements.
 - `.venv`, `__pycache__`, generated assets, model downloads, and secrets are
   not AI-edit targets unless explicitly requested.

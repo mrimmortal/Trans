@@ -457,6 +457,11 @@ Client handling: Store `sessionId`/`clientId`, inspect limits/settings if needed
 inspect `domainProfiles` if the client offers domain selection, and wait for
 `ready` before marking the session ready.
 
+The settings object includes `vad_filter_final` and `vad_filter_realtime`.
+The deprecated `vad_filter` field remains as a compatibility alias for the
+final setting. This additive settings change does not alter WebSocket commands,
+binary packets, or transcript message shapes.
+
 ### ready
 
 Purpose: Indicates the scheduler/session is ready.
@@ -529,6 +534,11 @@ Example:
 Client handling: Display as non-final text. Replace/update the same `segmentId`
 instead of appending duplicate interim content.
 
+With the default tuning, the first interim is eligible after `0.8` seconds of
+audio plus queue/inference time, and later updates are scheduled about every
+`0.6` seconds. Clients should not interpret the quieter cadence as a stalled
+connection.
+
 ### final
 
 Purpose: Final transcript segment.
@@ -547,6 +557,9 @@ Example:
 ```
 
 Client handling: Commit as final text for the `segmentId`.
+The server discards any late realtime result for that segment after
+finalization, so clients should not receive an interim update that overwrites a
+committed final result.
 
 ### timeline
 

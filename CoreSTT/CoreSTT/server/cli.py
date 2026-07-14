@@ -31,6 +31,13 @@ def parse_args(argv=None):
     parser.add_argument("--default-domain")
     parser.add_argument("--download-root")
     parser.add_argument("--compute-type", default="default")
+    parser.add_argument("--cpu-threads", type=int)
+    parser.add_argument("--num-workers", type=int, default=1)
+    parser.add_argument(
+        "--single-gpu-inference-gate",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--gpu-device-index", type=int, default=0)
     parser.add_argument("--beam-size", type=int)
@@ -38,6 +45,16 @@ def parse_args(argv=None):
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--realtime-batch-size", type=int)
     parser.add_argument("--no-vad-filter", action="store_true")
+    parser.add_argument(
+        "--vad-filter-final",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
+    parser.add_argument(
+        "--vad-filter-realtime",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+    )
     parser.add_argument("--normalize-audio", action="store_true")
     parser.add_argument("--realtime-callback", choices=("update", "stabilized"), default="update")
     parser.add_argument("--min-length-of-recording", type=float)
@@ -62,6 +79,7 @@ def parse_args(argv=None):
     parser.add_argument("--wake-word-buffer-duration", type=float, default=0.1)
     parser.add_argument("--wake-word-followup-window", type=float, default=0.0)
     parser.add_argument("--use-main-model-for-realtime", action="store_true")
+    parser.add_argument("--use-recorder-backed-realtime-session", action="store_true")
     parser.add_argument("--audio-queue-size", type=int, default=128)
     parser.add_argument("--max-audio-packet-bytes", type=int, default=512 * 1024)
     parser.add_argument("--max-sessions", type=int, default=4)
@@ -72,8 +90,8 @@ def parse_args(argv=None):
     parser.add_argument("--max-final-queue-depth-per-session", type=int, default=8)
     parser.add_argument("--max-global-inference-queue-depth", type=int, default=64)
     parser.add_argument("--realtime-degradation-threshold-ms", type=int, default=1500)
-    parser.add_argument("--realtime-min-audio-seconds", type=float, default=0.25)
-    parser.add_argument("--realtime-max-audio-seconds", type=float, default=20.0)
+    parser.add_argument("--realtime-min-audio-seconds", type=float, default=0.8)
+    parser.add_argument("--realtime-max-audio-seconds", type=float, default=5.0)
     parser.add_argument("--vad-energy-threshold", type=float, default=250.0)
     parser.add_argument("--no-model-warmup", action="store_true")
     parser.add_argument("--log-level", default="INFO")
@@ -105,8 +123,24 @@ def parse_float_tuple(value, flag_name):
 
 
 def settings_from_args(args):
+    if args.model != "small.en":
+        raise SystemExit("--model is fixed to small.en for final transcription")
+    if args.realtime_model != "tiny.en":
+        raise SystemExit("--realtime-model is fixed to tiny.en for realtime transcription")
+    if args.use_main_model_for_realtime:
+        raise SystemExit(
+            "--use-main-model-for-realtime is incompatible with the fixed final/realtime model roles"
+        )
+
     tuning_profile = args.tuning_profile
     defaults = _tuning_defaults(tuning_profile)
+    vad_filter_final = True if args.vad_filter_final is None else args.vad_filter_final
+    vad_filter_realtime = (
+        False if args.vad_filter_realtime is None else args.vad_filter_realtime
+    )
+    if args.no_vad_filter:
+        vad_filter_final = False
+        vad_filter_realtime = False
     return ServerSettings(
         host=args.host,
         port=args.port,
@@ -126,13 +160,17 @@ def settings_from_args(args):
         default_domain=args.default_domain,
         download_root=args.download_root,
         compute_type=args.compute_type,
+        cpu_threads=args.cpu_threads,
+        num_workers=args.num_workers,
+        single_gpu_inference_gate=args.single_gpu_inference_gate,
         device=args.device,
         gpu_device_index=args.gpu_device_index,
         beam_size=_value_or_default(args, defaults, "beam_size"),
         beam_size_realtime=_value_or_default(args, defaults, "beam_size_realtime"),
         batch_size=_value_or_default(args, defaults, "batch_size"),
         realtime_batch_size=_value_or_default(args, defaults, "realtime_batch_size"),
-        vad_filter=not args.no_vad_filter,
+        vad_filter_final=vad_filter_final,
+        vad_filter_realtime=vad_filter_realtime,
         normalize_audio=args.normalize_audio,
         realtime_callback=args.realtime_callback,
         min_length_of_recording=_value_or_default(args, defaults, "min_length_of_recording"),
@@ -163,6 +201,7 @@ def settings_from_args(args):
         wake_word_buffer_duration=args.wake_word_buffer_duration,
         wake_word_followup_window=args.wake_word_followup_window,
         use_main_model_for_realtime=args.use_main_model_for_realtime,
+        use_recorder_backed_realtime_session=args.use_recorder_backed_realtime_session,
         audio_queue_size=args.audio_queue_size,
         max_audio_packet_bytes=args.max_audio_packet_bytes,
         max_sessions=args.max_sessions,

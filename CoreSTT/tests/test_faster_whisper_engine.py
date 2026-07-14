@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -52,6 +53,37 @@ class FasterWhisperEngineTest(unittest.TestCase):
         engine.transcribe(np.array([0.0], dtype=np.float32), language="en", use_prompt=True)
 
         self.assertNotIn("hotwords", engine.model.kwargs)
+
+    def test_model_construction_passes_thread_and_worker_controls(self):
+        class FakeWhisperModule:
+            model_kwargs = None
+
+            class WhisperModel:
+                def __init__(self, **kwargs):
+                    FakeWhisperModule.model_kwargs = kwargs
+
+        class FakeBatchedInferencePipeline:
+            def __init__(self, model):
+                self.model = model
+
+        config = TranscriptionEngineConfig(
+            model="tiny.en",
+            device="cpu",
+            compute_type="int8",
+            cpu_threads=4,
+            num_workers=2,
+            batch_size=0,
+        )
+
+        with patch(
+            "CoreSTT.transcription_engines.faster_whisper_engine._load_faster_whisper",
+            return_value=(FakeWhisperModule, FakeBatchedInferencePipeline),
+        ):
+            FasterWhisperEngine(config)
+
+        self.assertEqual(FakeWhisperModule.model_kwargs["cpu_threads"], 4)
+        self.assertEqual(FakeWhisperModule.model_kwargs["num_workers"], 2)
+        self.assertEqual(FakeWhisperModule.model_kwargs["model_size_or_path"], "tiny.en")
 
 
 if __name__ == "__main__":
