@@ -641,6 +641,8 @@ class ServerConfigTest(unittest.TestCase):
         self.assertIn("selectedDomain", index_response.text)
         self.assertIn("startCommand.domain", index_response.text)
         self.assertIn('id="exportSnapshotButton"', index_response.text)
+        self.assertIn('id="diagnosticsLogBody"', index_response.text)
+        self.assertIn("Realtime diagnostics log", index_response.text)
         self.assertIn("corestt-diagnostics-session-", index_response.text)
         self.assertEqual(health_response.status_code, 200)
         self.assertTrue(health_response.json()["ok"])

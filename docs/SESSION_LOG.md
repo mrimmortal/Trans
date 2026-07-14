@@ -402,3 +402,18 @@ Validation:
   from `CoreSTT/`: passed, 46 tests.
 - `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 60
   tests.
+
+## 2026-07-14 - Show Realtime Dashboard Log and Category Availability
+
+Changed:
+- Added a realtime diagnostics log table to the browser dashboard.
+- Each dashboard category now shows live values plus explicit availability or
+  unavailable reasons.
+- The log keeps the latest browser-collected diagnostics samples visible while
+  exports still include the full capped sample set.
+
+Validation:
+- `.venv/bin/python -m unittest tests.test_server_config` from `CoreSTT/`:
+  passed, 33 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 60
+  tests.

@@ -390,6 +390,40 @@
       font-size: 12px;
     }
 
+    .diagnostics-log {
+      margin-top: 14px;
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #10141a;
+    }
+
+    .diagnostics-log table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .diagnostics-log th,
+    .diagnostics-log td {
+      padding: 7px 9px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .diagnostics-log th {
+      position: sticky;
+      top: 0;
+      background: #141920;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    .diagnostics-log td { color: var(--soft); }
+    .diagnostics-log tr:last-child td { border-bottom: 0; }
+
     @media (max-width: 900px) {
       .app { padding: 16px; }
       header { flex-direction: column; }
@@ -519,6 +553,25 @@
             <button id="exportJsonlButton" class="secondary" type="button">Export Session Log JSONL</button>
             <button id="exportCsvButton" class="secondary" type="button">Export CSV</button>
           </div>
+          <div class="diagnostics-log" aria-label="Realtime diagnostics log">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>CPU</th>
+                  <th>RAM</th>
+                  <th>CUDA</th>
+                  <th>Final p95</th>
+                  <th>RT p95</th>
+                  <th>Queue</th>
+                  <th>Bottleneck</th>
+                </tr>
+              </thead>
+              <tbody id="diagnosticsLogBody">
+                <tr><td colspan="8">Waiting for metrics...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
 
         <section class="doc-section">
@@ -641,6 +694,7 @@ pong       -> latency response</code></pre>
       diagBottleneck: document.getElementById("diagBottleneck"),
       diagBottleneckSeverity: document.getElementById("diagBottleneckSeverity"),
       diagBottleneckMetrics: document.getElementById("diagBottleneckMetrics"),
+      diagnosticsLogBody: document.getElementById("diagnosticsLogBody"),
       exportSnapshotButton: document.getElementById("exportSnapshotButton"),
       exportJsonlButton: document.getElementById("exportJsonlButton"),
       exportCsvButton: document.getElementById("exportCsvButton")
@@ -959,6 +1013,12 @@ pong       -> latency response</code></pre>
       return number.toFixed(digits) + suffix;
     }
 
+    function availabilityLabel(value) {
+      if (!value || typeof value !== "object") return "unavailable";
+      if (value.available) return "available";
+      return value.reason || "unavailable";
+    }
+
     function metricValue(source, path, fallback = undefined) {
       let current = source;
       for (const key of path.split(".")) {
@@ -1094,6 +1154,8 @@ pong       -> latency response</code></pre>
       setCard(ui.diagBottleneck, ui.diagBottleneckSeverity, bottleneckSeverity);
 
       renderMetricList(ui.diagHardwareMetrics, [
+        ["Process", availabilityLabel(process)],
+        ["System", availabilityLabel(system)],
         ["CPU", formatNumber(system.cpuPercent, 1, "%")],
         ["Process CPU", formatNumber(process.cpuPercent, 1, "%")],
         ["RSS", formatNumber(process.rssMb, 1, " MB")],
@@ -1101,7 +1163,7 @@ pong       -> latency response</code></pre>
         ["Threads", formatNumber(process.threadCount, 0)]
       ]);
       renderMetricList(ui.diagCudaMetrics, [
-        ["Available", cuda.available ? "yes" : "no"],
+        ["Status", availabilityLabel(cuda)],
         ["Device", cuda.deviceName || "--"],
         ["Allocated", formatNumber(cuda.allocatedMb, 1, " MB")],
         ["Reserved", formatNumber(cuda.reservedMb, 1, " MB")],
@@ -1109,6 +1171,8 @@ pong       -> latency response</code></pre>
         ["Pressure", formatNumber(cuda.memoryPressure, 1, "%")]
       ]);
       renderMetricList(ui.diagQueuesMetrics, [
+        ["Main status", mainQueue.name || "main"],
+        ["Realtime status", realtimeQueue.name || "disabled"],
         ["Sessions", String(metrics.activeSessions || 0)],
         ["Speakers", String(metrics.activeSpeakers || 0)],
         ["Final queued", String(mainQueue.queued || 0)],
@@ -1118,6 +1182,8 @@ pong       -> latency response</code></pre>
         ["Stale RT", String(realtimeQueue.staleRealtimeDropped || 0)]
       ]);
       renderMetricList(ui.diagLatencyMetrics, [
+        ["Final busy", formatNumber((mainWorker.busyRatio || 0) * 100, 0, "%")],
+        ["RT busy", formatNumber((realtimeWorker.busyRatio || 0) * 100, 0, "%")],
         ["Final q p95", formatNumber(finalP95Queue, 0, " ms")],
         ["RT q p95", formatNumber(realtimeP95Queue, 0, " ms")],
         ["Final inf p95", formatNumber(finalP95Inference, 0, " ms")],
@@ -1134,6 +1200,46 @@ pong       -> latency response</code></pre>
       ui.diagnosticsUpdated.textContent = new Date().toLocaleTimeString();
       ui.diagnosticsSamples.textContent = String(state.diagnosticsSamples.length);
       ui.diagnosticsBottleneck.textContent = diagnostics.likelyBottleneck || "unknown";
+      renderDiagnosticsLog();
+    }
+
+    function renderDiagnosticsLog() {
+      const samples = state.diagnosticsSamples.slice(-30).reverse();
+      ui.diagnosticsLogBody.replaceChildren();
+      if (!samples.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 8;
+        cell.textContent = "Waiting for metrics...";
+        row.append(cell);
+        ui.diagnosticsLogBody.append(row);
+        return;
+      }
+      for (const sample of samples) {
+        const metrics = sample.metrics || {};
+        const row = document.createElement("tr");
+        const values = [
+          new Date(sample.capturedAt).toLocaleTimeString(),
+          formatNumber(metricValue(metrics, "resources.system.cpuPercent"), 0, "%"),
+          formatNumber(metricValue(metrics, "resources.system.memoryPercent"), 0, "%"),
+          metricValue(metrics, "resources.cuda.available", false)
+            ? formatNumber(metricValue(metrics, "resources.cuda.memoryPressure"), 0, "%")
+            : availabilityLabel(metricValue(metrics, "resources.cuda", {})),
+          formatNumber(metricValue(metrics, "scheduler.workers.main.totalLatency.p95Ms"), 0, " ms"),
+          formatNumber(metricValue(metrics, "scheduler.workers.realtime.totalLatency.p95Ms"), 0, " ms"),
+          String(
+            Number(metricValue(metrics, "scheduler.queues.main.queued", 0))
+            + Number(metricValue(metrics, "scheduler.queues.realtime.queued", 0))
+          ),
+          metricValue(metrics, "diagnostics.likelyBottleneck", "unknown")
+        ];
+        for (const value of values) {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        }
+        ui.diagnosticsLogBody.append(row);
+      }
     }
 
     function timestampSlug() {
