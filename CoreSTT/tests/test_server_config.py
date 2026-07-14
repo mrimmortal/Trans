@@ -219,9 +219,32 @@ class ServerConfigTest(unittest.TestCase):
             session._start_recording_locked(1.0)
             session._append_recording_samples_locked(np.arange(16000, dtype=np.int16))
             job = session._maybe_create_realtime_job_locked(2.0)
+            final_job = session._finish_recording_locked("test")
 
         self.assertIsNone(job)
+        self.assertEqual(session.realtime_sample_count, 0)
+        self.assertEqual(len(session.realtime_frames), 0)
+        self.assertEqual(final_job.kind, "final")
+        self.assertEqual(final_job.audio.size, 16000)
         service.remove_session("session-1")
+
+    def test_recorder_backed_session_disables_recorder_realtime_pipeline(self):
+        FakeRecorder.instances = []
+        service = CoreSTTService(
+            ServerSettings(
+                realtime_transcription_enabled=False,
+                use_recorder_backed_realtime_session=True,
+            ),
+            CaptureManager(),
+            scheduler_factory=FakeScheduler,
+            recorder_factory=FakeRecorder,
+        )
+        session = service.admit_session("session-1")
+        try:
+            recorder = FakeRecorder.instances[-1]
+            self.assertFalse(recorder.config["enable_realtime_transcription"])
+        finally:
+            service.remove_session("session-1")
 
     def test_recorder_backed_session_does_not_submit_realtime_when_disabled(self):
         service = CoreSTTService(

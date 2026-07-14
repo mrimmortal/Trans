@@ -518,9 +518,13 @@ class RealtimeSession:
         self.last_realtime_submit_at = 0.0
         self.recording_frames = list(self.prebuffer)
         self.recording_sample_count = sum(int(frame.size) for frame in self.recording_frames)
-        self.realtime_frames = collections.deque(self.prebuffer)
-        self.realtime_sample_count = self.recording_sample_count
-        self._trim_realtime_buffer_locked()
+        if self.settings.realtime_transcription_enabled:
+            self.realtime_frames = collections.deque(self.prebuffer)
+            self.realtime_sample_count = self.recording_sample_count
+            self._trim_realtime_buffer_locked()
+        else:
+            self.realtime_frames.clear()
+            self.realtime_sample_count = 0
         self.timeline.mark_recording_started(
             self.active_segment_id,
             actual_preroll_seconds=self.prebuffer_sample_count / float(SERVER_SAMPLE_RATE),
@@ -628,6 +632,8 @@ class RealtimeSession:
             return
         self.recording_frames.append(samples)
         self.recording_sample_count += int(samples.size)
+        if not self.settings.realtime_transcription_enabled:
+            return
         self.realtime_frames.append(samples)
         self.realtime_sample_count += int(samples.size)
         self._trim_realtime_buffer_locked()
@@ -747,7 +753,7 @@ class RecorderBackedRealtimeSession:
             "realtime_batch_size": self.settings.realtime_batch_size,
             "faster_whisper_vad_filter": self.settings.vad_filter_final,
             "normalize_audio": self.settings.normalize_audio,
-            "enable_realtime_transcription": True,
+            "enable_realtime_transcription": self.settings.realtime_transcription_enabled,
             "use_main_model_for_realtime": self.settings.use_main_model_for_realtime,
             "realtime_processing_pause": self.settings.realtime_processing_pause,
             "realtime_transcription_use_syllable_boundaries": (
@@ -1125,6 +1131,8 @@ class RecorderBackedRealtimeSession:
 
     def _on_realtime_text(self, text):
         with self.lock:
+            if not self.settings.realtime_transcription_enabled:
+                return
             if self.reject_current_recording:
                 return
             segment_id = self.segment_state.realtime()
@@ -1158,6 +1166,8 @@ class RecorderBackedRealtimeSession:
 
     def _on_realtime_stabilization_event(self, event):
         with self.lock:
+            if not self.settings.realtime_transcription_enabled:
+                return
             if self.reject_current_recording:
                 return
 

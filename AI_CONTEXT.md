@@ -77,9 +77,9 @@ commands as local validation.
   same-GPU inference gate. The gate is enabled by default only for effective
   CUDA scheduling and blocks new realtime inference while final work is queued
   or active.
-- `realtime_transcription_enabled` defaults to true. Disabling it skips
-  interim realtime inference jobs but keeps speech detection, buffering, and
-  final transcription active.
+- `realtime_transcription_enabled` defaults to true. Disabling it stops
+  the interim realtime transcription pipeline but keeps speech detection,
+  final-utterance buffering, and final transcription active.
 - PyAudio may require PortAudio on macOS before installing requirements.
 - `.venv`, `__pycache__`, generated assets, model downloads, and secrets are
   not AI-edit targets unless explicitly requested.

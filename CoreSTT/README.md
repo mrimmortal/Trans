@@ -127,8 +127,9 @@ pipeline loads both models once at startup and reuses them across sessions.
 Faster-Whisper startup controls include `--cpu-threads`, `--num-workers`, and
 `--single-gpu-inference-gate`/`--no-single-gpu-inference-gate` for tuning CPU
 threading and same-GPU final/realtime contention.
-Use `--no-realtime-transcription` to disable interim realtime transcription
-jobs while keeping speech detection, buffering, and final transcription active.
+Use `--no-realtime-transcription` for final-only mode. This disables the
+interim realtime transcription pipeline while keeping speech detection,
+final-utterance buffering, and final transcription active.
 
 ## Server Features
 

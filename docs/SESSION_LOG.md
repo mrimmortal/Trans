@@ -338,13 +338,14 @@ Validation:
 Changed:
 - Added `realtime_transcription_enabled` with CLI
   `--realtime-transcription`/`--no-realtime-transcription`.
-- Disabling realtime transcription skips interim realtime inference jobs while
-  preserving WebRTC speech detection, recording buffers, and final
+- Disabling realtime transcription stops the interim realtime pipeline while
+  preserving WebRTC speech detection, final-utterance buffering, and final
   transcription.
-- Covered direct and recorder-backed session suppression paths.
+- Covered direct and recorder-backed session suppression paths, including
+  disabled direct-session realtime ring buffering.
 
 Validation:
 - `.venv/bin/python -m unittest tests.test_server_config` from `CoreSTT/`:
-  passed, 30 tests.
-- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 53
+  passed, 31 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 54
   tests.
