@@ -99,6 +99,7 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(settings.beam_size_realtime, 1)
         self.assertEqual(settings.realtime_batch_size, 1)
         self.assertEqual(settings.realtime_processing_pause, 0.6)
+        self.assertTrue(settings.realtime_transcription_enabled)
         self.assertEqual(settings.realtime_min_audio_seconds, 0.8)
         self.assertEqual(settings.realtime_max_audio_seconds, 5.0)
         self.assertEqual(settings.post_speech_silence_duration, 0.7)
@@ -151,6 +152,11 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(settings.num_workers, 2)
         self.assertFalse(settings.single_gpu_inference_gate)
 
+    def test_realtime_transcription_can_be_disabled_from_cli(self):
+        settings = settings_from_args(parse_args(["--no-realtime-transcription"]))
+
+        self.assertFalse(settings.realtime_transcription_enabled)
+
     def test_service_uses_direct_realtime_session_by_default(self):
         service = CoreSTTService(
             ServerSettings(),
@@ -196,6 +202,46 @@ class ServerConfigTest(unittest.TestCase):
             np.arange(24, dtype=np.int16),
         )
         service.remove_session("session-1")
+
+    def test_direct_session_does_not_create_realtime_job_when_disabled(self):
+        service = CoreSTTService(
+            ServerSettings(
+                realtime_transcription_enabled=False,
+                realtime_processing_pause=0.0,
+                realtime_min_audio_seconds=0.0,
+            ),
+            CaptureManager(),
+            scheduler_factory=FakeScheduler,
+        )
+        session = service.admit_session("session-1")
+
+        with session.lock:
+            session._start_recording_locked(1.0)
+            session._append_recording_samples_locked(np.arange(16000, dtype=np.int16))
+            job = session._maybe_create_realtime_job_locked(2.0)
+
+        self.assertIsNone(job)
+        service.remove_session("session-1")
+
+    def test_recorder_backed_session_does_not_submit_realtime_when_disabled(self):
+        service = CoreSTTService(
+            ServerSettings(realtime_transcription_enabled=False),
+            CaptureManager(),
+            scheduler_factory=FakeScheduler,
+        )
+        session = service.admit_session("session-1")
+        try:
+            result = service.transcribe_for_recorder(
+                "session-1",
+                "realtime",
+                np.array([0.0], dtype=np.float32),
+                "en",
+                True,
+            )
+        finally:
+            service.remove_session("session-1")
+
+        self.assertEqual(result.text, "")
 
     def test_direct_session_discards_realtime_after_final_result(self):
         manager = CaptureManager()
@@ -474,11 +520,16 @@ class ServerConfigTest(unittest.TestCase):
             "cpu_threads": 4,
             "num_workers": 2,
             "single_gpu_inference_gate": False,
+            "realtime_transcription_enabled": False,
             "unknown": "value",
         })
 
         self.assertEqual(result["applied"]["max_sessions"]["appliesTo"], "active_sessions")
         self.assertEqual(result["applied"]["min_length_of_recording"]["appliesTo"], "new_sessions")
+        self.assertEqual(
+            result["applied"]["realtime_transcription_enabled"]["appliesTo"],
+            "new_sessions",
+        )
         self.assertEqual(result["rejected"]["model"]["reason"], "startup_only")
         self.assertEqual(result["rejected"]["cpu_threads"]["reason"], "startup_only")
         self.assertEqual(result["rejected"]["num_workers"]["reason"], "startup_only")

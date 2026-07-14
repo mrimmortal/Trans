@@ -127,6 +127,8 @@ pipeline loads both models once at startup and reuses them across sessions.
 Faster-Whisper startup controls include `--cpu-threads`, `--num-workers`, and
 `--single-gpu-inference-gate`/`--no-single-gpu-inference-gate` for tuning CPU
 threading and same-GPU final/realtime contention.
+Use `--no-realtime-transcription` to disable interim realtime transcription
+jobs while keeping speech detection, buffering, and final transcription active.
 
 ## Server Features
 
@@ -137,6 +139,7 @@ threading and same-GPU final/realtime contention.
 - Optional same-GPU inference gating so queued final jobs block new realtime
   inference until final work drains.
 - Realtime job coalescing, segment-aware cancellation, and stale interim update dropping.
+- Optional realtime transcription disable flag for final-only operation.
 - `RealtimeSession` production pipeline with a bounded five-second realtime
   ring buffer and a separate complete final-utterance buffer.
 - Configurable final/realtime engines, prompts, beam sizes, batch sizes, VAD

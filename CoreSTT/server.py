@@ -576,6 +576,8 @@ class RealtimeSession:
         )
 
     def _maybe_create_realtime_job_locked(self, now):
+        if not self.settings.realtime_transcription_enabled:
+            return None
         pause = max(0.0, float(self.settings.realtime_processing_pause))
         if pause > 0 and now - self.last_realtime_submit_at < pause:
             return None
@@ -2027,6 +2029,8 @@ class CoreSTTService:
 
         session = self.sessions.get(session_id)
         if session is None:
+            return TranscriptionResult(text="")
+        if kind == "realtime" and not session.settings.realtime_transcription_enabled:
             return TranscriptionResult(text="")
 
         generation = getattr(session, "generation", 0)

@@ -332,3 +332,19 @@ Validation:
   from `CoreSTT/`: passed, 40 tests.
 - `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 50
   tests.
+
+## 2026-07-14 - Add Realtime Transcription Disable Flag
+
+Changed:
+- Added `realtime_transcription_enabled` with CLI
+  `--realtime-transcription`/`--no-realtime-transcription`.
+- Disabling realtime transcription skips interim realtime inference jobs while
+  preserving WebRTC speech detection, recording buffers, and final
+  transcription.
+- Covered direct and recorder-backed session suppression paths.
+
+Validation:
+- `.venv/bin/python -m unittest tests.test_server_config` from `CoreSTT/`:
+  passed, 30 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 53
+  tests.

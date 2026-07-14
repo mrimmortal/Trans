@@ -63,6 +63,11 @@ def parse_args(argv=None):
     parser.add_argument("--silero-sensitivity", type=float, default=0.05)
     parser.add_argument("--webrtc-sensitivity", type=int, default=3)
     parser.add_argument("--realtime-processing-pause", type=float)
+    parser.add_argument(
+        "--realtime-transcription",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--realtime-use-syllable-boundaries", action="store_true")
     parser.add_argument("--realtime-boundary-detector-sensitivity", type=float, default=0.6)
     parser.add_argument("--realtime-boundary-followup-delays", default="0.05,0.2")
@@ -179,6 +184,7 @@ def settings_from_args(args):
         silero_sensitivity=args.silero_sensitivity,
         webrtc_sensitivity=args.webrtc_sensitivity,
         realtime_processing_pause=_value_or_default(args, defaults, "realtime_processing_pause"),
+        realtime_transcription_enabled=args.realtime_transcription,
         realtime_transcription_use_syllable_boundaries=args.realtime_use_syllable_boundaries,
         realtime_boundary_detector_sensitivity=args.realtime_boundary_detector_sensitivity,
         realtime_boundary_followup_delays=parse_float_tuple(
