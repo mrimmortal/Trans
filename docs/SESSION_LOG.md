@@ -349,3 +349,38 @@ Validation:
   passed, 31 tests.
 - `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 54
   tests.
+
+## 2026-07-14 - Forward Compute Type Through Deploy Scripts
+
+Changed:
+- Confirmed CLI and scheduler already pass `compute_type` into both final and
+  realtime model configs at startup.
+- Added `COMPUTE_TYPE` support to macOS/Linux deploy scripts and `-ComputeType`
+  support to the Windows deploy script.
+- Updated deploy/run docs and tests so script-based launches no longer fall
+  back silently to `compute_type=default`.
+
+Validation:
+- `python3 -m unittest tests.test_deploy_script` from repo root: passed, 5
+  tests.
+- `.venv/bin/python -m unittest tests.test_server_config tests.test_inference_worker`
+  from `CoreSTT/`: passed, 40 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 54
+  tests.
+
+## 2026-07-14 - Make Server CLI Defaults Follow ServerSettings
+
+Changed:
+- Updated server CLI parser defaults to derive from `ServerSettings()` instead
+  of hardcoded argparse defaults.
+- Added a regression test so changing `ServerSettings.compute_type` changes the
+  default startup compute type when `--compute-type` is omitted.
+- Explicit CLI arguments still override `settings.py` defaults.
+
+Validation:
+- `.venv/bin/python -m unittest tests.test_server_config tests.test_inference_worker`
+  from `CoreSTT/`: passed, 41 tests.
+- `python3 -m unittest tests.test_deploy_script` from repo root: passed, 5
+  tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 55
+  tests.

@@ -1,7 +1,8 @@
 param(
     [string]$HostAddress = "127.0.0.1",
     [int]$Port = 8020,
-    [string]$Device = "cpu"
+    [string]$Device = "cpu",
+    [string]$ComputeType = "default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,4 +35,4 @@ if (-not (Test-Path ".venv\Scripts\python.exe")) {
     py -3.11 -m venv .venv
 }
 & .venv\Scripts\python.exe -m pip install -r requirements.txt
-& .venv\Scripts\python.exe server.py --host $HostAddress --port $Port --device $Device
+& .venv\Scripts\python.exe server.py --host $HostAddress --port $Port --device $Device --compute-type $ComputeType

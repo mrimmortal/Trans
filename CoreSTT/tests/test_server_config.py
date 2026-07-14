@@ -1,5 +1,5 @@
-import unittest
 import json
+import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -138,6 +138,18 @@ class ServerConfigTest(unittest.TestCase):
 
         self.assertEqual(settings.device, "cpu")
         self.assertEqual(settings.compute_type, "int8")
+
+    def test_cli_defaults_follow_server_settings_defaults(self):
+        defaults = ServerSettings()
+        settings = settings_from_args(parse_args([]))
+
+        self.assertEqual(settings.compute_type, defaults.compute_type)
+        self.assertEqual(settings.device, defaults.device)
+        self.assertEqual(settings.num_workers, defaults.num_workers)
+        self.assertEqual(
+            settings.realtime_transcription_enabled,
+            defaults.realtime_transcription_enabled,
+        )
 
     def test_startup_performance_controls_parse_from_cli(self):
         settings = settings_from_args(parse_args([

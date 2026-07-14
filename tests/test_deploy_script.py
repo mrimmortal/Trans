@@ -25,7 +25,8 @@ class DeployScriptTest(unittest.TestCase):
                 self.assertIn("python3.11", text)
                 self.assertIn("-m venv .venv", text)
                 self.assertIn(".venv/bin/python -m pip install -r requirements.txt", text)
-                self.assertIn('.venv/bin/python server.py --host "${HOST}" --port "${PORT}" --device "${DEVICE}"', text)
+                self.assertIn('COMPUTE_TYPE="${COMPUTE_TYPE:-default}"', text)
+                self.assertIn('.venv/bin/python server.py --host "${HOST}" --port "${PORT}" --device "${DEVICE}" --compute-type "${COMPUTE_TYPE}"', text)
 
     def test_windows_script_follows_documented_windows_commands(self):
         text = read_script(WINDOWS_SCRIPT)
@@ -33,7 +34,8 @@ class DeployScriptTest(unittest.TestCase):
         self.assertIn("py -3.11", text)
         self.assertIn("-m venv .venv", text)
         self.assertIn(".venv\\Scripts\\python.exe -m pip install -r requirements.txt", text)
-        self.assertIn(".venv\\Scripts\\python.exe server.py --host $HostAddress --port $Port --device $Device", text)
+        self.assertIn('[string]$ComputeType = "default"', text)
+        self.assertIn(".venv\\Scripts\\python.exe server.py --host $HostAddress --port $Port --device $Device --compute-type $ComputeType", text)
 
     def test_scripts_do_not_include_node_or_extra_python_runner(self):
         self.assertFalse((ROOT / "scripts" / "deploy.py").exists())

@@ -122,8 +122,10 @@ The server uses:
 - device: `cuda` by default, with server-side fallback to CPU when CUDA is not available
 - Faster-Whisper VAD: enabled for final jobs and disabled for realtime jobs
 
-`device` and `compute_type` remain configurable. The production WebSocket
-pipeline loads both models once at startup and reuses them across sessions.
+`device` and `compute_type` remain configurable. Server CLI defaults are read
+from `ServerSettings`, so changing the defaults in `settings.py` affects
+startup unless a CLI flag overrides them. The production WebSocket pipeline
+loads both models once at startup and reuses them across sessions.
 Faster-Whisper startup controls include `--cpu-threads`, `--num-workers`, and
 `--single-gpu-inference-gate`/`--no-single-gpu-inference-gate` for tuning CPU
 threading and same-GPU final/realtime contention.

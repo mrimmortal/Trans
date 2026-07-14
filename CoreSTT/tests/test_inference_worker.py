@@ -176,6 +176,7 @@ class SharedEngineWorkerTest(unittest.TestCase):
         scheduler = InferenceScheduler(
             ServerSettings(
                 model_warmup=False,
+                compute_type="int8",
                 cpu_threads=4,
                 num_workers=2,
                 vad_filter_final=True,
@@ -197,10 +198,12 @@ class SharedEngineWorkerTest(unittest.TestCase):
             scheduler._create_realtime_engine()
 
         self.assertEqual(captured[0].model, "small.en")
+        self.assertEqual(captured[0].compute_type, "int8")
         self.assertEqual(captured[0].cpu_threads, 4)
         self.assertEqual(captured[0].num_workers, 2)
         self.assertTrue(captured[0].vad_filter)
         self.assertEqual(captured[1].model, "tiny.en")
+        self.assertEqual(captured[1].compute_type, "int8")
         self.assertEqual(captured[1].cpu_threads, 4)
         self.assertEqual(captured[1].num_workers, 2)
         self.assertFalse(captured[1].vad_filter)

@@ -8,6 +8,7 @@ CORE_DIR="${ROOT_DIR}/CoreSTT"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8020}"
 DEVICE="${DEVICE:-cpu}"
+COMPUTE_TYPE="${COMPUTE_TYPE:-default}"
 
 has_supported_python() {
   local candidate
@@ -90,4 +91,4 @@ if [[ ! -x ".venv/bin/python" ]]; then
   "${PYTHON_BIN}" -m venv .venv
 fi
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python server.py --host "${HOST}" --port "${PORT}" --device "${DEVICE}"
+.venv/bin/python server.py --host "${HOST}" --port "${PORT}" --device "${DEVICE}" --compute-type "${COMPUTE_TYPE}"

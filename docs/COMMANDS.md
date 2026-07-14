@@ -58,10 +58,12 @@ The scripts use these defaults:
 ```bash
 HOST=127.0.0.1 PORT=8020 DEVICE=cpu scripts/deploy-macos.sh
 HOST=127.0.0.1 PORT=8020 DEVICE=cpu scripts/deploy-linux.sh
+HOST=127.0.0.1 PORT=8020 DEVICE=cpu COMPUTE_TYPE=int8 scripts/deploy-macos.sh
 ```
 
 ```powershell
 .\scripts\deploy-windows.ps1 -HostAddress 127.0.0.1 -Port 8020 -Device cpu
+.\scripts\deploy-windows.ps1 -HostAddress 127.0.0.1 -Port 8020 -Device cpu -ComputeType int8
 ```
 
 Each script checks for Python 3.11 or newer, asks before attempting OS-level
@@ -73,7 +75,7 @@ Python installation when supported, creates `CoreSTT/.venv`, installs
 From `CoreSTT/`:
 
 ```bash
-python server.py --host 127.0.0.1 --port 8020 --device cpu
+python server.py --host 127.0.0.1 --port 8020 --device cpu --compute-type int8
 ```
 
 Open:
