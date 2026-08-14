@@ -461,8 +461,10 @@ The settings object includes `vad_filter_final` and `vad_filter_realtime`.
 The deprecated `vad_filter` field remains as a compatibility alias for the
 final setting. This additive settings change does not alter WebSocket commands,
 binary packets, or transcript message shapes.
-The `realtime_transcription_enabled` setting indicates whether the interim
-realtime transcription pipeline is active before final transcription.
+The startup-only `realtime_transcription_enabled` setting indicates whether the
+interim realtime transcription pipeline is active before final transcription.
+When false at server startup, realtime inference resources are not created;
+speech detection, utterance buffering, and final transcription remain active.
 
 ### ready
 

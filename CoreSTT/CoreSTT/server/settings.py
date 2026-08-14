@@ -86,7 +86,6 @@ NEW_SESSION_RUNTIME_SETTINGS = {
     "realtime_max_audio_seconds",
     "realtime_min_audio_seconds",
     "realtime_processing_pause",
-    "realtime_transcription_enabled",
     "realtime_transcription_use_syllable_boundaries",
     "resource_log_interval_seconds",
     "resource_metrics_include_cuda",
@@ -122,6 +121,7 @@ STARTUP_ONLY_SETTINGS = {
     "num_workers",
     "port",
     "realtime_model",
+    "realtime_transcription_enabled",
     "realtime_transcription_engine",
     "realtime_transcription_engine_options",
     "single_gpu_inference_gate",
@@ -249,7 +249,7 @@ class ServerSettings:
     silero_sensitivity: float = 0.05
     webrtc_sensitivity: int = 3
     realtime_processing_pause: float = 0.6
-    realtime_transcription_enabled: bool = True
+    realtime_transcription_enabled: bool = False
     realtime_transcription_use_syllable_boundaries: bool = False
     realtime_boundary_detector_sensitivity: float = 0.6
     realtime_boundary_followup_delays: Tuple[float, ...] = (0.05, 0.2)

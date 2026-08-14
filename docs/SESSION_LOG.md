@@ -439,3 +439,21 @@ Validation:
 - `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 61
   tests.
 - `git diff --check`: passed.
+
+## 2026-08-14 - Fully Disable Realtime Resources in Final-Only Mode
+
+Changed:
+- Made `realtime_transcription_enabled` startup-only.
+- Final-only mode no longer creates a realtime queue, inference worker, model
+  load/warmup path, CUDA gate, recorder executor/callback, or recorder realtime
+  thread.
+- Added defensive rejection for realtime jobs and a `final-only` scheduler
+  metrics mode while preserving final transcription.
+- Added focused scheduler, configuration, and recorder regression coverage.
+
+Validation:
+- `.venv/bin/python -m unittest tests.test_inference_worker tests.test_server_config`
+  from `CoreSTT/`: passed, 46 tests.
+- `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 64
+  tests.
+- `git diff --check`: passed.

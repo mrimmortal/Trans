@@ -808,18 +808,23 @@ class RecorderBackedRealtimeSession:
                 self.session_id,
                 "final",
             ),
-            "realtime_transcription_executor": SchedulerTranscriptionExecutor(
-                self.service,
-                self.session_id,
-                "realtime",
+            "realtime_transcription_executor": (
+                SchedulerTranscriptionExecutor(
+                    self.service,
+                    self.session_id,
+                    "realtime",
+                )
+                if self.settings.realtime_transcription_enabled
+                else None
             ),
         }
-        if use_structured_stabilization:
-            config["on_realtime_text_stabilization_update"] = (
-                self._on_realtime_stabilization_event
-            )
-        else:
-            config[callback_key] = self._on_realtime_text
+        if self.settings.realtime_transcription_enabled:
+            if use_structured_stabilization:
+                config["on_realtime_text_stabilization_update"] = (
+                    self._on_realtime_stabilization_event
+                )
+            else:
+                config[callback_key] = self._on_realtime_text
         return recorder_factory(**config)
 
     def start_streaming(self, domain_profile=None, domain_name=None):

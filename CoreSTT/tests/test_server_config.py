@@ -2,6 +2,8 @@ import json
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 
@@ -22,6 +24,7 @@ from CoreSTT.server.domain_profiles import (
     compose_domain_profile,
     load_domain_profiles,
 )
+from CoreSTT.core import initialization as recorder_initialization
 
 
 class FakeScheduler:
@@ -278,8 +281,23 @@ class ServerConfigTest(unittest.TestCase):
         try:
             recorder = FakeRecorder.instances[-1]
             self.assertFalse(recorder.config["enable_realtime_transcription"])
+            self.assertIsNone(recorder.config["realtime_transcription_executor"])
+            self.assertNotIn("on_realtime_text_stabilization_update", recorder.config)
+            self.assertNotIn("on_realtime_transcription_update", recorder.config)
         finally:
             service.remove_session("session-1")
+
+    def test_recorder_does_not_start_realtime_thread_when_disabled(self):
+        recorder = SimpleNamespace(
+            enable_realtime_transcription=False,
+            realtime_thread=None,
+        )
+
+        with patch.object(recorder_initialization.threading, "Thread") as thread:
+            recorder_initialization._start_worker_threads(recorder)
+
+        self.assertEqual(thread.call_count, 1)
+        self.assertIsNone(recorder.realtime_thread)
 
     def test_recorder_backed_session_does_not_submit_realtime_when_disabled(self):
         service = CoreSTTService(
@@ -595,8 +613,8 @@ class ServerConfigTest(unittest.TestCase):
         )
         self.assertEqual(result["applied"]["min_length_of_recording"]["appliesTo"], "new_sessions")
         self.assertEqual(
-            result["applied"]["realtime_transcription_enabled"]["appliesTo"],
-            "new_sessions",
+            result["rejected"]["realtime_transcription_enabled"]["reason"],
+            "startup_only",
         )
         self.assertEqual(result["rejected"]["model"]["reason"], "startup_only")
         self.assertEqual(result["rejected"]["cpu_threads"]["reason"], "startup_only")

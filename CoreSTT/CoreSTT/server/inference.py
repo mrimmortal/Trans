@@ -578,11 +578,13 @@ class InferenceScheduler:
         self.error_callback = error_callback
         self.resource_snapshot_provider = resource_snapshot_provider
         self.main_queue = FairInferenceQueue("main", settings, drop_callback)
-        self.realtime_queue = (
-            self.main_queue
-            if settings.use_main_model_for_realtime
-            else FairInferenceQueue("realtime", settings, drop_callback)
-        )
+        self.realtime_queue = None
+        if settings.realtime_transcription_enabled:
+            self.realtime_queue = (
+                self.main_queue
+                if settings.use_main_model_for_realtime
+                else FairInferenceQueue("realtime", settings, drop_callback)
+            )
         self.execution_gate = self._create_execution_gate()
         self.main_worker = SharedEngineWorker(
             "main",
@@ -595,7 +597,10 @@ class InferenceScheduler:
             self.resource_snapshot_provider,
         )
         self.realtime_worker = None
-        if not settings.use_main_model_for_realtime:
+        if (
+            settings.realtime_transcription_enabled
+            and not settings.use_main_model_for_realtime
+        ):
             self.realtime_worker = SharedEngineWorker(
                 "realtime",
                 settings,
@@ -637,7 +642,12 @@ class InferenceScheduler:
         return True
 
     def submit(self, job: InferenceJob):
-        if job.kind == "final":
+        if (
+            job.kind == "realtime"
+            and not self.settings.realtime_transcription_enabled
+        ):
+            return QueueSubmitResult(False, "realtime transcription is disabled")
+        if job.kind == "final" and self.realtime_queue is not None:
             self.realtime_queue.cancel_realtime(job.session_id, job.segment_id)
         if job.kind == "realtime" and not self.settings.use_main_model_for_realtime:
             return self.realtime_queue.submit(job)
@@ -645,25 +655,34 @@ class InferenceScheduler:
 
     def cancel_session(self, session_id):
         self.main_queue.cancel_session(session_id)
-        if self.realtime_queue is not self.main_queue:
+        if (
+            self.realtime_queue is not None
+            and self.realtime_queue is not self.main_queue
+        ):
             self.realtime_queue.cancel_session(session_id)
 
     def snapshot(self):
         data = {
-            "mode": (
-                "low-memory-one-model"
-                if self.settings.use_main_model_for_realtime
-                else "balanced-main-plus-realtime"
-            ),
+            "mode": self._mode(),
             "singleGpuInferenceGate": self.execution_gate is not None,
             "queues": {"main": self.main_queue.snapshot()},
             "workers": {"main": self.main_worker.snapshot()},
         }
-        if self.realtime_queue is not self.main_queue:
+        if (
+            self.realtime_queue is not None
+            and self.realtime_queue is not self.main_queue
+        ):
             data["queues"]["realtime"] = self.realtime_queue.snapshot()
         if self.realtime_worker is not None:
             data["workers"]["realtime"] = self.realtime_worker.snapshot()
         return data
+
+    def _mode(self):
+        if not self.settings.realtime_transcription_enabled:
+            return "final-only"
+        if self.settings.use_main_model_for_realtime:
+            return "low-memory-one-model"
+        return "balanced-main-plus-realtime"
 
     def _create_main_engine(self):
         from CoreSTT.transcription_engines import (
@@ -721,6 +740,8 @@ class InferenceScheduler:
         )
 
     def _create_execution_gate(self):
+        if not self.settings.realtime_transcription_enabled:
+            return None
         if not self.settings.single_gpu_inference_gate:
             return None
         if self.realtime_queue is self.main_queue:

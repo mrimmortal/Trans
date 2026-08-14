@@ -232,6 +232,70 @@ class SharedEngineWorkerTest(unittest.TestCase):
             [(realtime, "superseded_by_final", "realtime")],
         )
 
+    def test_scheduler_omits_realtime_resources_when_disabled(self):
+        results = []
+        result_ready = threading.Event()
+
+        def capture_result(result):
+            results.append(result)
+            result_ready.set()
+
+        scheduler = InferenceScheduler(
+            ServerSettings(
+                model_warmup=False,
+                device="cpu",
+                realtime_transcription_enabled=False,
+            ),
+            capture_result,
+        )
+
+        with patch(
+            "CoreSTT.transcription_engines.create_transcription_engine",
+            return_value=FakeEngine(),
+        ) as create_engine:
+            scheduler.start()
+            try:
+                self.assertTrue(scheduler.wait_ready(timeout=1))
+                self.assertTrue(
+                    scheduler.submit(self._job("final", "session-a", 1)).accepted
+                )
+                self.assertTrue(result_ready.wait(timeout=1))
+            finally:
+                scheduler.stop()
+
+        self.assertEqual(create_engine.call_count, 1)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].kind, "final")
+        self.assertEqual(results[0].text, "ok")
+        self.assertIsNone(scheduler.realtime_queue)
+        self.assertIsNone(scheduler.realtime_worker)
+        self.assertIsNone(scheduler.execution_gate)
+
+        snapshot = scheduler.snapshot()
+        self.assertEqual(snapshot["mode"], "final-only")
+        self.assertNotIn("realtime", snapshot["queues"])
+        self.assertNotIn("realtime", snapshot["workers"])
+
+    def test_scheduler_rejects_realtime_jobs_when_disabled(self):
+        scheduler = InferenceScheduler(
+            ServerSettings(
+                model_warmup=False,
+                realtime_transcription_enabled=False,
+            ),
+            lambda _result: None,
+        )
+
+        realtime_result = scheduler.submit(self._job("realtime", "session-a", 1))
+        final_result = scheduler.submit(self._job("final", "session-a", 1))
+
+        self.assertFalse(realtime_result.accepted)
+        self.assertEqual(
+            realtime_result.reason,
+            "realtime transcription is disabled",
+        )
+        self.assertTrue(final_result.accepted)
+        self.assertEqual(scheduler.main_queue.snapshot()["queued"], 1)
+
     def test_scheduler_routes_fixed_models_and_split_vad_settings(self):
         scheduler = InferenceScheduler(
             ServerSettings(

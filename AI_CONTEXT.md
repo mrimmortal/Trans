@@ -70,15 +70,16 @@ commands as local validation.
   session is opt-in. Realtime audio uses WebRTC speech detection, a bounded
   five-second ring buffer, and Faster-Whisper VAD disabled. Final jobs retain
   the complete utterance and enable Faster-Whisper VAD.
-- Final and realtime engines load once at startup. Final jobs have scheduler
-  priority, cancel queued realtime work for the same segment, and suppress late
-  realtime results after finalization.
+- Final and realtime engines load once at startup when realtime transcription
+  is enabled. Final jobs have scheduler priority, cancel queued realtime work
+  for the same segment, and suppress late realtime results after finalization.
 - Faster-Whisper startup controls include `cpu_threads`, `num_workers`, and a
   same-GPU inference gate. The gate is enabled by default only for effective
   CUDA scheduling and blocks new realtime inference while final work is queued
   or active.
-- `realtime_transcription_enabled` defaults to true. Disabling it stops
-  the interim realtime transcription pipeline but keeps speech detection,
+- `realtime_transcription_enabled` defaults to true and is startup-only.
+  Disabling it omits the realtime queue, worker, model load/warmup, executor,
+  and recorder realtime thread while keeping speech detection,
   final-utterance buffering, and final transcription active.
 - `/api/metrics` includes additive resource and diagnostic fields for the
   browser diagnostics dashboard. The dashboard polls every two seconds and can

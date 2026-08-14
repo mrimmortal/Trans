@@ -618,12 +618,13 @@ def _start_worker_threads(recorder):
     recorder.recording_thread.daemon = True
     recorder.recording_thread.start()
 
-    recorder.realtime_thread = threading.Thread(
-        target=run_realtime_worker,
-        args=(recorder,),
-    )
-    recorder.realtime_thread.daemon = True
-    recorder.realtime_thread.start()
+    if recorder.enable_realtime_transcription:
+        recorder.realtime_thread = threading.Thread(
+            target=run_realtime_worker,
+            args=(recorder,),
+        )
+        recorder.realtime_thread.daemon = True
+        recorder.realtime_thread.start()
 
 
 def _finish_initialization(recorder):

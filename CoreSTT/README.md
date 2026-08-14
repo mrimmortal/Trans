@@ -126,13 +126,15 @@ The server uses:
 `device` and `compute_type` remain configurable. Server CLI defaults are read
 from `ServerSettings`, so changing the defaults in `settings.py` affects
 startup unless a CLI flag overrides them. The production WebSocket pipeline
-loads both models once at startup and reuses them across sessions.
+loads both models once at startup and reuses them across sessions when realtime
+transcription is enabled.
 Faster-Whisper startup controls include `--cpu-threads`, `--num-workers`, and
 `--single-gpu-inference-gate`/`--no-single-gpu-inference-gate` for tuning CPU
 threading and same-GPU final/realtime contention.
-Use `--no-realtime-transcription` for final-only mode. This disables the
-interim realtime transcription pipeline while keeping speech detection,
-final-utterance buffering, and final transcription active.
+Use `--no-realtime-transcription` for final-only mode. This startup-only flag
+omits the realtime queue, worker, model load/warmup, and recorder realtime
+thread while keeping speech detection, final-utterance buffering, and final
+transcription active.
 
 ## Server Features
 
