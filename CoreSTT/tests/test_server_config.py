@@ -102,7 +102,7 @@ class ServerConfigTest(unittest.TestCase):
         self.assertEqual(settings.beam_size_realtime, 1)
         self.assertEqual(settings.realtime_batch_size, 1)
         self.assertEqual(settings.realtime_processing_pause, 0.6)
-        self.assertTrue(settings.realtime_transcription_enabled)
+        self.assertFalse(settings.realtime_transcription_enabled)
         self.assertEqual(settings.realtime_min_audio_seconds, 0.8)
         self.assertEqual(settings.realtime_max_audio_seconds, 5.0)
         self.assertEqual(settings.post_speech_silence_duration, 0.7)
@@ -213,6 +213,7 @@ class ServerConfigTest(unittest.TestCase):
             ServerSettings(
                 min_length_of_recording=0.0,
                 realtime_max_audio_seconds=0.001,
+                realtime_transcription_enabled=True,
             ),
             CaptureManager(),
             scheduler_factory=FakeScheduler,

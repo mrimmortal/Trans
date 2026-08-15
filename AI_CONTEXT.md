@@ -32,7 +32,12 @@ commands as local validation.
 - `docs/WEBSOCKET_CLIENT_CONTRACT.md`: standardized client request/input
   contract for `WS /ws/transcribe`; read before building non-browser clients.
 - `CoreSTT/tools/stress/harness.py`: repo-local websocket stress and soak test
-  harness for concurrent handshake or synthetic audio streaming load.
+  harness for concurrent handshake, synthetic audio, or validated PCM WAV
+  streaming load with final-transcript capture.
+- `CoreSTT/tools/stress/run_macos.py` and `run_linux.py`: final-only platform
+  matrix runners that can auto-start/stop a local server, validate server mode,
+  record `sampleaudio.wav` with confirmation when missing, and write timestamped
+  benchmark reports; the Linux runner also records NVIDIA metadata.
 - `CoreSTT/tests/`: `unittest` coverage for server config and protocol behavior.
 
 ## Key Entrypoints
@@ -77,7 +82,7 @@ commands as local validation.
   same-GPU inference gate. The gate is enabled by default only for effective
   CUDA scheduling and blocks new realtime inference while final work is queued
   or active.
-- `realtime_transcription_enabled` defaults to true and is startup-only.
+- `realtime_transcription_enabled` defaults to false and is startup-only.
   Disabling it omits the realtime queue, worker, model load/warmup, executor,
   and recorder realtime thread while keeping speech detection,
   final-utterance buffering, and final transcription active.

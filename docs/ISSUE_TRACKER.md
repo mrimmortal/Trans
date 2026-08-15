@@ -29,7 +29,7 @@ its acceptance criteria as work progresses.
 | PERF-008 | P2 | Open | `num_workers` does not increase scheduler consumers |
 | CONFIG-001 | P2 | Open | Realtime batch-size runtime classification is misleading |
 | CONFIG-002 | P2 | Decision required | Fixed model names prevent model-size tuning |
-| BENCH-001 | P2 | Open | Stress harness lacks repeatable real-speech input |
+| BENCH-001 | P2 | Done | Stress harness lacks repeatable real-speech input |
 | COMPAT-001 | P2 | Decision required | Exported legacy client uses an incompatible server protocol |
 | TOOL-001 | P2 | Decision required | Kroko installer is undocumented and unreferenced |
 | CORE-001 | P2 | Open | Stdout relay plumbing appears inactive |
@@ -268,24 +268,25 @@ to reduce model size.
 ### BENCH-001 — Stress harness lacks repeatable real-speech input
 
 - **Priority:** P2
-- **Status:** Open
+- **Status:** Done
 - **Area:** Performance testing
 
-The stress harness sends a synthetic 440 Hz tone. It exercises VAD, scheduling,
-and model calls, but may underestimate speech decoding cost and cannot evaluate
-transcript quality.
+Resolved: the harness accepts validated PCM WAV input, streams it at real-time
+cadence, waits for final messages, and records transcript text. Platform
+runners can record a confirmed local microphone sample when the default WAV is
+missing.
 
-**Proposed direction:**
+**Resolution:**
 
-Add a `--wav PATH` mode that validates and streams a fixed PCM WAV through the
-existing packet protocol at the configured chunk cadence.
+Normal scenarios stream the WAV once; soak scenarios loop it for the requested
+duration without changing the WebSocket protocol.
 
 **Acceptance criteria:**
 
-- [ ] A WAV can be streamed without changing the WebSocket contract.
-- [ ] Unsupported WAV formats fail with clear errors.
-- [ ] The same fixture produces comparable reports on Mac and NVIDIA Linux.
-- [ ] Stress-harness tests cover WAV chunking and end-of-stream behavior.
+- [x] A WAV can be streamed without changing the WebSocket contract.
+- [x] Unsupported WAV formats fail with clear errors.
+- [x] The same fixture produces comparable reports on Mac and NVIDIA Linux.
+- [x] Stress-harness tests cover WAV validation, chunking, and reporting.
 
 ## Correctness and CI Issues
 

@@ -134,16 +134,18 @@ Restart the server between runs and use a new report filename each time.
 
 ## Required Scenarios
 
-### Default realtime
+### Explicit realtime comparison
 
-Use the Mac or NVIDIA baseline command without additional flags. This measures
-the current 0.6-second realtime cadence and five-second rolling window.
+Add `--realtime-transcription` to the Mac or NVIDIA baseline command. This
+measures the 0.6-second realtime cadence and five-second rolling window even
+though production defaults to final-only mode.
 
 ### Reduced realtime workload
 
 Add these server flags:
 
 ```bash
+--realtime-transcription \
 --realtime-processing-pause 1.0 \
 --realtime-max-audio-seconds 3.0
 ```
@@ -160,8 +162,64 @@ Add this server flag:
 --no-realtime-transcription
 ```
 
-This isolates final inference performance. In the current implementation it
-stops realtime jobs, but the realtime model is still loaded at startup.
+This isolates final inference performance. The realtime queue, worker, model,
+warmup, execution gate, executor, callbacks, and recorder realtime thread are
+not created in this mode.
+
+## Final-Only Platform Runners
+
+Two runners execute the currently supported synthetic handshake/stream matrix.
+When the configured local server is unavailable, they start a final-only server
+automatically, wait for readiness, capture `server.log`, and stop it after the
+matrix. Inspect commands without starting a server, making network requests, or
+writing reports:
+
+```bash
+.venv/bin/python -m tools.stress.run_macos --dry-run
+.venv/bin/python -m tools.stress.run_linux --dry-run
+```
+
+Run the macOS matrix:
+
+```bash
+.venv/bin/python -m tools.stress.run_macos
+```
+
+Run the NVIDIA Linux matrix:
+
+```bash
+.venv/bin/python -m tools.stress.run_linux
+```
+
+The files may also be executed directly from `CoreSTT/tools/stress/` when the
+virtual environment is active:
+
+```bash
+python run_macos.py
+python run_linux.py
+```
+
+Both runners require `/api/config` and `/health` to confirm a healthy
+`final-only` scheduler before load begins. The macOS auto-start configuration
+is CPU/int8 with four CPU threads; Linux uses CUDA/float16 on GPU 0. Pass
+`--no-auto-start-server` to use only a separately managed server. After server
+readiness, the runner validates `tools/stress/sampleaudio.wav`; if it is
+missing, it asks before recording a local 30-second microphone sample. The
+default matrix is a 25-client handshake followed by one complete WAV stream
+for 1, 2, and 4 clients. Add `--include-soak` to loop the WAV for a 30-minute,
+4-client stream. Reports are written to a new timestamped directory under
+`CoreSTT/benchmark-results/`.
+
+Scheduler metrics accumulate for the lifetime of the server. For exact
+cross-scenario comparisons, restart the server and invoke a runner separately
+for each client count, for example `--skip-handshake --clients 1`, then repeat
+with `2` and `4`. The default multi-count matrix is intended for progressive
+smoke/load testing.
+
+Use `--wav /path/to/sample.wav` to select an existing recording, or
+`--no-record-if-missing` to disable microphone prompting. WAV input must be
+uncompressed signed 16-bit PCM. Reports include final transcript text, final
+message counts, timeouts, and audio duration for every client.
 
 ### Mac CPU thread comparison
 
@@ -194,13 +252,13 @@ can also increase contention, latency, and memory pressure.
 
 | Machine | Configuration | Clients |
 |---|---|---:|
-| Mac | CPU int8, default realtime, 4 threads | 1, 2, 4 |
+| Mac | CPU int8, explicit realtime, 4 threads | 1, 2, 4 |
 | Mac | CPU int8, reduced realtime, 4 threads | 1, 2, 4 |
-| Mac | CPU int8, default realtime, 8 threads | 1, 2, 4 |
+| Mac | CPU int8, explicit realtime, 8 threads | 1, 2, 4 |
 | Mac | CPU int8, final-only | 1, 4 |
-| NVIDIA | CUDA float16, gate enabled, default realtime | 1, 2, 4 |
+| NVIDIA | CUDA float16, gate enabled, explicit realtime | 1, 2, 4 |
 | NVIDIA | CUDA float16, gate enabled, reduced realtime | 1, 2, 4 |
-| NVIDIA | CUDA int8_float16, gate enabled, default realtime | 1, 2, 4 |
+| NVIDIA | CUDA int8_float16, gate enabled, explicit realtime | 1, 2, 4 |
 | NVIDIA | CUDA float16, final-only | 1, 4 |
 | NVIDIA | CUDA float16, gate disabled | 1, 2, 4 |
 
@@ -237,21 +295,17 @@ indicates that the configured concurrency exceeds inference capacity.
 
 ## Real-Speech Validation
 
-The current stress harness sends a 440 Hz synthetic tone. It triggers the
-server's WebRTC VAD and exercises scheduling and inference, but it may decode
-faster than real speech and cannot measure transcript quality.
+Use the same fixed WAV on both machines for comparable results:
 
-After the synthetic matrix, perform a single-client run with the same fixed
-30-60 second speech recording on both machines. The most reproducible future
-improvement is to add a `--wav PATH` option to the stress harness so it can
-stream identical speech audio and report the same metrics automatically.
+```bash
+.venv/bin/python -m tools.stress.run_macos --wav /path/to/sample.wav
+.venv/bin/python -m tools.stress.run_linux --wav /path/to/sample.wav
+```
 
-Until that option exists, use the browser microphone console for real speech:
-
-1. Start the server with `--diagnostic-logging`.
-2. Open `http://127.0.0.1:8020`.
-3. Speak or play the same test script for the same duration.
-4. Export the diagnostics session as JSONL or CSV from the dashboard.
+The harness streams the WAV once at real-time cadence for normal scenarios,
+waits up to `--final-timeout` seconds for a final transcript, and records final
+texts in each JSON report. The optional soak scenario loops the WAV until its
+configured duration elapses.
 
 ## Result Review
 

@@ -457,3 +457,48 @@ Validation:
 - `.venv/bin/python -m unittest discover tests` from `CoreSTT/`: passed, 64
   tests.
 - `git diff --check`: passed.
+
+## 2026-08-14 - Add Final-Only Platform Harness Runners
+
+Changed:
+- Added macOS and NVIDIA Linux runners for the supported handshake, synthetic
+  stream, and optional soak scenarios.
+- Added final-only server preflight checks, timestamped JSON reports, platform
+  metadata, dry-run support, and bounded result-directory handling.
+- Added owned-process server startup, health waiting, log capture, and cleanup
+  when the configured local server is unavailable.
+- Supported both module invocation from `CoreSTT/` and direct file invocation
+  from `CoreSTT/tools/stress/`.
+- Replaced connection-refused tracebacks with a concise server-start message
+  and exit code 2.
+- Documented that service metrics are cumulative and that WAV streaming remains
+  parked for the final harness phase.
+- Ignored generated `CoreSTT/benchmark-results/` output.
+
+Validation:
+- `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest tests.test_stress_harness`
+  from `CoreSTT/`: passed, 15 tests.
+- macOS and Linux runner dry runs with 1- and 4-client streams: passed.
+- `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover tests`
+  from `CoreSTT/`: passed, 74 tests.
+- `git diff --check`: passed.
+
+## 2026-08-15 - Add Recorded WAV Harness Input
+
+Changed:
+- Added strict uncompressed signed 16-bit PCM WAV validation and real-time
+  chunk streaming to the stress harness.
+- Added confirmed microphone recording through existing PyAudio when the local
+  `tools/stress/sampleaudio.wav` fixture is missing.
+- Platform runners now start the server first, prepare the WAV, stream it once
+  for normal scenarios, loop it for soak testing, wait for final messages, and
+  store transcript text and audio duration in reports.
+- Ignored the locally recorded sample and marked BENCH-001 complete.
+
+Validation:
+- `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest tests.test_stress_harness`
+  from `CoreSTT/`: passed, 22 tests.
+- macOS and Linux WAV/soak dry runs: passed.
+- `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover tests`
+  from `CoreSTT/`: passed, 81 tests.
+- `git diff --check`: passed.

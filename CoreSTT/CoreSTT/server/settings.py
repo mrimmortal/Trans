@@ -270,8 +270,8 @@ class ServerSettings:
     audio_queue_size: int = 128
     max_audio_packet_bytes: int = 512 * 1024
     log_level: str = "INFO"
-    max_sessions: int = 4
-    max_active_speakers: int = 4
+    max_sessions: int = 10
+    max_active_speakers: int = 10
     max_audio_queue_seconds_per_session: float = 30.0
     pre_recording_buffer_duration: float = 0.75
     max_realtime_queue_age_ms: int = 1500

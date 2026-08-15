@@ -4,11 +4,14 @@ import json
 import math
 import statistics
 import struct
+import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+import wave
 from collections import Counter
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -31,6 +34,19 @@ DEFAULT_PING_INTERVAL = 5.0
 DEFAULT_DURATION = 10.0
 
 
+@dataclass(frozen=True)
+class PcmWavAudio:
+    path: Path
+    sample_rate: int
+    channels: int
+    frame_count: int
+    pcm_bytes: bytes
+
+    @property
+    def duration_seconds(self):
+        return self.frame_count / float(self.sample_rate)
+
+
 def clamp_client_count(value):
     value = int(value)
     if value <= 0:
@@ -50,6 +66,148 @@ def positive_float(value, name):
     if value <= 0:
         raise ValueError(f"{name} must be greater than zero")
     return value
+
+
+def load_pcm_wav(path):
+    path = Path(path).expanduser().resolve()
+    if not path.is_file():
+        raise ValueError(f"WAV file does not exist: {path}")
+    try:
+        with wave.open(str(path), "rb") as wav_file:
+            channels = wav_file.getnchannels()
+            sample_width = wav_file.getsampwidth()
+            sample_rate = wav_file.getframerate()
+            frame_count = wav_file.getnframes()
+            compression = wav_file.getcomptype()
+            pcm_bytes = wav_file.readframes(frame_count)
+    except (OSError, wave.Error) as exc:
+        raise ValueError(f"Could not read WAV file {path}: {exc}") from exc
+
+    if compression != "NONE":
+        raise ValueError("WAV must be uncompressed PCM")
+    if sample_width != 2:
+        raise ValueError("WAV must use signed 16-bit PCM samples")
+    if channels <= 0 or channels > 8:
+        raise ValueError("WAV channel count must be between 1 and 8")
+    if sample_rate <= 0:
+        raise ValueError("WAV sample rate must be positive")
+    if frame_count <= 0 or not pcm_bytes:
+        raise ValueError("WAV must contain audio frames")
+    if len(pcm_bytes) != frame_count * channels * sample_width:
+        raise ValueError("WAV PCM payload is truncated")
+    return PcmWavAudio(path, sample_rate, channels, frame_count, pcm_bytes)
+
+
+def iter_wav_chunks(audio, chunk_ms):
+    chunk_ms = int(chunk_ms)
+    if chunk_ms <= 0:
+        raise ValueError("chunk_ms must be positive")
+    bytes_per_frame = audio.channels * 2
+    frames_per_chunk = max(1, int(round(audio.sample_rate * chunk_ms / 1000.0)))
+    bytes_per_chunk = frames_per_chunk * bytes_per_frame
+    for offset in range(0, len(audio.pcm_bytes), bytes_per_chunk):
+        yield audio.pcm_bytes[offset:offset + bytes_per_chunk]
+
+
+def record_microphone_wav(
+    path,
+    duration_seconds=30.0,
+    sample_rate=16000,
+    channels=1,
+    input_device_index=None,
+):
+    duration_seconds = positive_float(duration_seconds, "record_seconds")
+    sample_rate = int(sample_rate)
+    channels = int(channels)
+    if sample_rate <= 0:
+        raise ValueError("record sample rate must be positive")
+    if channels <= 0 or channels > 8:
+        raise ValueError("record channel count must be between 1 and 8")
+    try:
+        import pyaudio
+    except ImportError as exc:
+        raise RuntimeError("PyAudio is required to record sampleaudio.wav") from exc
+
+    target_frames = max(1, int(round(duration_seconds * sample_rate)))
+    frames = []
+    audio_interface = pyaudio.PyAudio()
+    stream = None
+    try:
+        stream = audio_interface.open(
+            format=pyaudio.paInt16,
+            channels=channels,
+            rate=sample_rate,
+            input=True,
+            input_device_index=input_device_index,
+            frames_per_buffer=1024,
+        )
+        remaining = target_frames
+        while remaining > 0:
+            frame_count = min(1024, remaining)
+            frames.append(stream.read(frame_count, exception_on_overflow=False))
+            remaining -= frame_count
+    except Exception as exc:
+        raise RuntimeError(f"Microphone recording failed: {exc}") from exc
+    finally:
+        if stream is not None:
+            stream.stop_stream()
+            stream.close()
+        audio_interface.terminate()
+
+    path = Path(path).expanduser().resolve()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with wave.open(str(path), "wb") as wav_file:
+            wav_file.setnchannels(channels)
+            wav_file.setsampwidth(2)
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(b"".join(frames))
+    except (OSError, wave.Error) as exc:
+        raise RuntimeError(f"Could not save microphone recording to {path}: {exc}") from exc
+    return path
+
+
+def ensure_sample_wav(
+    path,
+    record_if_missing=True,
+    record_seconds=30.0,
+    input_device_index=None,
+    countdown_seconds=3,
+    input_func=None,
+    print_func=None,
+    sleep_func=None,
+):
+    path = Path(path).expanduser().resolve()
+    if path.is_file():
+        return load_pcm_wav(path)
+    if not record_if_missing:
+        raise RuntimeError(f"WAV file is missing: {path}")
+
+    input_func = input if input_func is None else input_func
+    print_func = print if print_func is None else print_func
+    sleep_func = time.sleep if sleep_func is None else sleep_func
+    try:
+        answer = input_func(
+            f"{path.name} was not found. Record {record_seconds:g} seconds now? [y/N] "
+        )
+    except EOFError as exc:
+        raise RuntimeError(
+            f"WAV file is missing and microphone confirmation is unavailable: {path}"
+        ) from exc
+    if answer.strip().lower() not in {"y", "yes"}:
+        raise RuntimeError(f"WAV recording was declined; provide --wav PATH")
+
+    for remaining in range(max(0, int(countdown_seconds)), 0, -1):
+        print_func(f"Recording starts in {remaining}...")
+        sleep_func(1)
+    print_func(f"Recording {record_seconds:g} seconds of microphone audio...")
+    record_microphone_wav(
+        path,
+        duration_seconds=record_seconds,
+        input_device_index=input_device_index,
+    )
+    print_func(f"Recording saved to {path}")
+    return load_pcm_wav(path)
 
 
 def synthesize_pcm_s16le(sample_rate, channels, duration_seconds, frequency_hz, amplitude):
@@ -107,6 +265,9 @@ def build_arg_parser():
     parser.add_argument("--connect-stagger-ms", type=int, default=0, help="Delay between client connection starts.")
     parser.add_argument("--audio-frequency-hz", type=float, default=440.0, help="Sine wave frequency for synthetic audio.")
     parser.add_argument("--audio-amplitude", type=float, default=0.2, help="Sine wave amplitude between 0.0 and 1.0.")
+    parser.add_argument("--wav", type=Path, help="Stream an uncompressed signed 16-bit PCM WAV once instead of a synthetic tone.")
+    parser.add_argument("--wav-loop", action="store_true", help="Repeat WAV audio until --duration elapses, for soak testing.")
+    parser.add_argument("--final-timeout", type=float, default=60.0, help="Seconds to wait for a final transcript after WAV streaming.")
     parser.add_argument("--startup-timeout", type=float, default=20.0, help="Seconds to wait for hello/ready before continuing.")
     parser.add_argument("--metrics", action="store_true", help="Fetch /health and /api/metrics after the websocket run.")
     parser.add_argument("--report-json", action="store_true", help="Emit the aggregate report as JSON.")
@@ -126,8 +287,12 @@ def validate_args(args):
     if not 0.0 <= args.audio_amplitude <= 1.0:
         raise ValueError("audio_amplitude must be between 0.0 and 1.0")
     args.startup_timeout = positive_float(args.startup_timeout, "startup_timeout")
+    args.final_timeout = positive_float(args.final_timeout, "final_timeout")
     if args.chunk_ms <= 0:
         raise ValueError("chunk_ms must be positive")
+    args.wav_audio = load_pcm_wav(args.wav) if args.wav is not None else None
+    if args.wav_loop and args.wav_audio is None:
+        raise ValueError("wav_loop requires --wav")
     return args
 
 
@@ -171,6 +336,81 @@ def fetch_json(url):
         return json.loads(response.read().decode("utf-8"))
 
 
+@contextmanager
+def ensure_local_server(
+    websocket_url,
+    command,
+    cwd,
+    log_path,
+    startup_timeout=300.0,
+    auto_start=True,
+):
+    """Start and later stop a local server only when no server is reachable."""
+
+    health_url = derive_http_url(websocket_url, "/health")
+    try:
+        fetch_json(health_url)
+        yield False
+        return
+    except urllib.error.HTTPError:
+        raise
+    except urllib.error.URLError:
+        if not auto_start:
+            raise
+
+    parts = urlsplit(websocket_url)
+    if parts.scheme != "ws":
+        raise RuntimeError("automatic server startup requires a local ws:// URL")
+    host = (parts.hostname or "").lower()
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError("automatic server startup is limited to local URLs")
+
+    startup_timeout = positive_float(startup_timeout, "startup_timeout")
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    process = None
+    last_error = None
+    with log_path.open("w", encoding="utf-8") as log_file:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            deadline = time.monotonic() + startup_timeout
+            while time.monotonic() < deadline:
+                return_code = process.poll()
+                if return_code is not None:
+                    raise RuntimeError(
+                        f"auto-started server exited with code {return_code}; "
+                        f"inspect {log_path}"
+                    )
+                try:
+                    health = fetch_json(health_url)
+                    if health.get("ready") and health.get("ok"):
+                        break
+                except (urllib.error.URLError, json.JSONDecodeError) as exc:
+                    last_error = exc
+                time.sleep(0.5)
+            else:
+                detail = f": {last_error}" if last_error is not None else ""
+                raise RuntimeError(
+                    f"server did not become healthy within {startup_timeout:g} seconds"
+                    f"{detail}; inspect {log_path}"
+                )
+            yield True
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=5)
+
+
 @dataclass
 class ClientResult:
     client_index: int
@@ -185,6 +425,9 @@ class ClientResult:
     disconnect_code: Optional[int] = None
     disconnect_reason: Optional[str] = None
     exception: Optional[str] = None
+    final_texts: List[str] = field(default_factory=list)
+    final_wait_timed_out: bool = False
+    audio_sent_seconds: float = 0.0
 
 
 class ClientState:
@@ -193,6 +436,7 @@ class ClientState:
         self.connect_started_at = time.perf_counter()
         self.hello_event = asyncio.Event()
         self.ready_event = asyncio.Event()
+        self.final_event = asyncio.Event()
         self.receiver_done = asyncio.Event()
         self.pending_ping_sent_at = None
         self.startup_timeout = startup_timeout
@@ -225,6 +469,9 @@ async def receive_messages(websocket, state):
                 if state.pending_ping_sent_at is not None:
                     state.result.pong_latencies_ms.append((time.perf_counter() - state.pending_ping_sent_at) * 1000.0)
                     state.pending_ping_sent_at = None
+            elif message_type == "final":
+                state.result.final_texts.append(str(data.get("text", "")))
+                state.final_event.set()
             elif message_type == "warning":
                 state.result.warnings.append(str(data.get("message", "warning")))
             elif message_type == "error":
@@ -265,25 +512,74 @@ async def run_client(args, client_index):
 
             if args.mode == "stream":
                 await websocket.send(json.dumps({"type": "start"}))
-                chunk_seconds = args.chunk_ms / 1000.0
-                pcm_chunk = synthesize_pcm_s16le(
-                    sample_rate=args.sample_rate,
-                    channels=args.channels,
-                    duration_seconds=chunk_seconds,
-                    frequency_hz=args.audio_frequency_hz,
-                    amplitude=args.audio_amplitude,
-                )
-                audio_packet = make_audio_packet_bytes(args.sample_rate, args.channels, pcm_chunk)
+                if args.wav_audio is not None:
+                    audio = args.wav_audio
+                    bytes_per_frame = audio.channels * 2
+                    stream_started_at = time.perf_counter()
+                    sent_frames = 0
+                    while True:
+                        for pcm_chunk in iter_wav_chunks(audio, args.chunk_ms):
+                            if args.wav_loop and time.perf_counter() >= end_time:
+                                break
+                            await websocket.send(
+                                make_audio_packet_bytes(
+                                    audio.sample_rate,
+                                    audio.channels,
+                                    pcm_chunk,
+                                )
+                            )
+                            sent_frames += len(pcm_chunk) // bytes_per_frame
+                            now = time.perf_counter()
+                            if now - last_ping_at >= args.ping_interval:
+                                await maybe_send_ping(websocket, state)
+                                last_ping_at = now
+                            target_time = stream_started_at + (
+                                sent_frames / float(audio.sample_rate)
+                            )
+                            await asyncio.sleep(
+                                max(0.0, target_time - time.perf_counter())
+                            )
+                        if not args.wav_loop or time.perf_counter() >= end_time:
+                            break
+                    result.audio_sent_seconds = sent_frames / float(audio.sample_rate)
+                else:
+                    chunk_seconds = args.chunk_ms / 1000.0
+                    pcm_chunk = synthesize_pcm_s16le(
+                        sample_rate=args.sample_rate,
+                        channels=args.channels,
+                        duration_seconds=chunk_seconds,
+                        frequency_hz=args.audio_frequency_hz,
+                        amplitude=args.audio_amplitude,
+                    )
+                    audio_packet = make_audio_packet_bytes(
+                        args.sample_rate,
+                        args.channels,
+                        pcm_chunk,
+                    )
 
-                while time.perf_counter() < end_time:
-                    await websocket.send(audio_packet)
-                    now = time.perf_counter()
-                    if now - last_ping_at >= args.ping_interval:
-                        await maybe_send_ping(websocket, state)
-                        last_ping_at = now
-                    await asyncio.sleep(chunk_seconds)
+                    while time.perf_counter() < end_time:
+                        await websocket.send(audio_packet)
+                        now = time.perf_counter()
+                        if now - last_ping_at >= args.ping_interval:
+                            await maybe_send_ping(websocket, state)
+                            last_ping_at = now
+                        await asyncio.sleep(chunk_seconds)
 
                 await websocket.send(json.dumps({"type": "stop"}))
+                if args.wav_audio is not None:
+                    if not result.final_texts:
+                        try:
+                            await asyncio.wait_for(
+                                state.final_event.wait(),
+                                timeout=args.final_timeout,
+                            )
+                        except asyncio.TimeoutError:
+                            result.final_wait_timed_out = True
+                            result.errors.append(
+                                "final transcript was not received before timeout"
+                            )
+                    else:
+                        await asyncio.sleep(0.5)
             else:
                 while time.perf_counter() < end_time:
                     now = time.perf_counter()
@@ -336,6 +632,16 @@ def aggregate_results(results):
         "readyLatency": summarize_latencies(ready_latencies),
         "pongLatency": summarize_latencies(pong_latencies),
         "exceptions": exceptions,
+        "finalTranscripts": [
+            {
+                "client": result.client_index,
+                "audioSentSeconds": round(result.audio_sent_seconds, 3),
+                "finalMessages": len(result.final_texts),
+                "texts": list(result.final_texts),
+                "timedOut": result.final_wait_timed_out,
+            }
+            for result in results
+        ],
     }
 
 

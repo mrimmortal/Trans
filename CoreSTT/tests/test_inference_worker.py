@@ -214,7 +214,10 @@ class SharedEngineWorkerTest(unittest.TestCase):
     def test_final_submission_cancels_matching_queued_realtime_job(self):
         dropped = []
         scheduler = InferenceScheduler(
-            ServerSettings(model_warmup=False),
+            ServerSettings(
+                model_warmup=False,
+                realtime_transcription_enabled=True,
+            ),
             lambda _result: None,
             lambda job, reason, lane: dropped.append((job, reason, lane)),
         )
@@ -335,11 +338,18 @@ class SharedEngineWorkerTest(unittest.TestCase):
     def test_scheduler_enables_single_gpu_gate_only_for_cuda(self):
         with patch("CoreSTT.server.inference.effective_device", return_value="cuda"):
             scheduler = InferenceScheduler(
-                ServerSettings(model_warmup=False),
+                ServerSettings(
+                    model_warmup=False,
+                    realtime_transcription_enabled=True,
+                ),
                 lambda _result: None,
             )
             disabled = InferenceScheduler(
-                ServerSettings(model_warmup=False, single_gpu_inference_gate=False),
+                ServerSettings(
+                    model_warmup=False,
+                    realtime_transcription_enabled=True,
+                    single_gpu_inference_gate=False,
+                ),
                 lambda _result: None,
             )
 
@@ -350,7 +360,11 @@ class SharedEngineWorkerTest(unittest.TestCase):
 
         with patch("CoreSTT.server.inference.effective_device", return_value="cpu"):
             cpu_scheduler = InferenceScheduler(
-                ServerSettings(model_warmup=False, device="cpu"),
+                ServerSettings(
+                    model_warmup=False,
+                    realtime_transcription_enabled=True,
+                    device="cpu",
+                ),
                 lambda _result: None,
             )
         self.assertIsNone(cpu_scheduler.execution_gate)

@@ -134,6 +134,47 @@ Stress-test harness from `CoreSTT/`:
 .venv/bin/python -m tools.stress.harness --url ws://127.0.0.1:8020/ws/transcribe --clients 10 --duration 20 --mode stream --chunk-ms 100 --ping-interval 2
 ```
 
+Final-only platform matrices from `CoreSTT/`:
+
+```bash
+.venv/bin/python -m tools.stress.run_macos --dry-run
+.venv/bin/python -m tools.stress.run_macos
+.venv/bin/python -m tools.stress.run_linux --dry-run
+.venv/bin/python -m tools.stress.run_linux
+```
+
+After server readiness, a runner validates
+`tools/stress/sampleaudio.wav`. When it is missing, the runner asks before
+recording a local 30-second microphone sample. Reuse another PCM WAV with:
+
+```bash
+.venv/bin/python -m tools.stress.run_macos --wav /path/to/sample.wav
+.venv/bin/python -m tools.stress.run_linux --wav /path/to/sample.wav
+```
+
+Use `--no-record-if-missing` to fail instead of prompting. WAV input must be
+uncompressed signed 16-bit PCM with 1-8 channels. Generated
+`tools/stress/sampleaudio.wav` is ignored by Git.
+
+If no server is reachable at the configured local `ws://` URL, the runners
+start a final-only server automatically, wait for it to become healthy, and
+stop it after the matrix. They validate final-only mode and write timestamped
+reports plus `server.log` under `benchmark-results/`. Pass
+`--no-auto-start-server` to require a separately managed server.
+
+With the virtual environment activated, direct execution from the stress
+directory is also supported:
+
+```bash
+cd CoreSTT/tools/stress
+python run_macos.py
+python run_linux.py
+```
+
+The macOS runner starts CPU/int8 with four CPU threads by default. The Linux
+runner starts CUDA/float16 on GPU 0 by default. Use each runner's `--help` for
+server override options.
+
 ## Notes
 
 - Installing requirements can download large ML/audio dependencies.

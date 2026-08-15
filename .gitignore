@@ -28,6 +28,8 @@ build/
 # Logs and runtime output
 *.log
 logs/
+CoreSTT/benchmark-results/
+CoreSTT/tools/stress/sampleaudio.wav
 
 # Swift Package Manager / Xcode
 .build/
