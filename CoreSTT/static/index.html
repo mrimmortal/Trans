@@ -483,6 +483,7 @@
             <div class="kv-row"><label>Realtime</label><span id="realtimeModel">--</span></div>
             <div class="kv-row"><label>Engine</label><span id="engineName">--</span></div>
             <div class="kv-row"><label>Device</label><span id="deviceName">--</span></div>
+            <div class="kv-row"><label>Workers</label><span id="workerInfo">--</span></div>
             <div class="kv-row"><label>Cadence</label><span id="cadenceInfo">--</span></div>
             <div class="kv-row"><label>VAD</label><span id="vadInfo">--</span></div>
             <div class="kv-row"><label>Wake</label><span id="wakeInfo">--</span></div>
@@ -508,10 +509,18 @@
           <h2>Diagnostics</h2>
           <div class="diagnostics-meta">
             <span>Updated <span id="diagnosticsUpdated">--</span></span>
+            <span>State <span id="diagnosticsState">waiting</span></span>
             <span>Samples <span id="diagnosticsSamples">0</span></span>
             <span>Bottleneck <span id="diagnosticsBottleneck">unknown</span></span>
           </div>
           <div class="diagnostics-grid">
+            <article id="diagService" class="diagnostic-card unavailable">
+              <div class="diagnostic-head">
+                <span class="diagnostic-title">Service</span>
+                <span id="diagServiceSeverity" class="severity unavailable">n/a</span>
+              </div>
+              <ul id="diagServiceMetrics" class="metric-list"></ul>
+            </article>
             <article id="diagHardware" class="diagnostic-card unavailable">
               <div class="diagnostic-head">
                 <span class="diagnostic-title">Hardware</span>
@@ -540,6 +549,13 @@
               </div>
               <ul id="diagLatencyMetrics" class="metric-list"></ul>
             </article>
+            <article id="diagAudio" class="diagnostic-card unavailable">
+              <div class="diagnostic-head">
+                <span class="diagnostic-title">Audio &amp; Jobs</span>
+                <span id="diagAudioSeverity" class="severity unavailable">n/a</span>
+              </div>
+              <ul id="diagAudioMetrics" class="metric-list"></ul>
+            </article>
             <article id="diagBottleneck" class="diagnostic-card unavailable">
               <div class="diagnostic-head">
                 <span class="diagnostic-title">Bottleneck</span>
@@ -563,7 +579,7 @@
                   <th>CUDA</th>
                   <th>Final p95</th>
                   <th>RT p95</th>
-                  <th>Queue</th>
+                  <th>Queue / oldest</th>
                   <th>Bottleneck</th>
                 </tr>
               </thead>
@@ -672,13 +688,18 @@ pong       -> latency response</code></pre>
       realtimeModel: document.getElementById("realtimeModel"),
       engineName: document.getElementById("engineName"),
       deviceName: document.getElementById("deviceName"),
+      workerInfo: document.getElementById("workerInfo"),
       cadenceInfo: document.getElementById("cadenceInfo"),
       vadInfo: document.getElementById("vadInfo"),
       wakeInfo: document.getElementById("wakeInfo"),
       decodeInfo: document.getElementById("decodeInfo"),
       diagnosticsUpdated: document.getElementById("diagnosticsUpdated"),
+      diagnosticsState: document.getElementById("diagnosticsState"),
       diagnosticsSamples: document.getElementById("diagnosticsSamples"),
       diagnosticsBottleneck: document.getElementById("diagnosticsBottleneck"),
+      diagService: document.getElementById("diagService"),
+      diagServiceSeverity: document.getElementById("diagServiceSeverity"),
+      diagServiceMetrics: document.getElementById("diagServiceMetrics"),
       diagHardware: document.getElementById("diagHardware"),
       diagHardwareSeverity: document.getElementById("diagHardwareSeverity"),
       diagHardwareMetrics: document.getElementById("diagHardwareMetrics"),
@@ -691,6 +712,9 @@ pong       -> latency response</code></pre>
       diagLatency: document.getElementById("diagLatency"),
       diagLatencySeverity: document.getElementById("diagLatencySeverity"),
       diagLatencyMetrics: document.getElementById("diagLatencyMetrics"),
+      diagAudio: document.getElementById("diagAudio"),
+      diagAudioSeverity: document.getElementById("diagAudioSeverity"),
+      diagAudioMetrics: document.getElementById("diagAudioMetrics"),
       diagBottleneck: document.getElementById("diagBottleneck"),
       diagBottleneckSeverity: document.getElementById("diagBottleneckSeverity"),
       diagBottleneckMetrics: document.getElementById("diagBottleneckMetrics"),
@@ -724,7 +748,15 @@ pong       -> latency response</code></pre>
       latestMetrics: null,
       diagnosticsSamples: [],
       diagnosticsEnabled: false,
-      diagnosticsPollInterval: null
+      diagnosticsPollInterval: null,
+      diagnosticsFailures: 0,
+      audioSampleCount: 0,
+      audioSumSquares: 0,
+      audioPeak: 0,
+      audioClippedSamples: 0,
+      pingLatencies: [],
+      finalRequestedAt: null,
+      lastFinalDeliveryMs: null
     };
 
     const DEFAULT_THRESHOLDS = {
@@ -867,7 +899,7 @@ pong       -> latency response</code></pre>
         addEvent("Recorder ready");
       } else if (message.type === "status") {
         setActiveDomain(message.domain || state.activeDomain || state.selectedDomain);
-        ui.queueDepth.textContent = String(message.queueDepth || 0);
+        ui.queueDepth.textContent = formatNumber(message.queueDepth || 0, 2, " s audio");
         if (message.state) {
           const label = stateLabel(message.state);
           ui.subtitle.textContent = label;
@@ -886,6 +918,10 @@ pong       -> latency response</code></pre>
           isOutlier: Boolean(message.isOutlier)
         });
       } else if (message.type === "final") {
+        if (state.finalRequestedAt != null) {
+          state.lastFinalDeliveryMs = Math.max(0, performance.now() - state.finalRequestedAt);
+          state.finalRequestedAt = null;
+        }
         upsertSegment(message.segmentId, message.text, true, { segment: message.segment || null });
       } else if (message.type === "clear") {
         state.segments = [];
@@ -896,7 +932,10 @@ pong       -> latency response</code></pre>
       } else if (message.type === "warning") {
         addEvent("Warning: " + message.message);
       } else if (message.type === "pong") {
-        ui.latency.textContent = Math.max(0, Math.round(performance.now() - state.lastPingAt)) + " ms";
+        const latency = Math.max(0, performance.now() - state.lastPingAt);
+        state.pingLatencies.push(latency);
+        while (state.pingLatencies.length > 120) state.pingLatencies.shift();
+        ui.latency.textContent = Math.round(latency) + " ms";
       }
     }
 
@@ -985,7 +1024,10 @@ pong       -> latency response</code></pre>
       state.wakeEnabled = Boolean(settings.wake_word_enabled);
       ui.tuningProfile.textContent = settings.tuning_profile || "custom";
       ui.finalModel.textContent = settings.model || "--";
-      if (settings.use_main_model_for_realtime) {
+      if (!settings.realtime_transcription_enabled) {
+        ui.realtimeModel.textContent = "Disabled";
+        ui.engineName.textContent = finalEngine + " / realtime disabled";
+      } else if (settings.use_main_model_for_realtime) {
         ui.realtimeModel.textContent = (settings.model || "--") + " (same as final)";
         ui.engineName.textContent = finalEngine + " / same";
       } else {
@@ -993,7 +1035,10 @@ pong       -> latency response</code></pre>
         ui.engineName.textContent = finalEngine + " / " + realtimeEngine;
       }
       ui.deviceName.textContent = (settings.device || "--") + " / " + (settings.compute_type || "default");
-      ui.cadenceInfo.textContent = formatSeconds(settings.realtime_processing_pause) + " realtime pause, batch " + settings.realtime_batch_size;
+      ui.workerInfo.textContent = (settings.num_workers || 1) + " model / " + (settings.cpu_threads || "auto") + " CPU threads";
+      ui.cadenceInfo.textContent = settings.realtime_transcription_enabled
+        ? formatSeconds(settings.realtime_processing_pause) + " realtime pause, batch " + settings.realtime_batch_size
+        : "Realtime disabled";
       ui.vadInfo.textContent = formatSeconds(settings.post_speech_silence_duration) + " final silence, min " + formatSeconds(settings.min_length_of_recording);
       ui.wakeInfo.textContent = settings.wake_word_enabled
         ? (settings.wakeword_backend || "wake") + " / " + (settings.wake_words || "model")
@@ -1010,6 +1055,7 @@ pong       -> latency response</code></pre>
     }
 
     function formatNumber(value, digits = 1, suffix = "") {
+      if (value === null || value === undefined || value === "") return "--";
       const number = Number(value);
       if (!Number.isFinite(number)) return "--";
       return number.toFixed(digits) + suffix;
@@ -1031,11 +1077,69 @@ pong       -> latency response</code></pre>
     }
 
     function maxMetric(...values) {
-      const numbers = values.map(Number).filter(Number.isFinite);
-      return numbers.length ? Math.max(...numbers) : 0;
+      const numbers = values
+        .filter(value => value !== null && value !== undefined && value !== "")
+        .map(Number)
+        .filter(Number.isFinite);
+      return numbers.length ? Math.max(...numbers) : undefined;
+    }
+
+    function formatDuration(value) {
+      if (value === null || value === undefined || value === "") return "--";
+      const seconds = Number(value);
+      if (!Number.isFinite(seconds)) return "--";
+      if (seconds < 60) return seconds.toFixed(1) + "s";
+      if (seconds < 3600) return Math.floor(seconds / 60) + "m " + Math.floor(seconds % 60) + "s";
+      return Math.floor(seconds / 3600) + "h " + Math.floor((seconds % 3600) / 60) + "m";
+    }
+
+    function ratePerMinute(path, windowSeconds = 60) {
+      if (state.diagnosticsSamples.length < 2) return undefined;
+      const latest = state.diagnosticsSamples[state.diagnosticsSamples.length - 1];
+      const latestAt = Date.parse(latest.capturedAt);
+      const earliestAllowed = latestAt - windowSeconds * 1000;
+      const candidates = state.diagnosticsSamples.filter(sample => Date.parse(sample.capturedAt) >= earliestAllowed);
+      if (candidates.length < 2) return undefined;
+      const first = candidates[0];
+      const elapsedMinutes = (latestAt - Date.parse(first.capturedAt)) / 60000;
+      const firstValue = Number(metricValue(first.metrics, path));
+      const latestValue = Number(metricValue(latest.metrics, path));
+      if (!Number.isFinite(firstValue) || !Number.isFinite(latestValue) || elapsedMinutes <= 0 || latestValue < firstValue) {
+        return undefined;
+      }
+      return (latestValue - firstValue) / elapsedMinutes;
+    }
+
+    function sessionMetric(metrics, field, aggregate = "sum") {
+      const values = Object.values(metrics.sessions || {})
+        .map(session => Number(session && session[field]))
+        .filter(Number.isFinite);
+      if (!values.length) return 0;
+      return aggregate === "max" ? Math.max(...values) : values.reduce((total, value) => total + value, 0);
+    }
+
+    function capacityText(current, limit) {
+      const used = Number(current);
+      const maximum = Number(limit);
+      if (!Number.isFinite(maximum) || maximum <= 0) return String(used || 0);
+      return (used || 0) + " / " + maximum + " (" + Math.round(((used || 0) / maximum) * 100) + "%)";
+    }
+
+    function amplitudeDbfs(value) {
+      const amplitude = Number(value);
+      if (!Number.isFinite(amplitude) || amplitude <= 0) return "--";
+      return formatNumber(20 * Math.log10(amplitude), 1, " dBFS");
+    }
+
+    function percentile(values, fraction) {
+      const sorted = values.map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+      if (!sorted.length) return undefined;
+      const index = Math.min(sorted.length - 1, Math.round((sorted.length - 1) * fraction));
+      return sorted[index];
     }
 
     function severityFromValue(value, threshold, invert = false) {
+      if (value === null || value === undefined || value === "") return "unavailable";
       const number = Number(value);
       if (!Number.isFinite(number) || !threshold) return "unavailable";
       if (invert) {
@@ -1082,7 +1186,6 @@ pong       -> latency response</code></pre>
     }
 
     async function pollDiagnostics() {
-      if (!state.diagnosticsEnabled) return;
       try {
         const response = await fetch("/api/metrics", { cache: "no-store" });
         if (!response.ok) throw new Error("metrics " + response.status);
@@ -1093,8 +1196,11 @@ pong       -> latency response</code></pre>
           metrics
         });
         while (state.diagnosticsSamples.length > 1000) state.diagnosticsSamples.shift();
+        state.diagnosticsFailures = 0;
         renderDiagnostics(metrics);
       } catch (error) {
+        state.diagnosticsFailures += 1;
+        ui.diagnosticsState.textContent = "stale (" + state.diagnosticsFailures + " failed polls)";
         addEvent("Diagnostics metrics failed: " + error.message);
       }
     }
@@ -1112,41 +1218,8 @@ pong       -> latency response</code></pre>
         addEvent("Diagnostics config failed: " + error.message);
       }
 
-      if (!state.diagnosticsEnabled) {
-        renderDiagnosticsDisabled();
-        return;
-      }
-
       await pollDiagnostics();
       state.diagnosticsPollInterval = setInterval(pollDiagnostics, 2000);
-    }
-
-    function renderDiagnosticsDisabled() {
-      state.latestMetrics = null;
-      state.diagnosticsSamples = [];
-      setCard(ui.diagHardware, ui.diagHardwareSeverity, "unavailable");
-      setCard(ui.diagCuda, ui.diagCudaSeverity, "unavailable");
-      setCard(ui.diagQueues, ui.diagQueuesSeverity, "unavailable");
-      setCard(ui.diagLatency, ui.diagLatencySeverity, "unavailable");
-      setCard(ui.diagBottleneck, ui.diagBottleneckSeverity, "unavailable");
-      renderMetricList(ui.diagHardwareMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
-      renderMetricList(ui.diagCudaMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
-      renderMetricList(ui.diagQueuesMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
-      renderMetricList(ui.diagLatencyMetrics, [["Status", "disabled by diagnostic_logging_enabled"]]);
-      renderMetricList(ui.diagBottleneckMetrics, [
-        ["Likely", "unknown"],
-        ["Action", "Set diagnostic_logging_enabled=true and reload the page"]
-      ]);
-      ui.diagnosticsUpdated.textContent = "disabled";
-      ui.diagnosticsSamples.textContent = "0";
-      ui.diagnosticsBottleneck.textContent = "disabled";
-      ui.diagnosticsLogBody.replaceChildren();
-      const row = document.createElement("tr");
-      const cell = document.createElement("td");
-      cell.colSpan = 8;
-      cell.textContent = "Diagnostics polling disabled by diagnostic_logging_enabled.";
-      row.append(cell);
-      ui.diagnosticsLogBody.append(row);
     }
 
     function renderDiagnostics(metrics) {
@@ -1161,14 +1234,30 @@ pong       -> latency response</code></pre>
       const mainWorker = workers.main || {};
       const realtimeWorker = workers.realtime || {};
       const diagnostics = metrics.diagnostics || {};
-      const finalP95Queue = metricValue(mainWorker, "queueDelay.p95Ms", 0);
-      const realtimeP95Queue = metricValue(realtimeWorker, "queueDelay.p95Ms", 0);
-      const finalP95Inference = metricValue(mainWorker, "inferenceDuration.p95Ms", 0);
-      const realtimeP95Inference = metricValue(realtimeWorker, "inferenceDuration.p95Ms", 0);
-      const finalP95Latency = metricValue(mainWorker, "totalLatency.p95Ms", 0);
-      const realtimeP95Latency = metricValue(realtimeWorker, "totalLatency.p95Ms", 0);
+      const limits = metrics.limits || {};
+      const realtimeEnabled = scheduler.mode !== "final-only" && Boolean(workers.realtime || queues.realtime);
+      const finalP95Queue = metricValue(mainWorker, "queueDelay.p95Ms");
+      const realtimeP95Queue = realtimeEnabled ? metricValue(realtimeWorker, "queueDelay.p95Ms") : undefined;
+      const finalP95Inference = metricValue(mainWorker, "inferenceDuration.p95Ms");
+      const realtimeP95Inference = realtimeEnabled ? metricValue(realtimeWorker, "inferenceDuration.p95Ms") : undefined;
+      const finalP95Latency = metricValue(mainWorker, "totalLatency.p95Ms");
+      const realtimeP95Latency = realtimeEnabled ? metricValue(realtimeWorker, "totalLatency.p95Ms") : undefined;
       const mainQueue = queues.main || {};
       const realtimeQueue = queues.realtime || {};
+      const droppedAudio = sessionMetric(metrics, "droppedAudioChunks");
+      const rejectedAudio = sessionMetric(metrics, "rejectedAudioChunks");
+      const forcedFinalizations = sessionMetric(metrics, "forcedFinalizations");
+      const droppedSegments = sessionMetric(metrics, "droppedRecordedSegments");
+      const finalJobRate = ratePerMinute("scheduler.workers.main.completedJobs");
+      const clientRms = state.audioSampleCount
+        ? Math.sqrt(state.audioSumSquares / state.audioSampleCount)
+        : undefined;
+      const clippedPercent = state.audioSampleCount
+        ? (state.audioClippedSamples / state.audioSampleCount) * 100
+        : undefined;
+      const clientAudioProblem = state.audioSampleCount > 0 && (
+        clientRms < 0.003 || state.audioPeak >= 0.999 || clippedPercent >= 0.1
+      );
       const cpuSeverity = severityFromValue(
         maxMetric(process.cpuPercent, system.cpuPercent),
         thresholds.cpuPercent
@@ -1182,30 +1271,52 @@ pong       -> latency response</code></pre>
         : "unavailable";
       const queueSeverity = worstSeverity(
         severityFromValue(finalP95Queue, thresholds.queueDelayP95Ms.final),
-        severityFromValue(realtimeP95Queue, thresholds.queueDelayP95Ms.realtime),
+        realtimeEnabled ? severityFromValue(realtimeP95Queue, thresholds.queueDelayP95Ms.realtime) : "unavailable",
         severityFromValue(maxMetric(mainQueue.rejectedJobs, realtimeQueue.rejectedJobs), thresholds.rejectedJobs),
-        increasingAcrossSamples("scheduler.queues.realtime.coalescedRealtime") ? "warn" : "normal",
-        increasingAcrossSamples("scheduler.queues.realtime.staleRealtimeDropped") ? "warn" : "normal"
+        realtimeEnabled && increasingAcrossSamples("scheduler.queues.realtime.coalescedRealtime") ? "warn" : "normal",
+        realtimeEnabled && increasingAcrossSamples("scheduler.queues.realtime.staleRealtimeDropped") ? "warn" : "normal"
       );
       const latencySeverity = worstSeverity(
         severityFromValue(finalP95Inference, thresholds.inferenceDurationP95Ms.final),
-        severityFromValue(realtimeP95Inference, thresholds.inferenceDurationP95Ms.realtime),
+        realtimeEnabled ? severityFromValue(realtimeP95Inference, thresholds.inferenceDurationP95Ms.realtime) : "unavailable",
         severityFromValue(finalP95Latency, thresholds.totalLatencyP95Ms.final),
-        severityFromValue(realtimeP95Latency, thresholds.totalLatencyP95Ms.realtime),
+        realtimeEnabled ? severityFromValue(realtimeP95Latency, thresholds.totalLatencyP95Ms.realtime) : "unavailable",
         severityFromValue(maxMetric(mainWorker.busyRatio, realtimeWorker.busyRatio), thresholds.workerBusyRatio)
       );
       const hardwareSeverity = worstSeverity(cpuSeverity, memorySeverity);
       const cudaSeverity = worstSeverity(cudaPressureSeverity, cudaFreeSeverity);
+      const serviceSeverity = !metrics.ok || !metrics.ready || (metrics.startupErrors || []).length
+        ? "critical"
+        : Number(metrics.rejectedSessions || 0) > 0 || Number(metrics.pendingSessionAdmissions || 0) > 0
+          ? "warn"
+          : "normal";
+      const audioSeverity = Number(mainWorker.failedJobs || 0) > 0 || rejectedAudio > 0 || droppedSegments > 0
+        ? "critical"
+        : droppedAudio > 0 || forcedFinalizations > 0 || clientAudioProblem
+          ? "warn"
+          : "normal";
       const bottleneckSeverity = diagnostics.likelyBottleneck && diagnostics.likelyBottleneck !== "unknown"
         ? worstSeverity(hardwareSeverity, cudaSeverity, queueSeverity, latencySeverity)
         : "unavailable";
 
+      setCard(ui.diagService, ui.diagServiceSeverity, serviceSeverity);
       setCard(ui.diagHardware, ui.diagHardwareSeverity, hardwareSeverity);
       setCard(ui.diagCuda, ui.diagCudaSeverity, cudaSeverity);
       setCard(ui.diagQueues, ui.diagQueuesSeverity, queueSeverity);
       setCard(ui.diagLatency, ui.diagLatencySeverity, latencySeverity);
+      setCard(ui.diagAudio, ui.diagAudioSeverity, audioSeverity);
       setCard(ui.diagBottleneck, ui.diagBottleneckSeverity, bottleneckSeverity);
 
+      renderMetricList(ui.diagServiceMetrics, [
+        ["Health", metrics.ok ? (metrics.ready ? "ready" : "starting") : "unhealthy"],
+        ["Mode", scheduler.mode || "unknown"],
+        ["Uptime", formatDuration(metrics.uptimeSeconds)],
+        ["Sessions", capacityText(metrics.activeSessions, limits.maxSessions)],
+        ["Speakers", capacityText(metrics.activeSpeakers, limits.maxActiveSpeakers)],
+        ["Pending", String(metrics.pendingSessionAdmissions || 0)],
+        ["Rejected sessions", String(metrics.rejectedSessions || 0)],
+        ["Startup errors", String((metrics.startupErrors || []).length)]
+      ]);
       renderMetricList(ui.diagHardwareMetrics, [
         ["Process", availabilityLabel(process)],
         ["System", availabilityLabel(system)],
@@ -1213,6 +1324,8 @@ pong       -> latency response</code></pre>
         ["Process CPU", formatNumber(process.cpuPercent, 1, "%")],
         ["RSS", formatNumber(process.rssMb, 1, " MB")],
         ["Memory", formatNumber(system.memoryPercent, 1, "%")],
+        ["Memory available", formatNumber(system.memoryAvailableMb, 0, " MB")],
+        ["Load average", Array.isArray(system.loadAverage) ? system.loadAverage.map(value => formatNumber(value, 2)).join(" / ") : "--"],
         ["Threads", formatNumber(process.threadCount, 0)]
       ]);
       renderMetricList(ui.diagCudaMetrics, [
@@ -1220,29 +1333,55 @@ pong       -> latency response</code></pre>
         ["Device", cuda.deviceName || "--"],
         ["Allocated", formatNumber(cuda.allocatedMb, 1, " MB")],
         ["Reserved", formatNumber(cuda.reservedMb, 1, " MB")],
+        ["Max allocated", formatNumber(cuda.maxAllocatedMb, 1, " MB")],
         ["Free", formatNumber(cuda.freeMb, 1, " MB")],
-        ["Pressure", formatNumber(cuda.memoryPressure, 1, "%")]
+        ["Total", formatNumber(cuda.totalMb, 1, " MB")],
+        ["Pressure", formatNumber(cuda.memoryPressure, 1, "%")],
+        ["Utilization", formatNumber(cuda.utilizationPercent, 1, "%")]
       ]);
       renderMetricList(ui.diagQueuesMetrics, [
         ["Main status", mainQueue.name || "main"],
-        ["Realtime status", realtimeQueue.name || "disabled"],
-        ["Sessions", String(metrics.activeSessions || 0)],
-        ["Speakers", String(metrics.activeSpeakers || 0)],
+        ["Realtime status", realtimeEnabled ? (realtimeQueue.name || "realtime") : "disabled"],
         ["Final queued", String(mainQueue.queued || 0)],
-        ["Realtime queued", String(realtimeQueue.queued || 0)],
+        ["Realtime queued", realtimeEnabled ? String(realtimeQueue.queued || 0) : "disabled"],
+        ["Queue capacity", capacityText((mainQueue.queued || 0) + (realtimeQueue.queued || 0), limits.maxGlobalInferenceQueueDepth)],
+        ["Oldest final", formatNumber(mainQueue.oldestQueuedMs, 0, " ms")],
+        ["Final sessions", String(mainQueue.sessions || 0)],
         ["Rejected", String((mainQueue.rejectedJobs || 0) + (realtimeQueue.rejectedJobs || 0))],
-        ["Coalesced RT", String(realtimeQueue.coalescedRealtime || 0)],
-        ["Stale RT", String(realtimeQueue.staleRealtimeDropped || 0)]
+        ["Coalesced RT", realtimeEnabled ? String(realtimeQueue.coalescedRealtime || 0) : "disabled"],
+        ["Stale RT", realtimeEnabled ? String(realtimeQueue.staleRealtimeDropped || 0) : "disabled"]
       ]);
       renderMetricList(ui.diagLatencyMetrics, [
+        ["Window", "p95 last 256 jobs; rate last 60s"],
+        ["Final samples", String(metricValue(mainWorker, "totalLatency.count", 0))],
+        ["Final jobs/min", formatNumber(finalJobRate, 1)],
+        ["Client RTT p95", formatNumber(percentile(state.pingLatencies, 0.95), 0, " ms")],
+        ["Stop to final", formatNumber(state.lastFinalDeliveryMs, 0, " ms")],
+        ["Completed / failed", String(mainWorker.completedJobs || 0) + " / " + String(mainWorker.failedJobs || 0)],
+        ["In flight", mainWorker.inFlight ? "yes" : "no"],
         ["Final busy", formatNumber((mainWorker.busyRatio || 0) * 100, 0, "%")],
-        ["RT busy", formatNumber((realtimeWorker.busyRatio || 0) * 100, 0, "%")],
-        ["Final q p95", formatNumber(finalP95Queue, 0, " ms")],
-        ["RT q p95", formatNumber(realtimeP95Queue, 0, " ms")],
+        ["RT busy", realtimeEnabled ? formatNumber((realtimeWorker.busyRatio || 0) * 100, 0, "%") : "disabled"],
+        ["Final q avg / p95", formatNumber(metricValue(mainWorker, "queueDelay.avgMs"), 0, " ms") + " / " + formatNumber(finalP95Queue, 0, " ms")],
+        ["RT q p95", realtimeEnabled ? formatNumber(realtimeP95Queue, 0, " ms") : "disabled"],
         ["Final inf p95", formatNumber(finalP95Inference, 0, " ms")],
-        ["RT inf p95", formatNumber(realtimeP95Inference, 0, " ms")],
+        ["RT inf p95", realtimeEnabled ? formatNumber(realtimeP95Inference, 0, " ms") : "disabled"],
         ["Final lat p95", formatNumber(finalP95Latency, 0, " ms")],
-        ["RT lat p95", formatNumber(realtimeP95Latency, 0, " ms")]
+        ["Final lat max", formatNumber(metricValue(mainWorker, "totalLatency.maxMs"), 0, " ms")],
+        ["RT lat p95", realtimeEnabled ? formatNumber(realtimeP95Latency, 0, " ms") : "disabled"]
+      ]);
+      renderMetricList(ui.diagAudioMetrics, [
+        ["Client RMS", amplitudeDbfs(clientRms)],
+        ["Client peak", amplitudeDbfs(state.audioSampleCount ? state.audioPeak : undefined)],
+        ["Client clipping", formatNumber(clippedPercent, 3, "%")],
+        ["Active recording max", formatDuration(sessionMetric(metrics, "recordingSeconds", "max"))],
+        ["Dropped chunks", String(droppedAudio)],
+        ["Rejected chunks", String(rejectedAudio)],
+        ["Forced finals", String(forcedFinalizations)],
+        ["Dropped segments", String(droppedSegments)],
+        ["Final submitted", String(sessionMetric(metrics, "finalSubmitted"))],
+        ["Final completed", String(sessionMetric(metrics, "finalCompleted"))],
+        ["Final rejected", String(sessionMetric(metrics, "finalRejected"))],
+        ["Cancelled jobs", String(sessionMetric(metrics, "cancelledJobs"))]
       ]);
       renderMetricList(ui.diagBottleneckMetrics, [
         ["Likely", diagnostics.likelyBottleneck || "unknown"],
@@ -1250,7 +1389,8 @@ pong       -> latency response</code></pre>
         ["Action", diagnostics.recommendedAction || "--"]
       ]);
 
-      ui.diagnosticsUpdated.textContent = new Date().toLocaleTimeString();
+      ui.diagnosticsUpdated.textContent = formatWallTime(resources.timestamp);
+      ui.diagnosticsState.textContent = state.diagnosticsEnabled ? "live" : "limited (diagnostic logging disabled)";
       ui.diagnosticsSamples.textContent = String(state.diagnosticsSamples.length);
       ui.diagnosticsBottleneck.textContent = diagnostics.likelyBottleneck || "unknown";
       renderDiagnosticsLog();
@@ -1270,6 +1410,13 @@ pong       -> latency response</code></pre>
       }
       for (const sample of samples) {
         const metrics = sample.metrics || {};
+        const realtimeEnabled = metricValue(metrics, "scheduler.mode") !== "final-only";
+        const queueDepth = Number(metricValue(metrics, "scheduler.queues.main.queued", 0))
+          + Number(metricValue(metrics, "scheduler.queues.realtime.queued", 0));
+        const oldestQueueMs = maxMetric(
+          metricValue(metrics, "scheduler.queues.main.oldestQueuedMs"),
+          metricValue(metrics, "scheduler.queues.realtime.oldestQueuedMs")
+        );
         const row = document.createElement("tr");
         const values = [
           new Date(sample.capturedAt).toLocaleTimeString(),
@@ -1279,11 +1426,10 @@ pong       -> latency response</code></pre>
             ? formatNumber(metricValue(metrics, "resources.cuda.memoryPressure"), 0, "%")
             : availabilityLabel(metricValue(metrics, "resources.cuda", {})),
           formatNumber(metricValue(metrics, "scheduler.workers.main.totalLatency.p95Ms"), 0, " ms"),
-          formatNumber(metricValue(metrics, "scheduler.workers.realtime.totalLatency.p95Ms"), 0, " ms"),
-          String(
-            Number(metricValue(metrics, "scheduler.queues.main.queued", 0))
-            + Number(metricValue(metrics, "scheduler.queues.realtime.queued", 0))
-          ),
+          realtimeEnabled
+            ? formatNumber(metricValue(metrics, "scheduler.workers.realtime.totalLatency.p95Ms"), 0, " ms")
+            : "disabled",
+          String(queueDepth) + " / " + formatNumber(oldestQueueMs, 0, " ms"),
           metricValue(metrics, "diagnostics.likelyBottleneck", "unknown")
         ];
         for (const value of values) {
@@ -1351,7 +1497,10 @@ pong       -> latency response</code></pre>
         "systemMemoryPercent", "cudaAvailable", "cudaMemoryPressure",
         "cudaFreeMb", "finalQueueP95Ms", "realtimeQueueP95Ms",
         "finalInferenceP95Ms", "realtimeInferenceP95Ms",
-        "finalLatencyP95Ms", "realtimeLatencyP95Ms", "likelyBottleneck"
+        "finalLatencyP95Ms", "realtimeLatencyP95Ms", "finalOldestQueuedMs",
+        "finalCompletedJobs", "finalFailedJobs", "activeSessions",
+        "activeSpeakers", "pendingAdmissions", "rejectedSessions",
+        "droppedAudioChunks", "rejectedAudioChunks", "likelyBottleneck"
       ];
       const rows = state.diagnosticsSamples.map(sample => {
         const metrics = sample.metrics || {};
@@ -1370,6 +1519,15 @@ pong       -> latency response</code></pre>
           metricValue(metrics, "scheduler.workers.realtime.inferenceDuration.p95Ms", ""),
           metricValue(metrics, "scheduler.workers.main.totalLatency.p95Ms", ""),
           metricValue(metrics, "scheduler.workers.realtime.totalLatency.p95Ms", ""),
+          metricValue(metrics, "scheduler.queues.main.oldestQueuedMs", ""),
+          metricValue(metrics, "scheduler.workers.main.completedJobs", ""),
+          metricValue(metrics, "scheduler.workers.main.failedJobs", ""),
+          metricValue(metrics, "activeSessions", ""),
+          metricValue(metrics, "activeSpeakers", ""),
+          metricValue(metrics, "pendingSessionAdmissions", ""),
+          metricValue(metrics, "rejectedSessions", ""),
+          sessionMetric(metrics, "droppedAudioChunks"),
+          sessionMetric(metrics, "rejectedAudioChunks"),
           metricValue(metrics, "diagnostics.likelyBottleneck", "")
         ];
       });
@@ -1462,6 +1620,10 @@ pong       -> latency response</code></pre>
       state.stream = stream;
       state.audioContext = audioContext;
       state.sampleRate = audioContext.sampleRate;
+      state.audioSampleCount = 0;
+      state.audioSumSquares = 0;
+      state.audioPeak = 0;
+      state.audioClippedSamples = 0;
       ui.sampleRate.textContent = String(audioContext.sampleRate) + " Hz";
 
       const source = audioContext.createMediaStreamSource(stream);
@@ -1517,6 +1679,7 @@ pong       -> latency response</code></pre>
       state.streaming = false;
       flushAudio();
       if (state.socket && state.socket.readyState === WebSocket.OPEN) {
+        state.finalRequestedAt = performance.now();
         state.socket.send(JSON.stringify({ type: "stop" }));
       }
       if (state.worklet) state.worklet.disconnect();
@@ -1549,6 +1712,13 @@ pong       -> latency response</code></pre>
     function enqueueSamples(samples) {
       if (!state.streaming || !state.socket || state.socket.readyState !== WebSocket.OPEN) return;
       const copy = new Float32Array(samples);
+      for (const sample of copy) {
+        const absolute = Math.abs(sample);
+        state.audioSampleCount += 1;
+        state.audioSumSquares += sample * sample;
+        state.audioPeak = Math.max(state.audioPeak, absolute);
+        if (absolute >= 0.999) state.audioClippedSamples += 1;
+      }
       state.chunkBuffers.push(copy);
       state.bufferedSamples += copy.length;
       const targetSamples = Math.max(256, Math.floor(state.sampleRate * state.targetChunkMs / 1000));

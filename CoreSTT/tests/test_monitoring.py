@@ -38,13 +38,16 @@ class FakeCuda:
         return 1024 * 1024 * 1024
 
     def memory_reserved(self, _device):
-        return 2048 * 1024 * 1024
+        return 1024 * 1024 * 1024
 
     def max_memory_allocated(self, _device):
         return 3072 * 1024 * 1024
 
     def mem_get_info(self, _device):
         return (6144 * 1024 * 1024, 8192 * 1024 * 1024)
+
+    def utilization(self, _device):
+        return 72
 
 
 class MonitoringTest(unittest.TestCase):
@@ -67,10 +70,11 @@ class MonitoringTest(unittest.TestCase):
         self.assertTrue(snapshot["cuda"]["available"])
         self.assertEqual(snapshot["cuda"]["deviceName"], "Fake GPU")
         self.assertEqual(snapshot["cuda"]["allocatedMb"], 1024.0)
-        self.assertEqual(snapshot["cuda"]["reservedMb"], 2048.0)
+        self.assertEqual(snapshot["cuda"]["reservedMb"], 1024.0)
         self.assertEqual(snapshot["cuda"]["freeMb"], 6144.0)
         self.assertEqual(snapshot["cuda"]["totalMb"], 8192.0)
         self.assertEqual(snapshot["cuda"]["memoryPressure"], 25.0)
+        self.assertEqual(snapshot["cuda"]["utilizationPercent"], 72.0)
 
     def test_resource_monitor_falls_back_when_dependencies_are_unavailable(self):
         monitor = ResourceMonitor(
@@ -128,6 +132,22 @@ class MonitoringTest(unittest.TestCase):
         diagnosis = diagnose_bottleneck(metrics)
 
         self.assertEqual(diagnosis["likelyBottleneck"], "queue_architecture")
+
+    def test_diagnose_bottleneck_ignores_unavailable_cuda_memory(self):
+        metrics = {
+            "resources": {
+                "process": {"available": False, "reason": "psutil_unavailable"},
+                "system": {"available": False, "reason": "psutil_unavailable"},
+                "cuda": {"available": False, "reason": "cuda_unavailable"},
+            },
+            "scheduler": {"workers": {}, "queues": {}},
+            "sessions": {},
+        }
+
+        diagnosis = diagnose_bottleneck(metrics)
+
+        self.assertEqual(diagnosis["likelyBottleneck"], "unknown")
+        self.assertNotIn("CUDA", " ".join(diagnosis["signals"]))
 
 
 if __name__ == "__main__":

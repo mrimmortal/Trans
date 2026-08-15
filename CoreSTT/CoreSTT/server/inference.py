@@ -273,6 +273,7 @@ class FairInferenceQueue:
 
     def snapshot(self):
         with self._condition:
+            now = time.monotonic()
             per_session = {
                 session_id: {
                     "final": len(state["final"]),
@@ -280,9 +281,20 @@ class FairInferenceQueue:
                 }
                 for session_id, state in self._sessions.items()
             }
+            queued_jobs = []
+            for state in self._sessions.values():
+                queued_jobs.extend(state["final"])
+                if state["realtime"] is not None:
+                    queued_jobs.append(state["realtime"])
+            oldest_queued_ms = (
+                max(0.0, now - min(job.created_at for job in queued_jobs)) * 1000.0
+                if queued_jobs
+                else 0.0
+            )
             return {
                 "name": self.name,
                 "queued": self._total_queued,
+                "oldestQueuedMs": oldest_queued_ms,
                 "sessions": len(self._sessions),
                 "perSession": per_session,
                 "coalescedRealtime": self._coalesced_realtime,
@@ -363,6 +375,7 @@ class SharedEngineWorker:
         self.inference_duration = RunningStats()
         self.total_latency = RunningStats()
         self.gate_wait_duration = RunningStats()
+        self.in_flight = False
 
     def start(self):
         self.thread = threading.Thread(
@@ -386,6 +399,7 @@ class SharedEngineWorker:
             "healthy": self.load_error is None,
             "completedJobs": self.completed_jobs,
             "failedJobs": self.failed_jobs,
+            "inFlight": self.in_flight,
             "busyRatio": min(1.0, self.busy_seconds / elapsed),
             "queueDelay": self.queue_delay.snapshot_ms(),
             "inferenceDuration": self.inference_duration.snapshot_ms(),
@@ -417,6 +431,7 @@ class SharedEngineWorker:
             error = None
 
             try:
+                self.in_flight = True
                 if self.execution_gate is not None:
                     gate_wait_started_at = time.monotonic()
                     gate_acquired = self.execution_gate.acquire(job.kind, self.stop_event)
@@ -436,6 +451,7 @@ class SharedEngineWorker:
             finally:
                 if gate_acquired and self.execution_gate is not None:
                     self.execution_gate.release(job.kind)
+                self.in_flight = False
 
             completed_at = time.monotonic()
             queue_delay = max(0.0, started_at - job.created_at)

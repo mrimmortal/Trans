@@ -669,8 +669,17 @@ class ServerConfigTest(unittest.TestCase):
         self.assertIn("startCommand.domain", index_response.text)
         self.assertIn('id="exportSnapshotButton"', index_response.text)
         self.assertIn('id="diagnosticsLogBody"', index_response.text)
+        self.assertIn('id="diagService"', index_response.text)
+        self.assertIn('id="diagAudio"', index_response.text)
+        self.assertIn('id="diagnosticsState"', index_response.text)
+        self.assertIn('id="workerInfo"', index_response.text)
+        self.assertIn('"Oldest final"', index_response.text)
+        self.assertIn('"Final jobs/min"', index_response.text)
+        self.assertIn('"Client RMS"', index_response.text)
+        self.assertIn('"Client RTT p95"', index_response.text)
+        self.assertIn('"Stop to final"', index_response.text)
+        self.assertIn('ui.realtimeModel.textContent = "Disabled"', index_response.text)
         self.assertIn("Realtime diagnostics log", index_response.text)
-        self.assertIn("Diagnostics polling disabled by diagnostic_logging_enabled.", index_response.text)
         self.assertIn("initializeDiagnostics", index_response.text)
         self.assertIn("corestt-diagnostics-session-", index_response.text)
         self.assertEqual(health_response.status_code, 200)
@@ -687,6 +696,7 @@ class ServerConfigTest(unittest.TestCase):
         self.assertIn("diagnostics", metrics_payload)
         self.assertIn("thresholds", metrics_payload)
         self.assertIn("settings", metrics_payload)
+        self.assertIn("uptimeSeconds", metrics_payload)
         self.assertEqual(
             metrics_payload["resources"]["system"]["reason"],
             "diagnostic_logging_disabled",

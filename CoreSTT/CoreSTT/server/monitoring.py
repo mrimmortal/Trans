@@ -178,11 +178,24 @@ class ResourceMonitor:
             data["freeMb"] = None
             data["totalMb"] = None
         total_mb = data.get("totalMb")
-        reserved_mb = data.get("reservedMb")
-        if total_mb and reserved_mb is not None:
-            data["memoryPressure"] = _round((reserved_mb / total_mb) * 100.0, 3)
+        free_mb = data.get("freeMb")
+        if total_mb and free_mb is not None:
+            # Device-wide free memory includes allocations made by CTranslate2,
+            # unlike torch's allocated/reserved counters.
+            data["memoryPressure"] = _round(
+                ((total_mb - free_mb) / total_mb) * 100.0,
+                3,
+            )
         else:
             data["memoryPressure"] = None
+        utilization = getattr(cuda, "utilization", None)
+        if callable(utilization):
+            try:
+                data["utilizationPercent"] = _round(utilization(device_index), 3)
+            except Exception:
+                data["utilizationPercent"] = None
+        else:
+            data["utilizationPercent"] = None
         return data
 
 
@@ -198,8 +211,9 @@ def diagnose_bottleneck(metrics, thresholds=None):
 
     cpu_percent = _max_number(process.get("cpuPercent"), system.get("cpuPercent"))
     system_memory_percent = _number(system.get("memoryPercent"))
-    cuda_pressure = _number(cuda.get("memoryPressure"))
-    cuda_free_mb = _number(cuda.get("freeMb"))
+    cuda_available = bool(cuda.get("available"))
+    cuda_pressure = _number(cuda.get("memoryPressure"), None) if cuda_available else None
+    cuda_free_mb = _number(cuda.get("freeMb"), None) if cuda_available else None
     realtime = _lane_metrics(scheduler, "realtime")
     final = _lane_metrics(scheduler, "final")
     max_busy = _max_worker_busy(scheduler)
@@ -299,9 +313,9 @@ def _queue_high(final, realtime, thresholds):
 
 def _resource_pressure(cpu_percent, system_memory_percent, cuda_pressure, thresholds):
     return (
-        cpu_percent >= thresholds["cpuPercent"]["warn"]
-        or system_memory_percent >= thresholds["systemMemoryPercent"]["warn"]
-        or cuda_pressure >= thresholds["cudaMemoryPressure"]["warn"]
+        _gte(cpu_percent, thresholds["cpuPercent"]["warn"])
+        or _gte(system_memory_percent, thresholds["systemMemoryPercent"]["warn"])
+        or _gte(cuda_pressure, thresholds["cudaMemoryPressure"]["warn"])
     )
 
 

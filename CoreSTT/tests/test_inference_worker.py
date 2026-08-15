@@ -235,6 +235,15 @@ class SharedEngineWorkerTest(unittest.TestCase):
             [(realtime, "superseded_by_final", "realtime")],
         )
 
+    def test_queue_snapshot_reports_oldest_queued_job_age(self):
+        queue = FairInferenceQueue("main", ServerSettings())
+        queue.submit(self._job("final", "session-a", 1))
+
+        snapshot = queue.snapshot()
+
+        self.assertEqual(snapshot["queued"], 1)
+        self.assertGreaterEqual(snapshot["oldestQueuedMs"], 0.0)
+
     def test_scheduler_omits_realtime_resources_when_disabled(self):
         results = []
         result_ready = threading.Event()

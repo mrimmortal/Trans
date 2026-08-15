@@ -1799,6 +1799,7 @@ class CoreSTTService:
         recorder_factory: Optional[Callable[..., Any]] = None,
     ):
         self.settings = settings
+        self.started_at = time.monotonic()
         self.manager = manager
         self.ready = threading.Event()
         self.stop_event = threading.Event()
@@ -2002,6 +2003,7 @@ class CoreSTTService:
 
     def metrics(self):
         data = self.sessions.snapshots()
+        data["uptimeSeconds"] = max(0.0, time.monotonic() - self.started_at)
         data["ready"] = self.ready.is_set()
         data["ok"] = self.ready.is_set() and self.scheduler.healthy()
         data["scheduler"] = self.scheduler.snapshot()
